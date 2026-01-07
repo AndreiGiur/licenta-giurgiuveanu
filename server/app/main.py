@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .db import Base, engine
 from .routes import router
 
-app = FastAPI(title="Exposure Platform API", version="0.2.0")
+app = FastAPI(title="Exposure Platform API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,

@@ -71,7 +71,7 @@ export default function Dashboard() {
               height: 40,
               padding: "0 12px",
               borderRadius: 10,
-              border: "1px solid #ddd",
+              border: "1px solid #000000ff",
               outline: "none",
             }}
           />
@@ -82,7 +82,7 @@ export default function Dashboard() {
               height: 40,
               padding: "0 14px",
               borderRadius: 10,
-              border: "1px solid #ddd",
+              border: "1px solid #000000ff",
               background: "white",
               fontWeight: 700,
               cursor: loading ? "not-allowed" : "pointer",
