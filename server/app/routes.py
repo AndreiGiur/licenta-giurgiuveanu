@@ -1,21 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Header, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, Header, status, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .auth import (
-    get_db,
-    get_user_by_email,
-    hash_password,
-    verify_password,
-    create_access_token,
-    require_user,
-)
-from .models import User, Device, Scan, Finding
+from .auth import get_db, get_user_by_email, create_password, verify_password, create_session, require_user
+from .models import User, Device, Scan, Finding, Session as DbSession
 from .schemas import (
     RegisterIn,
+    LoginIn,
     TokenOut,
     MeOut,
     DeviceCreateIn,
@@ -31,33 +24,36 @@ from .rules import evaluate
 router = APIRouter()
 
 
-# ---------- AUTH ----------
-
 @router.post("/auth/register", response_model=MeOut)
 def register(payload: RegisterIn, db: Session = Depends(get_db)):
-    existing = get_user_by_email(db, payload.email.lower().strip())
-    if existing:
+    email = payload.email.lower().strip()
+    if get_user_by_email(db, email):
         raise HTTPException(status_code=400, detail="email already registered")
 
-    user = User(
-        email=payload.email.lower().strip(),
-        password_hash=hash_password(payload.password),
-    )
+    salt, pwd_hash = create_password(payload.password)
+    user = User(email=email, password_salt=salt, password_hash=pwd_hash)
+
     db.add(user)
     db.commit()
     db.refresh(user)
+
     return MeOut(id=user.id, email=user.email)
 
 
 @router.post("/auth/login", response_model=TokenOut)
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    email = form.username.lower().strip()
+def login(request: Request, payload: LoginIn, db: Session = Depends(get_db)):
+    email = payload.email.lower().strip()
     user = get_user_by_email(db, email)
-    if not user or not verify_password(form.password, user.password_hash):
+    if not user or not verify_password(payload.password, user.password_salt, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
-    token = create_access_token(user.id)
-    return TokenOut(access_token=token)
+    token = create_session(
+        db,
+        user.id,
+        user_agent=request.headers.get("user-agent"),
+        ip=request.client.host if request.client else None,
+    )
+    return TokenOut(session_token=token)
 
 
 @router.get("/auth/me", response_model=MeOut)
@@ -65,7 +61,19 @@ def me(user: User = Depends(require_user)):
     return MeOut(id=user.id, email=user.email)
 
 
-# ---------- DEVICES ----------
+@router.delete("/auth/logout")
+def logout(db: Session = Depends(get_db), x_session_token: str | None = Header(default=None)):
+    if not x_session_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing session token")
+
+    sess = db.execute(select(DbSession).where(DbSession.token == x_session_token)).scalar_one_or_none()
+    if not sess:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session token")
+
+    db.delete(sess)
+    db.commit()
+    return {"ok": True}
+
 
 @router.post("/devices", response_model=DeviceCreateOut)
 def create_device(payload: DeviceCreateIn, db: Session = Depends(get_db), user: User = Depends(require_user)):
@@ -111,15 +119,12 @@ def list_devices(db: Session = Depends(get_db), user: User = Depends(require_use
     ]
 
 
-# ---------- SCANS (agent -> platform) ----------
-
 @router.post("/scans", response_model=ScanCreateOut)
 def create_scan(
     payload: ScanIn,
     x_device_token: str | None = Header(default=None, convert_underscores=False),
     db: Session = Depends(get_db),
 ):
-    # endpoint-ul asta este pentru AGENT. Autorizare prin device token.
     if not x_device_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing X-Device-Token")
 
@@ -136,7 +141,7 @@ def create_scan(
 
     scan = Scan(device_id=device.id, payload=scan_dict, exposure_score=score)
     db.add(scan)
-    db.flush()  # scan.id disponibil
+    db.flush()
 
     for f in findings:
         db.add(
@@ -161,14 +166,8 @@ def create_scan(
     )
 
 
-# ---------- READ (frontend) ----------
-
 @router.get("/devices/{device_uid}/scans", response_model=list[DeviceScanListItem])
-def list_scans_for_device(
-    device_uid: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_user),
-):
+def list_scans_for_device(device_uid: str, db: Session = Depends(get_db), user: User = Depends(require_user)):
     device = db.execute(
         select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
     ).scalar_one_or_none()
@@ -193,11 +192,7 @@ def list_scans_for_device(
 
 
 @router.get("/scans/{scan_id}", response_model=ScanDetailOut)
-def get_scan_detail(
-    scan_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_user),
-):
+def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
     scan = db.get(Scan, scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="scan not found")

@@ -3,6 +3,8 @@ import Dashboard from "./pages/Dashboard";
 import ScanDetail from "./pages/ScanDetail";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
+import Devices from "./pages/Devices";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 export default function App() {
   return (
@@ -10,9 +12,31 @@ export default function App() {
       <Routes>
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/scans/:scanId" element={<ScanDetail />} />
-        <Route path="/" element={<Navigate to="/register" replace />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/devices"
+          element={
+            <ProtectedRoute>
+              <Devices />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/scans/:scanId"
+          element={
+            <ProtectedRoute>
+              <ScanDetail />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );

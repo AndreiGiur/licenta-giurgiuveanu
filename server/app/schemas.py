@@ -1,25 +1,25 @@
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-
-# ---------- AUTH ----------
 
 class RegisterIn(BaseModel):
     email: str = Field(min_length=5, max_length=255)
     password: str = Field(min_length=8, max_length=128)
 
 
+class LoginIn(BaseModel):
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+
+
 class TokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+    session_token: str
 
 
 class MeOut(BaseModel):
     id: int
     email: str
 
-
-# ---------- DEVICES ----------
 
 class DeviceCreateIn(BaseModel):
     device_uid: str = Field(min_length=1, max_length=128)
@@ -37,12 +37,8 @@ class DeviceCreateOut(DeviceOut):
     device_token: str
 
 
-# ---------- SCANS ----------
-
 class ScanIn(BaseModel):
-    # trebuie sa corespunda cu Device.device_uid
     device_id: str = Field(min_length=1, max_length=128)
-
     os: Dict[str, Any]
     network: Dict[str, Any] = {}
     processes: List[Dict[str, Any]] = []

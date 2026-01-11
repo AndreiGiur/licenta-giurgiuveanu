@@ -1,66 +1,54 @@
-import { apiGet, apiPost } from "./client";
+import { http } from "./http";
 
-export type RegisterRequest = { email: string; password: string };
-export type MeResponse = { id: number; email: string };
-export type TokenResponse = { access_token: string; token_type: "bearer" };
+const TOKEN_KEY = "session_token";
 
-export async function registerUser(payload: RegisterRequest): Promise<MeResponse> {
-  return apiPost<RegisterRequest, MeResponse>("/auth/register", payload);
+export function saveSessionToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
 }
 
-export async function loginUser(email: string, password: string): Promise<TokenResponse> {
-  const body = new URLSearchParams();
-  body.set("username", email);
-  body.set("password", password);
-
-  const res = await fetch(
-    `${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1"}/auth/login`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body,
-    }
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Login failed: ${res.status} ${text}`);
-  }
-
-  return (await res.json()) as TokenResponse;
+export function getSessionToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
 }
 
-export async function me(token: string): Promise<MeResponse> {
-  const res = await fetch(
-    `${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1"}/auth/me`,
-    {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Me failed: ${res.status} ${text}`);
-  }
-
-  return (await res.json()) as MeResponse;
+export function clearSessionToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
 }
 
-export function saveToken(token: string) {
-  localStorage.setItem("access_token", token);
+export async function registerUser(input: { email: string; password: string }): Promise<{ id: number; email: string }> {
+  return http<{ id: number; email: string }>("/api/v1/auth/register", {
+    method: "POST",
+    body: input,
+  });
 }
 
-export function loadToken(): string | null {
-  return localStorage.getItem("access_token");
+export async function loginUser(input: { email: string; password: string }): Promise<{ session_token: string }> {
+  return http<{ session_token: string }>("/api/v1/auth/login", {
+    method: "POST",
+    body: input,
+  });
 }
 
-export function clearToken() {
-  localStorage.removeItem("access_token");
+export async function fetchMe(): Promise<{ id: number; email: string }> {
+  const tok = getSessionToken();
+  if (!tok) throw new Error("Missing session token");
+
+  return http<{ id: number; email: string }>("/api/v1/auth/me", {
+    method: "GET",
+    headers: {
+      "X-Session-Token": tok,
+    },
+  });
+}
+
+export async function logoutUser(): Promise<void> {
+  const tok = getSessionToken();
+  if (!tok) throw new Error("Missing session token");
+
+  await http<{ ok: boolean }>("/api/v1/auth/logout", {
+    method: "DELETE",
+    headers: {
+      "X-Session-Token": tok,
+    },
+  });
+  clearSessionToken();
 }

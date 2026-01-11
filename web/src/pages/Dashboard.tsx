@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getScan, listDeviceScans } from "../api/exposure";
 import type { DeviceScanListItem, ScanDetailResponse } from "../api/types";
+import Navbar from "../components/Navbar";
 
 function pillBorder(sev: string) {
   const s = sev.toLowerCase();
@@ -11,7 +12,7 @@ function pillBorder(sev: string) {
 }
 
 export default function Dashboard() {
-  const [deviceId, setDeviceId] = useState("laptop-01");
+  const [deviceId, setDeviceId] = useState("Utilizator 1");
   const [loading, setLoading] = useState(false);
   const [scans, setScans] = useState<DeviceScanListItem[]>([]);
   const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
@@ -54,10 +55,11 @@ export default function Dashboard() {
   }, [selectedScanId]);
 
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" }}>
+    <div style={{ fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif", minHeight: "100vh", background: "#fafafa" }}>
+      <Navbar />
       <div style={{ maxWidth: 1100, margin: "40px auto", padding: "0 16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>Exposure</h1>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>Expuneri Virtuale de Securitate</h1>
           <div style={{ fontSize: 12, opacity: 0.7 }}>Frontend → HTTP → API</div>
         </div>
 
@@ -65,7 +67,7 @@ export default function Dashboard() {
           <input
             value={deviceId}
             onChange={(e) => setDeviceId(e.target.value)}
-            placeholder="device_id (ex: laptop-01)"
+            placeholder="device_id (ex: Utilizator 1)"
             style={{
               flex: 1,
               height: 40,
