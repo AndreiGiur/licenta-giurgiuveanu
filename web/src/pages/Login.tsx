@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { loginUser, saveSessionToken, getSessionToken } from "../api/auth";
+import { loginUser, saveSessionToken, getSessionToken, clearSessionToken, fetchMe } from "../api/auth";
+
+const ShieldIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+    stroke="#021018" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  </svg>
+);
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -10,83 +17,94 @@ export default function Login() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (getSessionToken()) {
-      navigate("/dashboard", { replace: true });
-    }
+    const token = getSessionToken();
+    if (!token) return;
+    fetchMe()
+      .then(() => navigate("/dashboard", { replace: true }))
+      .catch(() => clearSessionToken());
   }, [navigate]);
 
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("Password123!");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPassword = password.trim();
-
     if (!isValidEmail(normalizedEmail)) {
-      setError("Email invalid");
+      setError("Adresă de email invalidă.");
       return;
     }
-
     setLoading(true);
     try {
       const tok = await loginUser({ email: normalizedEmail, password: normalizedPassword });
       saveSessionToken(tok.session_token);
       navigate("/dashboard");
-    } catch (err: any) {
-      setError(err?.message ?? "Eroare");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Eroare la autentificare";
+      setError(msg);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0b0b0b", color: "#e5e5e5", display: "grid", placeItems: "center", padding: 16 }}>
-      <div style={{ width: "100%", maxWidth: 420 }}>
-        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900 }}>Login</h1>
+    <div className="auth-page">
+      <div className="auth-card">
+        {/* Brand */}
+        <div className="auth-brand">
+          <div className="auth-brand-icon"><ShieldIcon /></div>
+          <span className="auth-brand-name">VulnWatch</span>
+        </div>
 
-        <form onSubmit={onSubmit} style={{ marginTop: 16, border: "1px solid #2a2a2a", borderRadius: 14, padding: 16, background: "#0f0f0f" }}>
-          <label style={{ display: "block", fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Email</label>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            style={{ width: "100%", height: 40, padding: "0 12px", borderRadius: 10, border: "1px solid #2a2a2a", background: "#0b0b0b", color: "#e5e5e5", outline: "none", marginBottom: 12 }}
-          />
+        <h1 className="auth-title">Bine ai revenit</h1>
+        <p className="auth-subtitle">Autentifică-te pentru a accesa platforma</p>
 
-          <label style={{ display: "block", fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            style={{ width: "100%", height: 40, padding: "0 12px", borderRadius: 10, border: "1px solid #2a2a2a", background: "#0b0b0b", color: "#e5e5e5", outline: "none", marginBottom: 12 }}
-          />
+        <form onSubmit={onSubmit}>
+          <div className="form-group">
+            <label className="form-label">Email</label>
+            <input
+              className="form-input"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="nume@exemplu.com"
+              autoComplete="email"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Parolă</label>
+            <input
+              className="form-input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+            />
+          </div>
 
           {error && (
-            <div style={{ border: "1px solid #7f1d1d", background: "#160b0b", borderRadius: 12, padding: 12, fontSize: 13, marginBottom: 12, whiteSpace: "pre-wrap" }}>
+            <div className="alert alert-error" style={{ marginBottom: 16 }}>
               {error}
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{ width: "100%", height: 42, borderRadius: 12, border: "1px solid #2a2a2a", background: "#111", color: "#e5e5e5", fontWeight: 900, cursor: loading ? "not-allowed" : "pointer" }}
-          >
-            {loading ? "Working..." : "Login"}
+          <button type="submit" disabled={loading} className="btn btn-primary">
+            {loading ? (
+              <span className="loading-dots"><span /><span /><span /></span>
+            ) : "Autentificare"}
           </button>
-
           <button
             type="button"
             onClick={() => navigate("/register")}
-            style={{ width: "100%", height: 42, marginTop: 10, borderRadius: 12, border: "1px solid #2a2a2a", background: "transparent", color: "#e5e5e5", fontWeight: 800, cursor: "pointer", opacity: 0.9 }}
+            className="btn btn-secondary"
           >
-            Go to register
+            Nu ai cont? <strong>Înregistrează-te</strong>
           </button>
         </form>
       </div>

@@ -122,7 +122,7 @@ def list_devices(db: Session = Depends(get_db), user: User = Depends(require_use
 @router.post("/scans", response_model=ScanCreateOut)
 def create_scan(
     payload: ScanIn,
-    x_device_token: str | None = Header(default=None, convert_underscores=False),
+    x_device_token: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
     if not x_device_token:
@@ -164,6 +164,18 @@ def create_scan(
         exposure_score=score,
         findings=findings,
     )
+
+
+@router.delete("/devices/{device_uid}", status_code=204)
+def delete_device(device_uid: str, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    device = db.execute(
+        select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    db.delete(device)
+    db.commit()
 
 
 @router.get("/devices/{device_uid}/scans", response_model=list[DeviceScanListItem])
@@ -216,4 +228,5 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
             }
             for f in scan.findings
         ],
+        payload=scan.payload or {},
     )

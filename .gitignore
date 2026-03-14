@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Agent - contine token-uri secrete
+agent/config.ini
+
+# Server
+server/.env
+server/.venv/
+
+# OS
+.DS_Store
+Thumbs.db

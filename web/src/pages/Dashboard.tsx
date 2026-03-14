@@ -1,18 +1,48 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { getScan, listDeviceScans } from "../api/exposure";
 import type { DeviceScanListItem, ScanDetailResponse } from "../api/types";
 import Navbar from "../components/Navbar";
 
-function pillBorder(sev: string) {
-  const s = sev.toLowerCase();
-  if (s === "high") return "#f2b8b8";
-  if (s === "medium") return "#f2e2b8";
-  if (s === "low") return "#bfe8c5";
-  return "#ddd";
+/* ── helpers ── */
+function getScoreClass(score: number): string {
+  if (score >= 70) return "score-high";
+  if (score >= 40) return "score-medium";
+  if (score > 0)  return "score-low";
+  return "score-none";
 }
 
+function getSeverityClass(sev: string): string {
+  switch (sev.toLowerCase()) {
+    case "high":   return "severity-high";
+    case "medium": return "severity-medium";
+    case "low":    return "severity-low";
+    default:       return "severity-info";
+  }
+}
+
+function formatDate(raw: string): string {
+  try {
+    return new Date(raw).toLocaleString("ro-RO", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return raw;
+  }
+}
+
+const SearchIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+  </svg>
+);
+
 export default function Dashboard() {
-  const [deviceId, setDeviceId] = useState("Utilizator 1");
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [deviceId, setDeviceId] = useState(() => searchParams.get("device") ?? "");
   const [loading, setLoading] = useState(false);
   const [scans, setScans] = useState<DeviceScanListItem[]>([]);
   const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
@@ -20,6 +50,13 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   const canLoad = useMemo(() => deviceId.trim().length > 0, [deviceId]);
+
+  // Auto-load cand se vine cu ?device= din pagina Devices
+  useEffect(() => {
+    const fromUrl = searchParams.get("device");
+    if (fromUrl) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function load() {
     setError(null);
@@ -32,7 +69,7 @@ export default function Dashboard() {
       if (items.length > 0) setSelectedScanId(items[0].scan_id);
     } catch (e) {
       setScans([]);
-      setError(e instanceof Error ? e.message : "Unknown error");
+      setError(e instanceof Error ? e.message : "Eroare necunoscută");
     } finally {
       setLoading(false);
     }
@@ -46,156 +83,218 @@ export default function Dashboard() {
         const d = await getScan(selectedScanId);
         if (!cancel) setDetail(d);
       } catch (e) {
-        if (!cancel) setError(e instanceof Error ? e.message : "Unknown error");
+        if (!cancel) setError(e instanceof Error ? e.message : "Eroare necunoscută");
       }
     })();
-    return () => {
-      cancel = true;
-    };
+    return () => { cancel = true; };
   }, [selectedScanId]);
 
+  const highCount   = detail?.findings.filter(f => f.severity.toLowerCase() === "high").length   ?? 0;
+  const medCount    = detail?.findings.filter(f => f.severity.toLowerCase() === "medium").length ?? 0;
+  const lowCount    = detail?.findings.filter(f => f.severity.toLowerCase() === "low").length    ?? 0;
+
   return (
-    <div style={{ fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif", minHeight: "100vh", background: "#fafafa" }}>
+    <div className="page">
       <Navbar />
-      <div style={{ maxWidth: 1100, margin: "40px auto", padding: "0 16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>Expuneri Virtuale de Securitate</h1>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>Frontend → HTTP → API</div>
+
+      <div className="container" style={{ paddingTop: 32, paddingBottom: 48 }}>
+        {/* ── Page header ── */}
+        <div className="page-header">
+          <h1 className="page-title">Security Dashboard</h1>
+          <p className="page-subtitle">Monitorizează expunerile de securitate ale dispozitivelor tale</p>
         </div>
 
-        <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
-          <input
-            value={deviceId}
-            onChange={(e) => setDeviceId(e.target.value)}
-            placeholder="device_id (ex: Utilizator 1)"
-            style={{
-              flex: 1,
-              height: 40,
-              padding: "0 12px",
-              borderRadius: 10,
-              border: "1px solid #000000ff",
-              outline: "none",
-            }}
-          />
+        {/* ── Search bar ── */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
+          <div style={{ position: "relative", flex: 1 }}>
+            <span style={{
+              position: "absolute", left: 13, top: "50%",
+              transform: "translateY(-50%)", color: "var(--text-muted)",
+              display: "flex", pointerEvents: "none",
+            }}>
+              <SearchIcon />
+            </span>
+            <input
+              className="form-input"
+              value={deviceId}
+              onChange={(e) => setDeviceId(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && canLoad && !loading && load()}
+              placeholder="ID dispozitiv (ex: Utilizator 1)"
+              style={{ paddingLeft: 36 }}
+            />
+          </div>
           <button
             disabled={!canLoad || loading}
             onClick={load}
-            style={{
-              height: 40,
-              padding: "0 14px",
-              borderRadius: 10,
-              border: "1px solid #000000ff",
-              background: "white",
-              fontWeight: 700,
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
+            className="btn btn-accent"
+            style={{ flexShrink: 0 }}
           >
-            {loading ? "Loading..." : "Load scans"}
+            {loading
+              ? <span className="loading-dots"><span /><span /><span /></span>
+              : "Caută scanări"}
           </button>
         </div>
 
+        {/* ── Error ── */}
         {error && (
-          <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: "1px solid #f2b8b8" }}>
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>Error</div>
-            <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{error}</div>
+          <div className="alert alert-error" style={{ marginBottom: 20 }}>
+            <div className="alert-title">Eroare</div>
+            <div style={{ fontSize: 12, marginTop: 2, whiteSpace: "pre-wrap" }}>{error}</div>
           </div>
         )}
 
-        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "360px 1fr", gap: 16 }}>
-          <div style={{ border: "1px solid #eee", borderRadius: 14, padding: 12, minHeight: 420 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <div style={{ fontWeight: 800 }}>Scans</div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>{scans.length}</div>
+        {/* ── Stats row ── */}
+        {detail && (
+          <div className="stat-grid">
+            <div className="stat-card">
+              <div className={`stat-value ${getScoreClass(detail.exposure_score)}`}
+                style={{ background: "transparent", border: "none", padding: 0 }}>
+                {detail.exposure_score}
+              </div>
+              <div className="stat-label">Exposure Score</div>
             </div>
+            <div className="stat-card">
+              <div className="stat-value" style={{ color: "var(--red)" }}>{highCount}</div>
+              <div className="stat-label">High</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value" style={{ color: "var(--amber)" }}>{medCount}</div>
+              <div className="stat-label">Medium</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value" style={{ color: "var(--green)" }}>{lowCount}</div>
+              <div className="stat-label">Low</div>
+            </div>
+          </div>
+        )}
 
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-              {scans.map((s) => (
-                <button
-                  key={s.scan_id}
-                  onClick={() => setSelectedScanId(s.scan_id)}
-                  style={{
-                    textAlign: "left",
-                    padding: 10,
-                    borderRadius: 12,
-                    border: selectedScanId === s.scan_id ? "1px solid #bbb" : "1px solid #eee",
-                    background: "white",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <div style={{ fontWeight: 800 }}>#{s.scan_id}</div>
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>score: {s.exposure_score}</div>
-                  </div>
-                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>{s.created_at}</div>
-                </button>
-              ))}
+        {/* ── Main grid ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, alignItems: "start" }}
+          className="dashboard-grid">
 
+          {/* Scan list */}
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Scanări</span>
+              <span className="card-badge">{scans.length}</span>
+            </div>
+            <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {scans.length === 0 && (
-                <div style={{ fontSize: 13, opacity: 0.7, padding: 10 }}>
-                  No scans. Create one via agent or /docs, then Load scans.
+                <div className="empty-state">
+                  Nicio scanare găsită.<br />
+                  <span style={{ fontSize: 12 }}>Caută un dispozitiv mai sus.</span>
                 </div>
               )}
+              {scans.map((s) => (
+                <div
+                  key={s.scan_id}
+                  onClick={() => setSelectedScanId(s.scan_id)}
+                  className={`scan-item ${selectedScanId === s.scan_id ? "active" : ""}`}
+                >
+                  <div className="scan-item-row">
+                    <span className="scan-id">#{s.scan_id}</span>
+                    <span className={`score-badge ${getScoreClass(s.exposure_score)}`}>
+                      {s.exposure_score}
+                    </span>
+                  </div>
+                  <div className="scan-date">{formatDate(s.created_at)}</div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div style={{ border: "1px solid #eee", borderRadius: 14, padding: 12, minHeight: 420 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <div style={{ fontWeight: 800 }}>Scan detail</div>
-              {detail && (
-                <div style={{ fontSize: 12, opacity: 0.7 }}>
-                  score: {detail.exposure_score} · findings: {detail.findings.length}
+          {/* Findings detail */}
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Detalii Scanare</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {detail && (
+                  <span className="card-badge">{detail.findings.length} findings</span>
+                )}
+                {detail && (
+                  <button
+                    onClick={() => navigate(`/scans/${detail.scan_id}`)}
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 11, border: "1px solid var(--border)" }}
+                  >
+                    Detalii complete →
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="card-body">
+              {!detail && (
+                <div className="empty-state">
+                  Selectează o scanare din lista din stânga.
                 </div>
               )}
-            </div>
 
-            {!detail && (
-              <div style={{ marginTop: 10, fontSize: 13, opacity: 0.7 }}>
-                Select a scan.
-              </div>
-            )}
+              {detail && (
+                <>
+                  {/* Meta */}
+                  <div style={{
+                    padding: "10px 12px",
+                    background: "var(--bg-elevated)",
+                    borderRadius: 10,
+                    fontSize: 12,
+                    color: "var(--text-secondary)",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "6px 20px",
+                    marginBottom: 16,
+                  }}>
+                    <span>
+                      <span style={{ color: "var(--text-muted)", marginRight: 4 }}>Device</span>
+                      <strong style={{ color: "var(--text-primary)", fontFamily: "'JetBrains Mono', monospace" }}>
+                        {detail.device_id}
+                      </strong>
+                    </span>
+                    <span>
+                      <span style={{ color: "var(--text-muted)", marginRight: 4 }}>Data</span>
+                      <strong style={{ color: "var(--text-primary)" }}>{formatDate(detail.created_at)}</strong>
+                    </span>
+                  </div>
 
-            {detail && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontSize: 13, opacity: 0.85 }}>
-                  <div><b>device_id:</b> {detail.device_id}</div>
-                  <div><b>created_at:</b> {detail.created_at}</div>
-                </div>
-
-                <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-                  {detail.findings.map((f) => (
-                    <div key={`${detail.scan_id}:${f.rule_id}:${f.title}`}
-                      style={{ border: "1px solid #eee", borderRadius: 14, padding: 12 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                        <div style={{ fontWeight: 900 }}>{f.title}</div>
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <span
-                            style={{
-                              border: `1px solid ${pillBorder(f.severity)}`,
-                              borderRadius: 999,
-                              padding: "2px 8px",
-                              fontSize: 12,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {f.severity}
-                          </span>
-                          <span style={{ fontSize: 12, opacity: 0.7 }}>{f.rule_id}</span>
+                  {/* Findings */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {detail.findings.length === 0 && (
+                      <div style={{
+                        padding: "30px 0", textAlign: "center",
+                        color: "var(--green)", fontSize: 13,
+                      }}>
+                        ✓ Nicio vulnerabilitate detectată
+                      </div>
+                    )}
+                    {detail.findings.map((f) => (
+                      <div
+                        key={`${detail.scan_id}:${f.rule_id}:${f.title}`}
+                        className={`finding-card ${f.severity.toLowerCase()}`}
+                      >
+                        <div className="finding-header">
+                          <span className="finding-title">{f.title}</span>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                            <span className={`severity-badge ${getSeverityClass(f.severity)}`}>
+                              {f.severity}
+                            </span>
+                            <span style={{
+                              fontSize: 10, color: "var(--text-muted)",
+                              fontFamily: "'JetBrains Mono', monospace",
+                            }}>
+                              {f.rule_id}
+                            </span>
+                          </div>
                         </div>
+                        <div className="finding-rec">{f.recommendation}</div>
                       </div>
-                      <div style={{ marginTop: 8, fontSize: 13, opacity: 0.85 }}>
-                        {f.recommendation}
-                      </div>
-                    </div>
-                  ))}
-                  {detail.findings.length === 0 && (
-                    <div style={{ fontSize: 13, opacity: 0.7 }}>No findings.</div>
-                  )}
-                </div>
-              </div>
-            )}
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
+

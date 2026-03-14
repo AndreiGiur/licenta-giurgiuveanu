@@ -42,6 +42,7 @@ class ScanIn(BaseModel):
     os: Dict[str, Any]
     network: Dict[str, Any] = {}
     processes: List[Dict[str, Any]] = []
+    software: List[Dict[str, Any]] = []
 
 
 class ScanCreateOut(BaseModel):
@@ -63,3 +64,4 @@ class ScanDetailOut(BaseModel):
     created_at: str
     exposure_score: int
     findings: List[Dict[str, Any]]
+    payload: Dict[str, Any] = {}

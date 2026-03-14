@@ -12,10 +12,27 @@ export type DeviceScanListItem = {
   exposure_score: number;
 };
 
+export type ScanPayload = {
+  os?: {
+    system?: string;
+    release?: string;
+    version?: string;
+    machine?: string;
+    hostname?: string;
+    is_admin?: boolean;
+  };
+  network?: {
+    open_ports?: number[];
+  };
+  processes?: { pid: number; name: string; memory_mb: number; username?: string }[];
+  software?: { name: string; version?: string }[];
+};
+
 export type ScanDetailResponse = {
   scan_id: number;
   device_id: string;
   created_at: string;
   exposure_score: number;
   findings: Finding[];
+  payload?: ScanPayload;
 };

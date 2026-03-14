@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { fetchMe, logoutUser } from "../api/auth";
+
+const ShieldIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+    stroke="#021018" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  </svg>
+);
 
 export default function Navbar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -18,82 +26,58 @@ export default function Navbar() {
     try {
       await logoutUser();
       navigate("/login", { replace: true });
-    } catch (e) {
-      console.error("Logout failed:", e);
+    } catch {
       navigate("/login", { replace: true });
     }
   }
 
+  const isActive = (path: string) => location.pathname === path;
+
   return (
-    <div
-      style={{
-        borderBottom: "1px solid #e5e5e5",
-        background: "#fafafa",
-        padding: "12px 20px",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1100,
-          margin: "0 auto",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
-          <div style={{ fontWeight: 900, fontSize: 16 }}>Exposure Platform</div>
-          <button
-            onClick={() => navigate("/dashboard")}
-            style={{
-              background: "transparent",
-              border: "none",
-              fontWeight: 600,
-              cursor: "pointer",
-              fontSize: 14,
-              padding: "6px 12px",
-            }}
-          >
-            Dashboard
-          </button>
-          <button
-            onClick={() => navigate("/devices")}
-            style={{
-              background: "transparent",
-              border: "none",
-              fontWeight: 600,
-              cursor: "pointer",
-              fontSize: 14,
-              padding: "6px 12px",
-            }}
-          >
-            Devices
-          </button>
+    <nav className="navbar">
+      <div className="navbar-inner">
+        {/* Left: brand + nav links */}
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <div className="navbar-brand" onClick={() => navigate("/dashboard")}>
+            <div className="navbar-brand-icon">
+              <ShieldIcon />
+            </div>
+            <span className="navbar-brand-name">VulnWatch</span>
+          </div>
+
+          <div className="navbar-nav">
+            <button
+              onClick={() => navigate("/dashboard")}
+              className={`nav-link ${isActive("/dashboard") ? "active" : ""}`}
+            >
+              Dashboard
+            </button>
+            <button
+              onClick={() => navigate("/devices")}
+              className={`nav-link ${isActive("/devices") ? "active" : ""}`}
+            >
+              Devices
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+        {/* Right: user badge + logout */}
+        <div className="navbar-right">
           {email && (
-            <div style={{ fontSize: 13, opacity: 0.7 }}>{email}</div>
+            <div className="user-badge">
+              <span className="user-dot" />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{email}</span>
+            </div>
           )}
           <button
             onClick={handleLogout}
             disabled={loggingOut}
-            style={{
-              background: "#0f0f0f",
-              color: "white",
-              border: "none",
-              borderRadius: 8,
-              padding: "6px 16px",
-              fontWeight: 700,
-              cursor: loggingOut ? "not-allowed" : "pointer",
-              fontSize: 13,
-              opacity: loggingOut ? 0.5 : 1,
-            }}
+            className="btn btn-danger btn-sm"
           >
             {loggingOut ? "..." : "Logout"}
           </button>
         </div>
       </div>
-    </div>
+    </nav>
   );
 }
