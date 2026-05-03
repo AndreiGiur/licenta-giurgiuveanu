@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { loginUser, saveSessionToken, getSessionToken, clearSessionToken, fetchMe } from "../api/auth";
+import { loginUser, fetchMe } from "../api/auth";
 
 const ShieldIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -16,12 +16,13 @@ function isValidEmail(email: string): boolean {
 export default function Login() {
   const navigate = useNavigate();
 
+  // Daca user-ul are deja sesiune valida (cookie HttpOnly), il redirectam.
   useEffect(() => {
-    const token = getSessionToken();
-    if (!token) return;
+    let cancelled = false;
     fetchMe()
-      .then(() => navigate("/dashboard", { replace: true }))
-      .catch(() => clearSessionToken());
+      .then(() => { if (!cancelled) navigate("/dashboard", { replace: true }); })
+      .catch(() => { /* nu e logat — ramane pe pagina */ });
+    return () => { cancelled = true; };
   }, [navigate]);
 
   const [email, setEmail] = useState("");
@@ -40,8 +41,7 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      const tok = await loginUser({ email: normalizedEmail, password: normalizedPassword });
-      saveSessionToken(tok.session_token);
+      await loginUser({ email: normalizedEmail, password: normalizedPassword });
       navigate("/dashboard");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Eroare la autentificare";

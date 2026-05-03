@@ -1,9 +1,0 @@
-[agent]
-# URL-ul backend-ului (fara slash la final)
-api_base = http://127.0.0.1:8000/api/v1
-
-# Device UID-ul ales la inregistrare (ex: laptop-work)
-device_uid = laptop-work
-
-# Token-ul primit dupa inregistrarea dispozitivului in platforma
-device_token = COPIAZA_TOKEN_UL_DE_PE_PLATFORMA_AICI

@@ -30,7 +30,7 @@ export type ScanPayload = {
 
 export type ScanDetailResponse = {
   scan_id: number;
-  device_id: string;
+  device_uid: string;
   created_at: string;
   exposure_score: number;
   findings: Finding[];

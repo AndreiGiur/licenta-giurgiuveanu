@@ -1,0 +1,186 @@
+"""Teste pentru device enrollment, scan submission si izolare multi-tenant."""
+from fastapi.testclient import TestClient
+
+from server.app.main import app
+
+
+def _enroll_device(client, headers, device_uid="my-laptop", name="My Laptop"):
+    r = client.post("/api/v1/devices",
+                    headers=headers,
+                    json={"device_uid": device_uid, "name": name})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _sample_scan_payload(device_uid: str) -> dict:
+    return {
+        "device_uid": device_uid,
+        "os": {"system": "Linux", "release": "6.5", "version": "1", "machine": "x86_64",
+               "hostname": "host", "is_admin": False},
+        "network": {"open_ports": [22, 445]},
+        "processes": [{"pid": 1, "name": "init", "memory_mb": 5}],
+        "software": [],
+    }
+
+
+# ── Devices ──────────────────────────────────────────────────────────────────
+
+def test_create_device_returns_token_only_once(auth_client):
+    client, headers = auth_client["client"], auth_client["headers"]
+    created = _enroll_device(client, headers, device_uid="dev-1", name="Dev 1")
+    assert "device_token" in created
+    plain_token = created["device_token"]
+    assert len(plain_token) >= 32  # token urlsafe(32)
+
+    # Listarea NU trebuie sa contina tokenul
+    r = client.get("/api/v1/devices", headers=headers)
+    assert r.status_code == 200
+    devices = r.json()
+    assert len(devices) == 1
+    assert "device_token" not in devices[0]
+
+
+def test_cannot_create_duplicate_device_uid_for_same_user(auth_client):
+    client, headers = auth_client["client"], auth_client["headers"]
+    _enroll_device(client, headers, device_uid="dup")
+    r = client.post("/api/v1/devices",
+                    headers=headers,
+                    json={"device_uid": "dup", "name": "Other"})
+    assert r.status_code == 400
+
+
+def test_devices_endpoint_requires_auth(client):
+    # TestClient pastreaza cookie-uri intre teste; le stergem ca sa fim cu adevarat anonimi.
+    client.cookies.clear()
+    r = client.get("/api/v1/devices")
+    assert r.status_code == 401
+
+
+def test_delete_device_cascades(auth_client):
+    client, headers = auth_client["client"], auth_client["headers"]
+    created = _enroll_device(client, headers, device_uid="del-me")
+    token = created["device_token"]
+
+    # trimitem o scanare
+    r = client.post("/api/v1/scans",
+                    headers={"X-Device-Token": token},
+                    json=_sample_scan_payload("del-me"))
+    assert r.status_code == 200
+
+    # stergem device-ul
+    r = client.delete("/api/v1/devices/del-me", headers=headers)
+    assert r.status_code == 204
+
+    # listarea de scan-uri trebuie sa intoarca 404
+    r = client.get("/api/v1/devices/del-me/scans", headers=headers)
+    assert r.status_code == 404
+
+
+# ── Scan submission ──────────────────────────────────────────────────────────
+
+def test_scan_submission_happy_path(auth_client):
+    client, headers = auth_client["client"], auth_client["headers"]
+    created = _enroll_device(client, headers, device_uid="scan-host")
+    token = created["device_token"]
+
+    r = client.post("/api/v1/scans",
+                    headers={"X-Device-Token": token},
+                    json=_sample_scan_payload("scan-host"))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["device_uid"] == "scan-host"
+    assert isinstance(body["exposure_score"], int)
+    # 445 e port riscant → trebuie sa avem cel putin un finding
+    assert any(f["rule_id"] == "NET-OPEN-PORTS-1" for f in body["findings"])
+
+
+def test_scan_submission_rejects_missing_token(auth_client):
+    client, headers = auth_client["client"], auth_client["headers"]
+    _enroll_device(client, headers, device_uid="needs-token")
+    r = client.post("/api/v1/scans", json=_sample_scan_payload("needs-token"))
+    assert r.status_code == 401
+
+
+def test_scan_submission_rejects_invalid_token(auth_client):
+    client, headers = auth_client["client"], auth_client["headers"]
+    _enroll_device(client, headers, device_uid="bad-token")
+    r = client.post("/api/v1/scans",
+                    headers={"X-Device-Token": "totally-fake-token"},
+                    json=_sample_scan_payload("bad-token"))
+    assert r.status_code == 401
+
+
+def test_scan_submission_rejects_token_mismatch_with_uid(auth_client):
+    """Defense-in-depth: un token valid pentru device A nu poate scrie scan-uri pentru device B."""
+    client, headers = auth_client["client"], auth_client["headers"]
+    a = _enroll_device(client, headers, device_uid="dev-a")
+    _enroll_device(client, headers, device_uid="dev-b")
+
+    # token-ul lui A folosit cu device_uid=dev-b
+    r = client.post("/api/v1/scans",
+                    headers={"X-Device-Token": a["device_token"]},
+                    json=_sample_scan_payload("dev-b"))
+    assert r.status_code == 401
+
+
+# ── Multi-tenant izolare ──────────────────────────────────────────────────────
+#
+# Pentru testele multi-tenant folosim instante separate de TestClient, ca sa
+# evitam ca cookie-urile sa se amestece intre useri (TestClient persisteaza
+# cookie-urile peste cereri).
+
+def _new_client_for_user(suffix: str) -> TestClient:
+    c = TestClient(app)
+    email = f"tenant-{suffix}@example.com"
+    password = "password123"
+    c.post("/api/v1/auth/register", json={"email": email, "password": password})
+    c.post("/api/v1/auth/login", json={"email": email, "password": password})
+    return c
+
+
+def test_user_cannot_see_other_users_devices():
+    ca = _new_client_for_user("a")
+    cb = _new_client_for_user("b")
+
+    ca.post("/api/v1/devices", json={"device_uid": "alice-laptop", "name": "Alice"})
+
+    r = cb.get("/api/v1/devices")
+    assert r.status_code == 200
+    uids = [d["device_uid"] for d in r.json()]
+    assert "alice-laptop" not in uids
+
+
+def test_user_cannot_access_other_users_scan():
+    ca = _new_client_for_user("iso-a")
+    cb = _new_client_for_user("iso-b")
+
+    created = ca.post("/api/v1/devices",
+                      json={"device_uid": "iso-dev", "name": "Iso"}).json()
+    token = created["device_token"]
+
+    # Scan submission foloseste X-Device-Token, nu cookie. Folosim un client curat
+    # ca sa fie clar ca nu se bazeaza pe sesiune.
+    cscan = TestClient(app)
+    scan_resp = cscan.post("/api/v1/scans",
+                           headers={"X-Device-Token": token},
+                           json=_sample_scan_payload("iso-dev")).json()
+    scan_id = scan_resp["scan_id"]
+
+    r = ca.get(f"/api/v1/scans/{scan_id}")
+    assert r.status_code == 200
+
+    r = cb.get(f"/api/v1/scans/{scan_id}")
+    assert r.status_code == 404
+
+    r = cb.get("/api/v1/devices/iso-dev/scans")
+    assert r.status_code == 404
+
+
+def test_user_cannot_delete_other_users_device():
+    ca = _new_client_for_user("del-a")
+    cb = _new_client_for_user("del-b")
+
+    ca.post("/api/v1/devices", json={"device_uid": "victim", "name": "Victim"})
+
+    r = cb.delete("/api/v1/devices/victim")
+    assert r.status_code == 404

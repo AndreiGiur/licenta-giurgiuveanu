@@ -246,7 +246,7 @@ export default function Dashboard() {
                     <span>
                       <span style={{ color: "var(--text-muted)", marginRight: 4 }}>Device</span>
                       <strong style={{ color: "var(--text-primary)", fontFamily: "'JetBrains Mono', monospace" }}>
-                        {detail.device_id}
+                        {detail.device_uid}
                       </strong>
                     </span>
                     <span>

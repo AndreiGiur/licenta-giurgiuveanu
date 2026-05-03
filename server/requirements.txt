@@ -1,0 +1,10 @@
+# Server requirements
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+sqlalchemy>=2.0.0
+psycopg[binary]>=3.1.0
+pydantic[email]>=2.6.0
+
+# Dev / tests
+pytest>=8.0.0
+httpx>=0.27.0
