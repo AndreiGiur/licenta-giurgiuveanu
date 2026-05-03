@@ -36,3 +36,12 @@ export function listScanJobs(deviceUid: string) {
     `/devices/${encodeURIComponent(deviceUid)}/scan-jobs`,
   );
 }
+
+/** Verifica daca un build de agent este disponibil pe server. */
+export function getAgentDownloadInfo() {
+  return apiGet<{
+    available: boolean;
+    platform: string;
+    size_bytes: number | null;
+  }>("/agent/download/info");
+}

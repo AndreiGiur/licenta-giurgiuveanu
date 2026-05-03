@@ -1,0 +1,2 @@
+# Aici ajunge VulnWatchAgent.exe dupa rularea agent/build.ps1.
+# Fisierul este servit la /api/v1/agent/download/windows.
