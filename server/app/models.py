@@ -78,6 +78,7 @@ class Device(Base):
 
     owner: Mapped["User"] = relationship(back_populates="devices")
     scans: Mapped[list["Scan"]] = relationship(back_populates="device", cascade="all, delete-orphan")
+    scan_jobs: Mapped[list["ScanJob"]] = relationship(back_populates="device", cascade="all, delete-orphan")
 
     @staticmethod
     def generate_token() -> str:
@@ -113,3 +114,58 @@ class Finding(Base):
     recommendation: Mapped[str] = mapped_column(String(512))
 
     scan: Mapped["Scan"] = relationship(back_populates="findings")
+
+
+# ── Scan-on-demand: job queue pentru orchestrarea agent-ului ─────────────────
+#
+# State machine:
+#
+#     pending  ── agent ridica jobul prin GET /agent/jobs/next ──► running
+#     running  ── agent trimite rezultatul prin POST /...result ──► done
+#     running  ── eroare la executie / timeout ─────────────────► failed
+#     pending/running ── user anuleaza ──────────────────────────► cancelled
+#
+# Decoupling: UI creeaza jobul si nu asteapta executia in acelasi request.
+# Agentul polleaza la cateva secunde si executa cand prinde un job pending.
+# Fluxul functioneaza prin firewall/NAT pentru ca toate cererile sunt
+# initiate de agent (outbound HTTPS).
+
+class ScanJobStatus:
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+    ALL = (PENDING, RUNNING, DONE, FAILED, CANCELLED)
+    TERMINAL = (DONE, FAILED, CANCELLED)
+
+
+class ScanJob(Base):
+    __tablename__ = "scan_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+
+    # User-ul care a cerut jobul. Poate fi null pentru auto-scan declansat de
+    # daemon-ul agentului (fara request UI).
+    requested_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    status: Mapped[str] = mapped_column(String(16), default=ScanJobStatus.PENDING, index=True)
+
+    created_at:  Mapped[datetime]            = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    started_at:  Mapped[datetime | None]     = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None]     = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Set la finalizare cu success — face legatura cu raportul produs.
+    scan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("scans.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Mesaj de eroare in caz de failed (max 512c; truncat daca e mai lung).
+    error_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    device: Mapped["Device"] = relationship(back_populates="scan_jobs")
+    scan: Mapped["Scan | None"] = relationship(foreign_keys=[scan_id])

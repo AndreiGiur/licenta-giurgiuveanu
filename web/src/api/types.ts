@@ -36,3 +36,24 @@ export type ScanDetailResponse = {
   findings: Finding[];
   payload?: ScanPayload;
 };
+
+// ── Scan-on-demand ──────────────────────────────────────────────────────────
+
+export type ScanJobStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled";
+
+export type ScanJobResponse = {
+  job_id: number;
+  device_uid: string;
+  status: ScanJobStatus;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  scan_id?: number | null;
+  exposure_score?: number | null;
+  error_message?: string | null;
+};

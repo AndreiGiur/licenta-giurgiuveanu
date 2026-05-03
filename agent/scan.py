@@ -27,6 +27,7 @@ import platform
 import socket
 import stat
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -256,6 +257,54 @@ def api_send_scan(api_base: str, device_token: str, payload: dict) -> dict:
     )
 
 
+# ── Endpoint-uri pentru scan-on-demand (job queue) ────────────────────────────
+
+def api_get_next_job(api_base: str, device_token: str) -> dict | None:
+    """Returneaza dict-ul jobului sau None daca nu sunt joburi pending."""
+    headers = {"X-Device-Token": device_token, "Content-Type": "application/json"}
+    try:
+        r = requests.get(f"{api_base}/agent/jobs/next", headers=headers, timeout=15)
+    except requests.exceptions.ConnectionError:
+        raise ApiError(f"Nu ma pot conecta la {api_base}")
+    except requests.exceptions.RequestException as e:
+        raise ApiError(str(e))
+
+    if r.status_code == 204:
+        return None
+    if not r.ok:
+        try:
+            detail = r.json().get("detail", r.text)
+        except ValueError:
+            detail = r.text
+        raise ApiError(f"HTTP {r.status_code}: {detail}")
+    return r.json()
+
+
+def api_submit_job_result(api_base: str, device_token: str, job_id: int, payload: dict) -> dict:
+    """Trimite rezultatul scan-ului la backend (closed-loop pentru job)."""
+    body = {
+        "os": payload["os"],
+        "network": payload.get("network", {}),
+        "processes": payload.get("processes", []),
+        "software": payload.get("software", []),
+    }
+    return _request(
+        "POST",
+        f"{api_base}/agent/jobs/{job_id}/result",
+        json=body,
+        headers={"X-Device-Token": device_token},
+    )
+
+
+def api_submit_job_failure(api_base: str, device_token: str, job_id: int, error_message: str) -> dict:
+    return _request(
+        "POST",
+        f"{api_base}/agent/jobs/{job_id}/fail",
+        json={"error_message": error_message[:512]},
+        headers={"X-Device-Token": device_token},
+    )
+
+
 # ── Subcomenzi ────────────────────────────────────────────────────────────────
 
 def cmd_enroll(args: argparse.Namespace) -> int:
@@ -395,6 +444,100 @@ def cmd_scan(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_daemon(args: argparse.Namespace) -> int:
+    """
+    Mod daemon: agentul ramane in foreground si polleaza backend-ul pentru
+    joburi pending. Cand UI-ul cere scan, agentul prinde jobul si executa.
+
+    Optional: --auto-interval N declanseaza un scan local la fiecare N secunde
+    chiar daca nu e cerut prin UI (ex: scanari periodice de baseline).
+    """
+    api_base, device_uid, device_token = _get_config_or_die()
+
+    poll_interval = max(1, int(args.poll))
+    auto_interval = int(args.auto_interval) if args.auto_interval else 0
+    once = bool(args.once)
+
+    print("=" * 60)
+    print(" VulnWatch Agent — daemon")
+    print("=" * 60)
+    print(f" API           : {api_base}")
+    print(f" Device UID    : {device_uid}")
+    print(f" Poll interval : {poll_interval}s")
+    print(f" Auto-scan     : {('la fiecare ' + str(auto_interval) + 's') if auto_interval else 'dezactivat'}")
+    print(f" Mode          : {'one-shot (--once)' if once else 'loop'}")
+    print()
+    print("Astept joburi de la backend... (Ctrl+C pentru oprire)")
+    print()
+
+    last_auto_scan = time.monotonic()
+
+    def _run_one_job(job: dict) -> None:
+        job_id = job["job_id"]
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Job #{job_id} primit. Colectez date...")
+        try:
+            data = collect_system_data(device_uid)
+            result = api_submit_job_result(api_base, device_token, job_id, data)
+            score = result.get("exposure_score")
+            scan_id = result.get("scan_id")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Job #{job_id} done. "
+                  f"Scan #{scan_id}, score {score}/100.")
+        except ApiError as e:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Job #{job_id} failed: {e}")
+            try:
+                api_submit_job_failure(api_base, device_token, job_id, str(e))
+            except ApiError:
+                pass
+        except Exception as e:  # ultim resort, sa nu doboram daemon-ul
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Job #{job_id} eroare interna: {e}")
+            try:
+                api_submit_job_failure(api_base, device_token, job_id, f"agent error: {e}")
+            except ApiError:
+                pass
+
+    try:
+        while True:
+            # 1) Polleaza coada pentru un job
+            try:
+                job = api_get_next_job(api_base, device_token)
+            except ApiError as e:
+                # Eroare reproductibila (ex: backend down) — log si continua
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Eroare polling: {e}")
+                if once:
+                    return 6
+                time.sleep(poll_interval)
+                continue
+
+            if job is not None:
+                _run_one_job(job)
+                if once:
+                    return 0
+                # Continua imediat — poate exista alt job pending
+                continue
+
+            # 2) Auto-scan periodic (optional)
+            if auto_interval and (time.monotonic() - last_auto_scan) >= auto_interval:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Auto-scan (interval {auto_interval}s)...")
+                try:
+                    data = collect_system_data(device_uid)
+                    result = api_send_scan(api_base, device_token, data)
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Auto-scan done. "
+                          f"Scan #{result.get('scan_id')}, score {result.get('exposure_score')}/100.")
+                except ApiError as e:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Auto-scan failed: {e}")
+                last_auto_scan = time.monotonic()
+
+            if once:
+                # Niciun job pending si nu ruleaza in loop — iesim
+                print("Niciun job pending. Ies (--once).")
+                return 0
+
+            time.sleep(poll_interval)
+    except KeyboardInterrupt:
+        print("\nDaemon oprit.")
+        return 0
+
+
 def cmd_logout(_args: argparse.Namespace) -> int:
     if CONFIG_FILE.exists():
         CONFIG_FILE.unlink()
@@ -437,8 +580,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_enroll.add_argument("--name", help="Nume afisat (default: 'OS hostname')")
     p_enroll.set_defaults(func=cmd_enroll)
 
-    p_scan = sub.add_parser("scan", help="Ruleaza o scanare (default).")
+    p_scan = sub.add_parser("scan", help="Ruleaza o scanare unica (push direct).")
     p_scan.set_defaults(func=cmd_scan)
+
+    p_daemon = sub.add_parser(
+        "daemon",
+        help="Ramane in foreground si proceseaza joburi cerute din UI (recomandat).",
+    )
+    p_daemon.add_argument("--poll", type=int, default=3,
+                          help="Interval polling pentru joburi noi, in secunde (default: 3).")
+    p_daemon.add_argument("--auto-interval", dest="auto_interval", type=int, default=0,
+                          help="Daca > 0, declanseaza un scan local la fiecare N secunde "
+                               "chiar daca nu e cerut din UI (default: dezactivat).")
+    p_daemon.add_argument("--once", action="store_true",
+                          help="Proceseaza un singur job si iese (util pentru testare).")
+    p_daemon.set_defaults(func=cmd_daemon)
 
     sub.add_parser("logout", help="Sterge configul local.").set_defaults(func=cmd_logout)
     sub.add_parser("status", help="Afiseaza configul curent.").set_defaults(func=cmd_status)
