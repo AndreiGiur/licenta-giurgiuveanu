@@ -1,11 +1,21 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Header, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, Response, status, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .auth import get_db, get_user_by_email, create_password, verify_password, create_session, require_user
-from .models import User, Device, Scan, Finding, Session as DbSession
+from .auth import (
+    clear_session_cookie,
+    create_password,
+    create_session,
+    get_db,
+    get_session_token_for_logout,
+    get_user_by_email,
+    require_user,
+    set_session_cookie,
+    verify_password,
+)
+from .models import User, Device, Scan, Finding, Session as DbSession, hash_token
 from .schemas import (
     RegisterIn,
     LoginIn,
@@ -41,7 +51,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/login", response_model=TokenOut)
-def login(request: Request, payload: LoginIn, db: Session = Depends(get_db)):
+def login(request: Request, response: Response, payload: LoginIn, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
     user = get_user_by_email(db, email)
     if not user or not verify_password(payload.password, user.password_salt, user.password_hash):
@@ -53,6 +63,10 @@ def login(request: Request, payload: LoginIn, db: Session = Depends(get_db)):
         user_agent=request.headers.get("user-agent"),
         ip=request.client.host if request.client else None,
     )
+
+    # Browser-ele primesc cookie HttpOnly. Clientii non-browser (agent, curl,
+    # teste) folosesc tokenul din raspuns prin headerul X-Session-Token.
+    set_session_cookie(response, token)
     return TokenOut(session_token=token)
 
 
@@ -62,16 +76,19 @@ def me(user: User = Depends(require_user)):
 
 
 @router.delete("/auth/logout")
-def logout(db: Session = Depends(get_db), x_session_token: str | None = Header(default=None)):
-    if not x_session_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing session token")
-
-    sess = db.execute(select(DbSession).where(DbSession.token == x_session_token)).scalar_one_or_none()
-    if not sess:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session token")
-
-    db.delete(sess)
-    db.commit()
+def logout(
+    response: Response,
+    db: Session = Depends(get_db),
+    token: str | None = Depends(get_session_token_for_logout),
+):
+    """Logout idempotent: sterge sesiunea din DB daca exista si curata cookie-ul.
+    Nu intoarce 401 daca tokenul lipseste — clientul a vrut deja sa se delogeze."""
+    if token:
+        sess = db.execute(select(DbSession).where(DbSession.token == token)).scalar_one_or_none()
+        if sess:
+            db.delete(sess)
+            db.commit()
+    clear_session_cookie(response)
     return {"ok": True}
 
 
@@ -86,11 +103,14 @@ def create_device(payload: DeviceCreateIn, db: Session = Depends(get_db), user: 
     if existing:
         raise HTTPException(status_code=400, detail="device_uid already exists for this user")
 
+    # Generam tokenul, dar stocam doar hash-ul. Plain-ul este returnat o singura data.
+    plain_token = Device.generate_token()
     device = Device(
         owner_id=user.id,
         device_uid=device_uid,
         name=name,
-        device_token=Device.generate_token(),
+        device_token_hash=hash_token(plain_token),
+        device_token_prefix=plain_token[:8],
     )
     db.add(device)
     db.commit()
@@ -101,7 +121,7 @@ def create_device(payload: DeviceCreateIn, db: Session = Depends(get_db), user: 
         device_uid=device.device_uid,
         name=device.name,
         created_at=device.created_at.isoformat(),
-        device_token=device.device_token,
+        device_token=plain_token,
     )
 
 
@@ -128,13 +148,23 @@ def create_scan(
     if not x_device_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing X-Device-Token")
 
-    device_uid = payload.device_id.strip()
-    device = db.execute(select(Device).where(Device.device_uid == device_uid)).scalar_one_or_none()
-    if not device:
-        raise HTTPException(status_code=404, detail="device not enrolled")
+    device_uid = payload.device_uid.strip()
 
-    if device.device_token != x_device_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid device token")
+    # Cautam device-ul prin hash-ul tokenului. device_uid trebuie sa corespunda
+    # cu device-ul indicat de token (defense in depth: nu lasam un token valid
+    # sa scrie scan-uri pe alt device).
+    token_h = hash_token(x_device_token)
+    device = db.execute(
+        select(Device).where(
+            Device.device_token_hash == token_h,
+            Device.device_uid == device_uid,
+        )
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid device token or device_uid mismatch",
+        )
 
     scan_dict = payload.model_dump()
     score, findings = evaluate(scan_dict)
@@ -160,7 +190,7 @@ def create_scan(
 
     return ScanCreateOut(
         scan_id=scan.id,
-        device_id=device.device_uid,
+        device_uid=device.device_uid,
         exposure_score=score,
         findings=findings,
     )
@@ -215,7 +245,7 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
 
     return ScanDetailOut(
         scan_id=scan.id,
-        device_id=device.device_uid,
+        device_uid=device.device_uid,
         created_at=scan.created_at.isoformat(),
         exposure_score=scan.exposure_score,
         findings=[

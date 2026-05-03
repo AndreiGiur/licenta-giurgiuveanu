@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { registerUser, loginUser, saveSessionToken, getSessionToken, clearSessionToken, fetchMe } from "../api/auth";
+import { registerUser, loginUser, fetchMe } from "../api/auth";
 
 const ShieldIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -17,11 +17,11 @@ export default function Register() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = getSessionToken();
-    if (!token) return;
+    let cancelled = false;
     fetchMe()
-      .then(() => navigate("/dashboard", { replace: true }))
-      .catch(() => clearSessionToken());
+      .then(() => { if (!cancelled) navigate("/dashboard", { replace: true }); })
+      .catch(() => { /* nu e logat — ramane pe pagina */ });
+    return () => { cancelled = true; };
   }, [navigate]);
 
   const [email, setEmail] = useState("");
@@ -45,8 +45,7 @@ export default function Register() {
     setLoading(true);
     try {
       await registerUser({ email: normalizedEmail, password: normalizedPassword });
-      const tok = await loginUser({ email: normalizedEmail, password: normalizedPassword });
-      saveSessionToken(tok.session_token);
+      await loginUser({ email: normalizedEmail, password: normalizedPassword });
       navigate("/dashboard");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Eroare la înregistrare";
@@ -59,7 +58,6 @@ export default function Register() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        {/* Brand */}
         <div className="auth-brand">
           <div className="auth-brand-icon"><ShieldIcon /></div>
           <span className="auth-brand-name">VulnWatch</span>

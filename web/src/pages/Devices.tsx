@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
-import { http } from "../api/http";
-import { getSessionToken } from "../api/auth";
+import { apiDelete, apiGet, apiPost } from "../api/http";
 
 type Device = {
   id: number;
@@ -39,6 +38,7 @@ export default function Devices() {
   const [newDeviceUid, setNewDeviceUid] = useState("");
   const [newDeviceName, setNewDeviceName] = useState("");
   const [createdToken, setCreatedToken] = useState<string | null>(null);
+  const [createdUid, setCreatedUid] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => { loadDevices(); }, []);
@@ -47,12 +47,7 @@ export default function Devices() {
     setLoading(true);
     setError(null);
     try {
-      const token = getSessionToken();
-      if (!token) throw new Error("Sesiune expirată");
-      const data = await http<Device[]>("/api/v1/devices", {
-        method: "GET",
-        headers: { "X-Session-Token": token },
-      });
+      const data = await apiGet<Device[]>("/devices");
       setDevices(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Eroare necunoscută");
@@ -66,15 +61,14 @@ export default function Devices() {
     setError(null);
     setCreating(true);
     setCreatedToken(null);
+    setCreatedUid(null);
     try {
-      const token = getSessionToken();
-      if (!token) throw new Error("Sesiune expirată");
-      const created = await http<DeviceCreateResponse>("/api/v1/devices", {
-        method: "POST",
-        headers: { "X-Session-Token": token },
-        body: { device_uid: newDeviceUid.trim(), name: newDeviceName.trim() },
-      });
+      const created = await apiPost<{ device_uid: string; name: string }, DeviceCreateResponse>(
+        "/devices",
+        { device_uid: newDeviceUid.trim(), name: newDeviceName.trim() },
+      );
       setCreatedToken(created.device_token);
+      setCreatedUid(created.device_uid);
       setNewDeviceUid("");
       setNewDeviceName("");
       await loadDevices();
@@ -89,12 +83,7 @@ export default function Devices() {
     if (!window.confirm(`Stergi dispozitivul "${name}"?\nToate scanarile asociate vor fi sterse.`)) return;
     setError(null);
     try {
-      const token = getSessionToken();
-      if (!token) throw new Error("Sesiune expirata");
-      await http<void>(`/api/v1/devices/${device_uid}`, {
-        method: "DELETE",
-        headers: { "X-Session-Token": token },
-      });
+      await apiDelete(`/devices/${encodeURIComponent(device_uid)}`);
       await loadDevices();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Eroare la stergere");
@@ -115,13 +104,11 @@ export default function Devices() {
       <Navbar />
 
       <div className="container" style={{ paddingTop: 32, paddingBottom: 48 }}>
-        {/* ── Page header ── */}
         <div className="page-header">
           <h1 className="page-title">Dispozitive</h1>
           <p className="page-subtitle">Gestionează dispozitivele înregistrate în platformă</p>
         </div>
 
-        {/* ── Error ── */}
         {error && (
           <div className="alert alert-error" style={{ marginBottom: 20 }}>
             <div className="alert-title">Eroare</div>
@@ -134,7 +121,12 @@ export default function Devices() {
           <div className="alert alert-success" style={{ marginBottom: 20 }}>
             <div className="alert-title">✓ Dispozitiv înregistrat cu succes!</div>
             <p style={{ fontSize: 12, margin: "6px 0 10px", color: "var(--text-secondary)" }}>
-              Copiază acest token pentru agentul tău. Nu va mai fi afişat:
+              Copiază acest token pentru agentul tău. Nu va mai fi afişat după închiderea acestui mesaj.
+            </p>
+            <p style={{ fontSize: 11, margin: "0 0 10px", color: "var(--text-muted)" }}>
+              Sau, mai simplu: rulează <code style={{ background: "var(--bg-elevated)", padding: "1px 6px", borderRadius: 4 }}>
+                python scan.py enroll
+              </code> in agent — credenţialele tale vor crea automat dispozitivul şi vor salva tokenul local.
             </p>
             <div style={{ position: "relative" }}>
               <div className="token-block">{createdToken}</div>
@@ -152,6 +144,11 @@ export default function Devices() {
                 <CopyIcon /> {copied ? "Copiat!" : "Copiază"}
               </button>
             </div>
+            {createdUid && (
+              <p style={{ fontSize: 11, marginTop: 8, color: "var(--text-muted)" }}>
+                Device UID: <code>{createdUid}</code>
+              </p>
+            )}
           </div>
         )}
 
@@ -229,7 +226,7 @@ export default function Devices() {
                     </div>
                     <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                       <button
-                        onClick={() => navigate(`/dashboard?device=${d.device_uid}`)}
+                        onClick={() => navigate(`/dashboard?device=${encodeURIComponent(d.device_uid)}`)}
                         className="btn btn-accent btn-sm"
                       >
                         Scanări

@@ -1,14 +1,14 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import Any, Dict, List
 
 
 class RegisterIn(BaseModel):
-    email: str = Field(min_length=5, max_length=255)
+    email: EmailStr
     password: str = Field(min_length=8, max_length=128)
 
 
 class LoginIn(BaseModel):
-    email: str = Field(min_length=5, max_length=255)
+    email: EmailStr
     password: str = Field(min_length=8, max_length=128)
 
 
@@ -38,7 +38,11 @@ class DeviceCreateOut(DeviceOut):
 
 
 class ScanIn(BaseModel):
-    device_id: str = Field(min_length=1, max_length=128)
+    """
+    Payload trimis de agent. `device_uid` identifica dispozitivul,
+    iar autentificarea se face prin header-ul X-Device-Token.
+    """
+    device_uid: str = Field(min_length=1, max_length=128)
     os: Dict[str, Any]
     network: Dict[str, Any] = {}
     processes: List[Dict[str, Any]] = []
@@ -47,7 +51,7 @@ class ScanIn(BaseModel):
 
 class ScanCreateOut(BaseModel):
     scan_id: int
-    device_id: str
+    device_uid: str
     exposure_score: int
     findings: List[Dict[str, Any]]
 
@@ -60,7 +64,7 @@ class DeviceScanListItem(BaseModel):
 
 class ScanDetailOut(BaseModel):
     scan_id: int
-    device_id: str
+    device_uid: str
     created_at: str
     exposure_score: int
     findings: List[Dict[str, Any]]

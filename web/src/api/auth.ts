@@ -1,54 +1,27 @@
-import { http } from "./http";
+import { apiDelete, apiGet, apiPost } from "./http";
 
-const TOKEN_KEY = "session_token";
+/**
+ * Frontend-ul NU mai stocheaza tokenul de sesiune. Backend-ul seteaza un
+ * cookie HttpOnly la /auth/login si il sterge la /auth/logout. Browser-ul
+ * il trimite automat la fiecare cerere (datorita `credentials: "include"`).
+ */
 
-export function saveSessionToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+export type Me = { id: number; email: string };
+
+export async function registerUser(input: { email: string; password: string }): Promise<Me> {
+  return apiPost<typeof input, Me>("/auth/register", input);
 }
 
-export function getSessionToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+export async function loginUser(input: { email: string; password: string }): Promise<void> {
+  // Raspunsul contine si session_token, dar nu il folosim in browser
+  // (cookie-ul HttpOnly e sursa de adevar).
+  await apiPost<typeof input, { session_token: string }>("/auth/login", input);
 }
 
-export function clearSessionToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-export async function registerUser(input: { email: string; password: string }): Promise<{ id: number; email: string }> {
-  return http<{ id: number; email: string }>("/api/v1/auth/register", {
-    method: "POST",
-    body: input,
-  });
-}
-
-export async function loginUser(input: { email: string; password: string }): Promise<{ session_token: string }> {
-  return http<{ session_token: string }>("/api/v1/auth/login", {
-    method: "POST",
-    body: input,
-  });
-}
-
-export async function fetchMe(): Promise<{ id: number; email: string }> {
-  const tok = getSessionToken();
-  if (!tok) throw new Error("Missing session token");
-
-  return http<{ id: number; email: string }>("/api/v1/auth/me", {
-    method: "GET",
-    headers: {
-      "X-Session-Token": tok,
-    },
-  });
+export async function fetchMe(): Promise<Me> {
+  return apiGet<Me>("/auth/me");
 }
 
 export async function logoutUser(): Promise<void> {
-  const tok = getSessionToken();
-  if (!tok) throw new Error("Missing session token");
-
-  await http<{ ok: boolean }>("/api/v1/auth/logout", {
-    method: "DELETE",
-    headers: {
-      "X-Session-Token": tok,
-    },
-  });
-  clearSessionToken();
+  await apiDelete<{ ok: boolean }>("/auth/logout");
 }
