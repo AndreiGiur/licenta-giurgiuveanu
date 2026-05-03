@@ -1,0 +1,3 @@
+# Doar pentru build (nu sunt incluse in bundle)
+-r requirements.txt
+pyinstaller>=6.5.0

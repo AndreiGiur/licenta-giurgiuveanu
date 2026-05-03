@@ -1,112 +1,126 @@
 # VulnWatch Agent
 
-Agent local care colectează date despre sistem și le trimite către backend
-pentru evaluare. Configurat o singură dată cu `enroll`, apoi pornește scanări
-oricând cu `scan.py`.
+Agent local care colectează date despre sistem și le trimite către backend.
+Suportă **trei moduri** de operare:
 
-## Instalare
+| Mod        | Pornire                  | UX                                       |
+| ---------- | ------------------------ | ---------------------------------------- |
+| GUI        | dublu-click pe `.exe`    | **Zero terminal**. Recomandat.           |
+| Daemon CLI | `python scan.py daemon`  | Foreground în terminal                   |
+| One-shot   | `python scan.py scan`    | Push direct, ideal pentru cron/Task Sched|
+
+## Modul recomandat — GUI + .exe (zero terminal)
+
+### Pe mașina pe care rulează **backend-ul**, build-uiești `.exe`-ul **o singură dată**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File agent\build.ps1
+```
+
+Scriptul:
+- creează un venv local pentru build (`.venv-build`),
+- instalează `pyinstaller`, `pillow`, `pystray`, `requests`, `psutil`,
+- produce `dist\VulnWatchAgent.exe` (~30 MB),
+- copiază exe-ul în `server/app/static/agent/` ca să fie servit la
+  `/api/v1/agent/download/windows`.
+
+### Pe orice mașină pe care vrei să o monitorizezi
+
+1. Login în UI → **Devices** → **↓ Descarcă .exe** (banner deasupra listei).
+2. **Dublu-click** pe `VulnWatchAgent.exe` (descărcat din UI).
+3. La prima rulare se deschide o fereastră grafică:
+   - completezi **Email**, **Parolă**, **API URL**, **Device UID**, **Nume**
+   - bifezi (recomandat) "Pornește automat la logon"
+   - apeși **Înrolează dispozitiv**
+4. Fereastra se transformă în **panoul de status**:
+   - dot verde + "Daemon activ"
+   - butoane: **Scan now** / **Pauză** / **Deschide dashboard** / **Autostart** / **Ieșire**
+   - log live al joburilor
+5. Iconul în **system tray** (lângă ceas) — chiar dacă închizi fereastra cu X,
+   daemon-ul rămâne să răspundă la "Scan now" din UI. Click dreapta pe icon →
+   meniu cu Pauză / Deschide dashboard / Ieșire.
+6. La logon următor, agent-ul pornește automat (dacă ai bifat autostart).
+
+**Totul fără să tastezi vreo comandă.**
+
+## Modul daemon CLI (alternativ, fără .exe)
+
+Dacă preferi terminalul sau ești pe Linux:
 
 ```bash
 cd agent
 pip install -r requirements.txt
+python scan.py enroll        # interactiv
+python scan.py daemon        # foreground; răspunde la "Scan now"
 ```
 
-Necesită Python 3.10+.
+Opțiuni `daemon`:
+- `--poll N` — interval polling (default 3s)
+- `--auto-interval N` — scan automat la fiecare N sec
+- `--once` — procesează un singur job și iese (testare)
 
-## Înrolare (o singură dată)
+## Modul one-shot
 
-```bash
-python scan.py enroll
-```
+`python scan.py scan` — o scanare unică (push direct la `/scans`). Util pentru
+cron / Task Scheduler dacă nu vrei daemon persistent.
 
-Comanda este interactivă:
-
-1. Cere email și parolă (același cont ca în UI). Dacă contul nu există,
-   întreabă dacă să-l creeze.
-2. Cere un *device UID* (default: hostname-ul mașinii) și un nume afișat.
-3. Creează dispozitivul în backend și **salvează tokenul automat** la
-   `~/.vulnwatch/config.ini` (permisiuni `0600` pe POSIX).
-
-User-ul nu mai trebuie să copieze tokenul manual — fluxul e fully automated.
-
-### Opțiuni non-interactive
-
-```bash
-python scan.py enroll --email me@example.com --password '...' \
-                       --device-uid laptop-work --name "Work Laptop" \
-                       --api http://127.0.0.1:8000/api/v1
-```
-
-## Rulare scan
-
-```bash
-python scan.py
-# sau explicit:
-python scan.py scan
-```
-
-Output exemplu:
+## Toate comenzile
 
 ```
-============================================================
- VulnWatch — scanare
-============================================================
- API        : http://127.0.0.1:8000/api/v1
- Device UID : laptop-work
- Timestamp  : 2026-05-03 12:34:56
- Admin      : False
-
-Colectez date sistem...
-  OS       : Windows 11
-  Hostname : DESKTOP-ABC
-  Porturi  : [135, 445, 5040]
-  Procese  : 50
-  Software : 84 programe
-
-Trimit scanarea...
-
-Scanare trimisa cu succes!
-  Scan ID       : 42
-  Exposure Score: 38/100
-  Findings      : 2
-
-Vulnerabilitati detectate:
-  [HIGH]  Porturi cu risc ridicate expuse
-           Inchide porturile neutilizate din firewall...
-  [MED]   Sesiune activa cu privilegii de administrator
-           Foloseste un cont standard pentru activitatile zilnice...
-
-Vezi rezultatele: http://127.0.0.1:5173/dashboard?device=laptop-work
+python scan.py                    GUI (dacă fără argumente)
+python scan.py gui                GUI explicit
+python scan.py enroll             înrolare interactivă în terminal
+python scan.py scan               scanare unică, push direct
+python scan.py daemon [--poll N --auto-interval N --once]
+python scan.py status             config curent (fără token)
+python scan.py logout             șterge configul local
+python scan.py autostart enable   înregistrează pornirea la logon
+python scan.py autostart disable  scoate înregistrarea
+python scan.py autostart status
 ```
 
-## Comenzi disponibile
+## Autostart — cum funcționează
 
-| Comandă                | Descriere                                     |
-| ---------------------- | --------------------------------------------- |
-| `python scan.py enroll`| Înregistrare interactivă (login + creare device) |
-| `python scan.py`       | Rulează o scanare (implicit)                  |
-| `python scan.py scan`  | Idem, explicit                                |
-| `python scan.py status`| Afișează configul curent (fără token)         |
-| `python scan.py logout`| Șterge configul local                         |
+Cross-platform, **fără admin**:
+
+| Platformă | Mecanism                                                                        |
+| --------- | ------------------------------------------------------------------------------- |
+| Windows   | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (per user, fără elevation) |
+| Linux     | `~/.config/systemd/user/vulnwatch-agent.service` + `systemctl --user enable`    |
+| macOS     | `~/Library/LaunchAgents/com.vulnwatch.agent.plist` + `launchctl load`           |
+
+Pe Windows, valoarea în registry pointează la `VulnWatchAgent.exe daemon`
+(sau `pythonw.exe scan.py daemon` dacă rulezi din sursă fără bundle).
+
+## Layout fișiere (pentru defense)
+
+```
+agent/
+├── core.py               Logica de bază (collect, HTTP, daemon loop)
+├── scan.py               Entry point: dispatcher CLI sau GUI
+├── gui.py                Interfața Tkinter (enrollment + status + log live)
+├── tray.py               Icon în system tray (pystray + Pillow)
+├── autostart.py          HKCU Run / systemd / launchd
+├── VulnWatchAgent.spec   PyInstaller spec (--onefile, console=False)
+├── build.ps1             Script one-click pentru build .exe
+├── requirements.txt      Runtime deps (psutil, requests, pillow, pystray)
+└── requirements-dev.txt  + pyinstaller (doar pentru build)
+```
+
+`core.py` nu importă nimic legat de UI. `scan.py` nu cunoaște `tkinter`/`pystray`
+direct (le importă lazy). Astfel, modul CLI funcționează și pe servere fără X.
 
 ## Date colectate
 
-| Categorie  | Pe Windows                                                    | Pe Linux/macOS                |
-| ---------- | ------------------------------------------------------------- | ----------------------------- |
-| OS         | system, release, version, hostname, is_admin                  | idem                          |
-| Network    | porturi TCP în LISTEN                                         | idem (poate necesita root)    |
-| Processes  | top 50 după consum memorie (PID, nume, MB, user)              | idem                          |
-| Software   | toate programele din `Uninstall` (registry HKLM)              | — (gol; placeholder)          |
-
-> **Notă POSIX**: `psutil.net_connections()` poate cere privilegii root pe Linux
-> pentru a vedea conexiunile altor utilizatori. Agent-ul tratează `AccessDenied`
-> grațios și raportează doar ce poate citi.
+| Categorie | Pe Windows                                            | Pe Linux/macOS               |
+| --------- | ----------------------------------------------------- | ---------------------------- |
+| OS        | system, release, version, hostname, is_admin          | idem                         |
+| Network   | porturi TCP în LISTEN                                 | idem (poate cere root)       |
+| Processes | top 50 după consum memorie                            | idem                         |
+| Software  | toate programele din `Uninstall` (registry HKLM)      | — (gol)                      |
 
 ## Locația configului
 
-```
-~/.vulnwatch/config.ini
-```
-
-Conține `api_base`, `device_uid` și `device_token`. Pe sisteme POSIX permisiunile
-sunt `0600`. Folosește `python scan.py logout` pentru ștergere.
+`~/.vulnwatch/config.ini` — `api_base`, `device_uid`, `device_token`. Pe POSIX
+permisiuni 0600. Folosește `python scan.py logout` sau **Ieșire** + ștergerea
+manuală a fișierului pentru reset.
