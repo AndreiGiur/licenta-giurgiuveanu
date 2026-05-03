@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
-import { apiDelete, apiGet, apiPost } from "../api/http";
-import { requestScan, getScanJob } from "../api/exposure";
+import { apiDelete, apiGet, apiPost, API_BASE_URL } from "../api/http";
+import { requestScan, getScanJob, getAgentDownloadInfo } from "../api/exposure";
 import type { ScanJobResponse } from "../api/types";
 
 type Device = {
@@ -55,8 +55,14 @@ export default function Devices() {
   // Tinem ref-uri ca sa anulam polling-urile la unmount.
   const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
+  // Disponibilitatea agent-ului pentru download (depinde daca a fost build-uit pe server).
+  const [agentInfo, setAgentInfo] = useState<{ available: boolean; size_bytes: number | null } | null>(null);
+
   useEffect(() => {
     loadDevices();
+    getAgentDownloadInfo()
+      .then(info => setAgentInfo({ available: info.available, size_bytes: info.size_bytes }))
+      .catch(() => setAgentInfo({ available: false, size_bytes: null }));
     return () => {
       // cleanup la unmount
       Object.values(pollTimers.current).forEach(t => clearTimeout(t));
@@ -214,6 +220,41 @@ export default function Devices() {
         <div className="page-header">
           <h1 className="page-title">Dispozitive</h1>
           <p className="page-subtitle">Gestionează dispozitivele înregistrate în platformă</p>
+        </div>
+
+        {/* ── Agent download banner ── */}
+        <div style={{
+          padding: "14px 16px",
+          marginBottom: 20,
+          background: "var(--bg-elevated)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          flexWrap: "wrap",
+        }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+              Instaleaza VulnWatch Agent (Windows)
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              Descarca, dublu-click, completeaza email-ul si parola in fereastra. Zero terminal.
+            </div>
+          </div>
+          {agentInfo?.available ? (
+            <a
+              href={`${API_BASE_URL}/agent/download/windows`}
+              className="btn btn-accent"
+              style={{ textDecoration: "none" }}
+            >
+              ↓ Descarca .exe {agentInfo.size_bytes ? `(${(agentInfo.size_bytes / (1024 * 1024)).toFixed(1)} MB)` : ""}
+            </a>
+          ) : (
+            <span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+              Build indisponibil — ruleaza <code>agent/build.ps1</code> pe serverul backend.
+            </span>
+          )}
         </div>
 
         {error && (
