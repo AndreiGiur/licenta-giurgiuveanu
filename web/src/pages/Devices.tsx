@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
-import { apiDelete, apiGet, apiPost } from "../api/http";
+import { apiDelete, apiGet, apiPost, API_BASE_URL } from "../api/http";
+import { requestScan, getScanJob, getAgentDownloadInfo } from "../api/exposure";
+import type { ScanJobResponse } from "../api/types";
 
 type Device = {
   id: number;
@@ -11,6 +13,10 @@ type Device = {
 };
 
 type DeviceCreateResponse = Device & { device_token: string };
+
+// Cat asteapta UI-ul ca daemon-ul sa preia jobul inainte sa avertizeze user-ul.
+const PICKUP_TIMEOUT_MS = 30_000;
+const POLL_INTERVAL_MS  = 2_000;
 
 function formatDate(raw: string): string {
   try {
@@ -41,7 +47,27 @@ export default function Devices() {
   const [createdUid, setCreatedUid] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => { loadDevices(); }, []);
+  // Map device_uid -> ultimul status job afisat in UI. Folosit pentru
+  // butonul "Scan now" si pentru avertismente cand daemon-ul nu raspunde.
+  const [activeJob, setActiveJob] = useState<Record<string, ScanJobResponse>>({});
+  // Map device_uid -> mesaj de notificare ("pornit", "finalizat", "esuat")
+  const [jobNotice, setJobNotice] = useState<Record<string, string>>({});
+  // Tinem ref-uri ca sa anulam polling-urile la unmount.
+  const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Disponibilitatea agent-ului pentru download (depinde daca a fost build-uit pe server).
+  const [agentInfo, setAgentInfo] = useState<{ available: boolean; size_bytes: number | null } | null>(null);
+
+  useEffect(() => {
+    loadDevices();
+    getAgentDownloadInfo()
+      .then(info => setAgentInfo({ available: info.available, size_bytes: info.size_bytes }))
+      .catch(() => setAgentInfo({ available: false, size_bytes: null }));
+    return () => {
+      // cleanup la unmount
+      Object.values(pollTimers.current).forEach(t => clearTimeout(t));
+    };
+  }, []);
 
   async function loadDevices() {
     setLoading(true);
@@ -99,6 +125,93 @@ export default function Devices() {
     } catch { /* ignore */ }
   }
 
+  // ── Scan-on-demand ────────────────────────────────────────────────────────
+  //
+  // Click "Scan now" → POST /devices/{uid}/scan-jobs → primim un job pending.
+  // Polling la POLL_INTERVAL_MS pana cand status devine done/failed/cancelled.
+  // Daca jobul ramane "pending" mai mult de PICKUP_TIMEOUT_MS, avertizam ca
+  // daemon-ul nu raspunde (probabil agentul nu ruleaza pe masina respectiva).
+
+  const stopPolling = useCallback((deviceUid: string) => {
+    const t = pollTimers.current[deviceUid];
+    if (t) {
+      clearTimeout(t);
+      delete pollTimers.current[deviceUid];
+    }
+  }, []);
+
+  const pollJob = useCallback((deviceUid: string, jobId: number, startedAt: number) => {
+    const tick = async () => {
+      try {
+        const job = await getScanJob(jobId);
+        setActiveJob(prev => ({ ...prev, [deviceUid]: job }));
+
+        if (job.status === "done") {
+          stopPolling(deviceUid);
+          setJobNotice(prev => ({
+            ...prev,
+            [deviceUid]: `Scanare finalizata (score ${job.exposure_score ?? "?"}/100).`,
+          }));
+          return;
+        }
+        if (job.status === "failed") {
+          stopPolling(deviceUid);
+          setJobNotice(prev => ({
+            ...prev,
+            [deviceUid]: `Scanare esuata: ${job.error_message ?? "necunoscut"}`,
+          }));
+          return;
+        }
+        if (job.status === "cancelled") {
+          stopPolling(deviceUid);
+          setJobNotice(prev => ({ ...prev, [deviceUid]: "Scanare anulata." }));
+          return;
+        }
+
+        // Inca pending/running. Daca pending dureaza prea mult → avertisment.
+        if (job.status === "pending" && Date.now() - startedAt > PICKUP_TIMEOUT_MS) {
+          setJobNotice(prev => ({
+            ...prev,
+            [deviceUid]:
+              "Agentul nu raspunde. Asigura-te ca ai pornit `python scan.py daemon` pe masina respectiva.",
+          }));
+        }
+
+        pollTimers.current[deviceUid] = setTimeout(tick, POLL_INTERVAL_MS);
+      } catch (e) {
+        stopPolling(deviceUid);
+        setJobNotice(prev => ({
+          ...prev,
+          [deviceUid]: e instanceof Error ? e.message : "Eroare la polling status",
+        }));
+      }
+    };
+    pollTimers.current[deviceUid] = setTimeout(tick, POLL_INTERVAL_MS);
+  }, [stopPolling]);
+
+  async function handleScanNow(deviceUid: string) {
+    setJobNotice(prev => ({ ...prev, [deviceUid]: "Se cere scanare..." }));
+    stopPolling(deviceUid);
+    try {
+      const job = await requestScan(deviceUid);
+      setActiveJob(prev => ({ ...prev, [deviceUid]: job }));
+      setJobNotice(prev => ({
+        ...prev,
+        [deviceUid]: job.status === "running" ? "Scanare in curs..." : "In asteptare...",
+      }));
+      // Daca era deja done (caz teoretic improbabil), nu mai polleaza
+      if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+        return;
+      }
+      pollJob(deviceUid, job.job_id, Date.now());
+    } catch (e) {
+      setJobNotice(prev => ({
+        ...prev,
+        [deviceUid]: e instanceof Error ? e.message : "Eroare la cererea scanarii",
+      }));
+    }
+  }
+
   return (
     <div className="page">
       <Navbar />
@@ -107,6 +220,41 @@ export default function Devices() {
         <div className="page-header">
           <h1 className="page-title">Dispozitive</h1>
           <p className="page-subtitle">Gestionează dispozitivele înregistrate în platformă</p>
+        </div>
+
+        {/* ── Agent download banner ── */}
+        <div style={{
+          padding: "14px 16px",
+          marginBottom: 20,
+          background: "var(--bg-elevated)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          flexWrap: "wrap",
+        }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+              Instaleaza VulnWatch Agent (Windows)
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              Descarca, dublu-click, completeaza email-ul si parola in fereastra. Zero terminal.
+            </div>
+          </div>
+          {agentInfo?.available ? (
+            <a
+              href={`${API_BASE_URL}/agent/download/windows`}
+              className="btn btn-accent"
+              style={{ textDecoration: "none" }}
+            >
+              ↓ Descarca .exe {agentInfo.size_bytes ? `(${(agentInfo.size_bytes / (1024 * 1024)).toFixed(1)} MB)` : ""}
+            </a>
+          ) : (
+            <span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+              Build indisponibil — ruleaza <code>agent/build.ps1</code> pe serverul backend.
+            </span>
+          )}
         </div>
 
         {error && (
@@ -216,7 +364,15 @@ export default function Devices() {
                 </div>
               )}
 
-              {!loading && devices.map((d) => (
+              {!loading && devices.map((d) => {
+                const job = activeJob[d.device_uid];
+                const notice = jobNotice[d.device_uid];
+                const inFlight = job && (job.status === "pending" || job.status === "running");
+                const noticeColor =
+                  job?.status === "done" ? "var(--green)" :
+                  job?.status === "failed" ? "var(--red)" :
+                  inFlight ? "var(--accent)" : "var(--text-muted)";
+                return (
                 <div key={d.id} className="device-card">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -225,6 +381,16 @@ export default function Devices() {
                       <div className="device-meta">înregistrat: {formatDate(d.created_at)}</div>
                     </div>
                     <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button
+                        onClick={() => handleScanNow(d.device_uid)}
+                        disabled={!!inFlight}
+                        className="btn btn-primary btn-sm"
+                        title="Cere o scanare on-demand de la agent"
+                      >
+                        {inFlight
+                          ? <span className="loading-dots"><span /><span /><span /></span>
+                          : "Scan now"}
+                      </button>
                       <button
                         onClick={() => navigate(`/dashboard?device=${encodeURIComponent(d.device_uid)}`)}
                         className="btn btn-accent btn-sm"
@@ -240,8 +406,34 @@ export default function Devices() {
                       </button>
                     </div>
                   </div>
+                  {notice && (
+                    <div style={{
+                      marginTop: 10,
+                      padding: "6px 10px",
+                      fontSize: 12,
+                      borderRadius: 6,
+                      background: "var(--bg-elevated)",
+                      color: noticeColor,
+                      borderLeft: `2px solid ${noticeColor}`,
+                    }}>
+                      {notice}
+                      {job?.status === "done" && job.scan_id && (
+                        <>
+                          {" "}
+                          <button
+                            onClick={() => navigate(`/scans/${job.scan_id}`)}
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: 11, padding: "1px 8px", marginLeft: 4 }}
+                          >
+                            Vezi detalii →
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
