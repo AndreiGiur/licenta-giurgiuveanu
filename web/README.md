@@ -1,73 +1,64 @@
-# React + TypeScript + Vite
+# VulnWatch — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Dashboard React + TypeScript pentru platforma VulnWatch.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- React 19 + React Router 7
+- TypeScript 5.9
+- Vite 7
+- Sesiuni autentificate prin cookie HttpOnly (frontend-ul nu citește/stochează tokenul).
 
-## React Compiler
+## Rulare
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Disponibil pe `http://localhost:5173`. Vite proxy-ează `/api/*` la
+`http://127.0.0.1:8000` (vezi `vite.config.ts`).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Build pentru producție
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build
+npm run preview     # opțional, servește dist/
 ```
+
+## Pagini
+
+| Rută                | Descriere                                              | Acces        |
+| ------------------- | ------------------------------------------------------ | ------------ |
+| `/login`            | Autentificare                                          | public       |
+| `/register`         | Înregistrare cont nou                                  | public       |
+| `/dashboard`        | Listează scanări per device, afișează findings         | protejat     |
+| `/devices`          | Înrolare/listare/ștergere dispozitive                  | protejat     |
+| `/scans/:scanId`    | Detalii scanare (findings, evidence, payload sistem)   | protejat     |
+
+`ProtectedRoute` validează sesiunea contactând `GET /auth/me`. Cookie-ul
+HttpOnly se trimite automat (browser-ul îl gestionează — niciun cod JS nu îl
+citește, ceea ce blochează atacurile XSS din rădăcină).
+
+## Configurare
+
+`web/.env`:
+
+```env
+VITE_API_BASE_URL=/api/v1
+```
+
+În dev, calea relativă funcționează cu proxy-ul Vite. Pentru producție,
+setează URL-ul absolut al backend-ului dacă frontend-ul e servit de pe alt
+domeniu (atenție la CORS și `COOKIE_SAMESITE` în backend).
+
+## Structură API client
+
+Toată logica HTTP trăiește în `src/api/http.ts`:
+
+- `apiGet<T>(path)`, `apiPost<TReq, TRes>(path, body)`, `apiDelete<T>(path)`
+- toate fac `credentials: "include"` (cookie-ul de sesiune)
+- timeout default 8s, parser JSON cu `HttpError` care expune `status` + `body`
+
+`src/api/auth.ts` expune `loginUser`, `registerUser`, `fetchMe`, `logoutUser`
+pentru pagini și componente.

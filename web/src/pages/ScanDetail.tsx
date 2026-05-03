@@ -46,7 +46,7 @@ function FindingCard({ finding }: { finding: Finding }) {
         </div>
       </div>
       <div className="finding-rec">{finding.recommendation}</div>
-      {finding.evidence && Object.keys(finding.evidence as object).length > 0 && (
+      {!!finding.evidence && Object.keys(finding.evidence as object).length > 0 && (
         <div style={{ marginTop: 8 }}>
           <button
             onClick={() => setOpen(o => !o)}
@@ -117,13 +117,13 @@ export default function ScanDetail() {
             <h1 className="page-title">Scan #{scanId}</h1>
             {data && (
               <p className="page-subtitle">
-                Device: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--accent)" }}>{data.device_id}</span>
+                Device: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--accent)" }}>{data.device_uid}</span>
                 {" · "}{formatDate(data.created_at)}
               </p>
             )}
           </div>
           <button
-            onClick={() => navigate(data ? `/dashboard?device=${data.device_id}` : "/dashboard")}
+            onClick={() => navigate(data ? `/dashboard?device=${data.device_uid}` : "/dashboard")}
             className="btn btn-ghost"
             style={{ border: "1px solid var(--border)" }}
           >

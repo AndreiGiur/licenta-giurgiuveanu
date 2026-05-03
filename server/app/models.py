@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
 import secrets
+from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, ForeignKey, JSON, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,6 +11,11 @@ from .db import Base
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def hash_token(token: str) -> str:
+    """SHA-256 al unui token. Folosit pentru stocarea device_token in DB."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 class User(Base):
@@ -61,7 +67,12 @@ class Device(Base):
 
     device_uid: Mapped[str] = mapped_column(String(128), index=True)
     name: Mapped[str] = mapped_column(String(128))
-    device_token: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+
+    # Stocam doar hash-ul SHA-256 al token-ului (token-ul plain este afisat
+    # o singura data la enrollment si nu poate fi recuperat). Un prefix scurt
+    # este pastrat pentru identificare in UI ("token care incepe cu...").
+    device_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    device_token_prefix: Mapped[str] = mapped_column(String(12))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -70,6 +81,8 @@ class Device(Base):
 
     @staticmethod
     def generate_token() -> str:
+        """Genereaza un token nou (plain). Apelantul trebuie sa-l afiseze
+        utilizatorului si sa stocheze doar hash-ul (`hash_token`)."""
         return secrets.token_urlsafe(32)
 
 
