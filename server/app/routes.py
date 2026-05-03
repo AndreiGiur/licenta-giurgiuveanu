@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Response, status, Request
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -506,3 +508,61 @@ def agent_submit_failure(
     db.commit()
     db.refresh(job)
     return _scan_job_to_out(job, device.device_uid)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Agent installer download
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Cand exista un build PyInstaller (`agent/build.ps1` produce .exe-ul si il
+# copiaza in server/app/static/agent/), acest endpoint il serveste catre
+# user-ii autentificati. Daca .exe-ul nu a fost build-uit inca, intoarce
+# 404 cu mesaj clar.
+#
+# Tinem build-ul fie in server/app/static/agent/ (langa cod) fie in
+# server/static/agent/. Cautam in ambele locuri.
+
+_AGENT_BUILD_LOCATIONS = (
+    Path(__file__).resolve().parent / "static" / "agent",
+    Path(__file__).resolve().parent.parent / "static" / "agent",
+)
+
+
+def _find_agent_artifact(filename: str) -> Path | None:
+    for base in _AGENT_BUILD_LOCATIONS:
+        candidate = base / filename
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+@router.get("/agent/download/windows")
+def download_agent_windows(_user: User = Depends(require_user)):
+    """Serveste VulnWatchAgent.exe pentru user-ii autentificati. 404 daca
+    nu a fost build-uit (vezi `agent/build.ps1`)."""
+    artifact = _find_agent_artifact("VulnWatchAgent.exe")
+    if not artifact:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Agent installer indisponibil. Build-eaza-l mai intai:\n"
+                "    powershell -ExecutionPolicy Bypass -File agent/build.ps1"
+            ),
+        )
+    return FileResponse(
+        path=str(artifact),
+        media_type="application/vnd.microsoft.portable-executable",
+        filename="VulnWatchAgent.exe",
+    )
+
+
+@router.get("/agent/download/info")
+def download_agent_info(_user: User = Depends(require_user)):
+    """Indica daca un build de agent este disponibil. UI-ul afiseaza/ascunde
+    butonul de descarcare in functie de raspuns."""
+    artifact = _find_agent_artifact("VulnWatchAgent.exe")
+    return {
+        "available": artifact is not None,
+        "platform": "windows",
+        "size_bytes": artifact.stat().st_size if artifact else None,
+    }
