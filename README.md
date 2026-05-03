@@ -43,6 +43,33 @@ acționabile, vizualizabile într-un dashboard web.
   tokenului de device — tokenul plain este afișat o singură dată la creare.
 - `Scan` — un raport de la agent, conține payload-ul complet și `exposure_score`.
 - `Finding` — o vulnerabilitate detectată de o regulă, asociată unui scan.
+- `ScanJob` — cerere de scanare on-demand. State machine
+  `pending → running → done | failed | cancelled`. Decuplează UI-ul de execuția
+  agentului (vezi *Scan-on-demand* mai jos).
+
+### Scan-on-demand (buton "Scan now" în UI)
+
+UI-ul are un buton **Scan now** lângă fiecare device. Click → backend creează un
+`ScanJob` în starea `pending`. Agent-ul (rulat ca daemon pe mașina monitorizată)
+polează `GET /agent/jobs/next` la fiecare 3 secunde, ridică job-ul, execută
+scanarea local și trimite rezultatul la `POST /agent/jobs/{id}/result`.
+
+```
+UI ──► POST /devices/{uid}/scan-jobs       (cookie auth)
+Agent ──► GET /agent/jobs/next             (X-Device-Token)  → 200 + job sau 204
+Agent ──► POST /agent/jobs/{id}/result     (X-Device-Token)
+UI ──► GET /scan-jobs/{id}                 (poll status la 2s)
+```
+
+**De ce pull, nu push** — agent-ul nu trebuie expus pe rețea (nici un port deschis,
+nicio regulă de firewall). Funcționează prin NAT, VPN, rețele de companie. Aceeași
+abordare folosesc Wazuh, Microsoft Defender for Endpoint, Datadog Agent.
+
+**Atomicitate la pickup** — `SELECT ... FOR UPDATE SKIP LOCKED` garantează că două
+poll-uri concurente nu prind același job de două ori (verificat prin teste).
+
+Pentru a porni agent-ul ca serviciu persistent (Windows Task Scheduler / systemd),
+vezi `agent/README.md`.
 
 ### Securitate
 
@@ -92,7 +119,7 @@ npm run dev
 UI disponibil pe `http://localhost:5173`. Înregistrează cont, apoi mergi la
 `/devices` pentru a înrola un dispozitiv (opțional — vezi pasul 4).
 
-### 4. Agent — înrolare automată
+### 4. Agent — înrolare + daemon
 
 Pe mașina pe care vrei să o monitorizezi:
 
@@ -108,10 +135,20 @@ Comanda `enroll` îți cere email/parolă (același cont ca în UI), apoi:
 2. Creează dispozitivul (sau folosește hostname-ul ca UID implicit).
 3. **Salvează tokenul automat** la `~/.vulnwatch/config.ini` (permisiuni 0600 pe POSIX).
 
-Apoi rulează scanări oricând:
+Apoi pornește agent-ul ca daemon (rămâne în foreground și răspunde la butonul
+"Scan now" din UI):
 
 ```bash
-python scan.py             # rulează o scanare
+python scan.py daemon
+```
+
+Pentru rulare ca serviciu persistent (Windows Task Scheduler, systemd), vezi
+`agent/README.md`.
+
+Alte comenzi utile:
+
+```bash
+python scan.py             # scanare unică (push direct, fără daemon)
 python scan.py status      # afișează configul curent (fără token)
 python scan.py logout      # șterge configul local
 ```

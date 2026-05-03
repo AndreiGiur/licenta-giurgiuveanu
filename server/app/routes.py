@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Header, Response, status, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,23 +17,71 @@ from .auth import (
     set_session_cookie,
     verify_password,
 )
-from .models import User, Device, Scan, Finding, Session as DbSession, hash_token
+from .models import (
+    Device,
+    Finding,
+    Scan,
+    ScanJob,
+    ScanJobStatus,
+    Session as DbSession,
+    User,
+    hash_token,
+)
 from .schemas import (
-    RegisterIn,
-    LoginIn,
-    TokenOut,
-    MeOut,
+    AgentJobOut,
     DeviceCreateIn,
-    DeviceOut,
     DeviceCreateOut,
-    ScanIn,
-    ScanCreateOut,
+    DeviceOut,
     DeviceScanListItem,
+    JobFailureIn,
+    JobResultIn,
+    LoginIn,
+    MeOut,
+    RegisterIn,
+    ScanCreateOut,
     ScanDetailOut,
+    ScanIn,
+    ScanJobOut,
+    TokenOut,
 )
 from .rules import evaluate
 
 router = APIRouter()
+
+
+# ── Helperi scan-job ──────────────────────────────────────────────────────────
+
+def _scan_job_to_out(job: ScanJob, device_uid: str) -> ScanJobOut:
+    """Serializeaza un ScanJob pentru raspunsuri UI. Adauga exposure_score
+    daca jobul a produs un Scan finalizat."""
+    exposure_score = job.scan.exposure_score if (job.scan_id and getattr(job, "scan", None)) else None
+    return ScanJobOut(
+        job_id=job.id,
+        device_uid=device_uid,
+        status=job.status,
+        created_at=job.created_at.isoformat(),
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        finished_at=job.finished_at.isoformat() if job.finished_at else None,
+        scan_id=job.scan_id,
+        exposure_score=exposure_score,
+        error_message=job.error_message,
+    )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _device_for_token_or_401(db: Session, x_device_token: str | None) -> Device:
+    """Autentifica agentul prin X-Device-Token. Folosit de endpoint-urile /agent/*."""
+    if not x_device_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing X-Device-Token")
+    device = db.execute(
+        select(Device).where(Device.device_token_hash == hash_token(x_device_token))
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid device token")
+    return device
 
 
 @router.post("/auth/register", response_model=MeOut)
@@ -260,3 +310,199 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
         ],
         payload=scan.payload or {},
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Scan-on-demand: job queue
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# UI ──► POST /devices/{uid}/scan-jobs           ──► job pending
+# UI ──► GET  /scan-jobs/{id}                    ──► polling status
+# Agent ──► GET  /agent/jobs/next                ──► picks pending → running
+# Agent ──► POST /agent/jobs/{id}/result         ──► running → done + Scan
+# Agent ──► POST /agent/jobs/{id}/fail           ──► running → failed
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/devices/{device_uid}/scan-jobs", response_model=ScanJobOut)
+def create_scan_job(
+    device_uid: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """User cere o scanare on-demand pentru un device al sau."""
+    device = db.execute(
+        select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    # Daca user-ul are deja un job PENDING (necules de agent) pentru acest
+    # device, il reutilizam in loc sa cream duplicat (evita double-click).
+    # Daca jobul anterior e deja RUNNING, lasam user-ul sa cocea unul nou —
+    # poate vrea sa reia scanarea cu date proaspete.
+    existing = db.execute(
+        select(ScanJob).where(
+            ScanJob.device_id == device.id,
+            ScanJob.status == ScanJobStatus.PENDING,
+        ).order_by(ScanJob.id.desc())
+    ).scalars().first()
+    if existing:
+        return _scan_job_to_out(existing, device.device_uid)
+
+    job = ScanJob(
+        device_id=device.id,
+        requested_by_user_id=user.id,
+        status=ScanJobStatus.PENDING,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return _scan_job_to_out(job, device.device_uid)
+
+
+@router.get("/scan-jobs/{job_id}", response_model=ScanJobOut)
+def get_scan_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """UI polleaza statusul unui job. Verifica izolarea pe owner."""
+    job = db.get(ScanJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="scan job not found")
+    device = db.get(Device, job.device_id)
+    if not device or device.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="scan job not found")
+    return _scan_job_to_out(job, device.device_uid)
+
+
+@router.get("/devices/{device_uid}/scan-jobs", response_model=list[ScanJobOut])
+def list_scan_jobs(
+    device_uid: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Istoricul ultimelor 20 de joburi pentru un device. Util in UI."""
+    device = db.execute(
+        select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    jobs = db.execute(
+        select(ScanJob).where(ScanJob.device_id == device.id)
+        .order_by(ScanJob.id.desc()).limit(20)
+    ).scalars().all()
+    return [_scan_job_to_out(j, device.device_uid) for j in jobs]
+
+
+# ── Endpoint-uri pentru agent (auth: X-Device-Token) ─────────────────────────
+
+@router.get("/agent/jobs/next", response_model=AgentJobOut | None)
+def agent_get_next_job(
+    response: Response,
+    db: Session = Depends(get_db),
+    x_device_token: str | None = Header(default=None),
+):
+    """
+    Agent polleaza endpoint-ul. Daca exista un job pending pentru device-ul
+    asociat tokenului, este atomic mutat in 'running' si returnat. Altfel 204.
+    """
+    device = _device_for_token_or_401(db, x_device_token)
+
+    # Atomic: SELECT cel mai vechi job pending al device-ului si UPDATE la running
+    job = db.execute(
+        select(ScanJob)
+        .where(ScanJob.device_id == device.id, ScanJob.status == ScanJobStatus.PENDING)
+        .order_by(ScanJob.id.asc())
+        .with_for_update(skip_locked=True)
+    ).scalars().first()
+
+    if not job:
+        response.status_code = status.HTTP_204_NO_CONTENT
+        return None
+
+    job.status = ScanJobStatus.RUNNING
+    job.started_at = _utcnow()
+    db.commit()
+
+    return AgentJobOut(job_id=job.id, device_uid=device.device_uid)
+
+
+@router.post("/agent/jobs/{job_id}/result", response_model=ScanJobOut)
+def agent_submit_result(
+    job_id: int,
+    payload: JobResultIn,
+    db: Session = Depends(get_db),
+    x_device_token: str | None = Header(default=None),
+):
+    """Agent trimite rezultatul. Reuseste fluxul de scoring si creeaza Scan."""
+    device = _device_for_token_or_401(db, x_device_token)
+
+    job = db.get(ScanJob, job_id)
+    if not job or job.device_id != device.id:
+        raise HTTPException(status_code=404, detail="scan job not found")
+    if job.status != ScanJobStatus.RUNNING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"job is in state '{job.status}', cannot accept results",
+        )
+
+    # Construim payload-ul scan-ului in format ScanIn (pentru evaluare).
+    scan_dict = {
+        "device_uid": device.device_uid,
+        "os": payload.os,
+        "network": payload.network,
+        "processes": payload.processes,
+        "software": payload.software,
+    }
+    score, findings = evaluate(scan_dict)
+
+    scan = Scan(device_id=device.id, payload=scan_dict, exposure_score=score)
+    db.add(scan)
+    db.flush()  # ca sa avem scan.id
+
+    for f in findings:
+        db.add(Finding(
+            scan_id=scan.id,
+            rule_id=f["rule_id"],
+            title=f["title"],
+            severity=f["severity"],
+            evidence=f.get("evidence", {}),
+            recommendation=f["recommendation"],
+        ))
+
+    job.status = ScanJobStatus.DONE
+    job.finished_at = _utcnow()
+    job.scan_id = scan.id
+    db.commit()
+    db.refresh(job)
+    return _scan_job_to_out(job, device.device_uid)
+
+
+@router.post("/agent/jobs/{job_id}/fail", response_model=ScanJobOut)
+def agent_submit_failure(
+    job_id: int,
+    payload: JobFailureIn,
+    db: Session = Depends(get_db),
+    x_device_token: str | None = Header(default=None),
+):
+    """Agent raporteaza esec (eroare la colectare, etc.)."""
+    device = _device_for_token_or_401(db, x_device_token)
+
+    job = db.get(ScanJob, job_id)
+    if not job or job.device_id != device.id:
+        raise HTTPException(status_code=404, detail="scan job not found")
+    if job.status != ScanJobStatus.RUNNING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"job is in state '{job.status}', cannot mark as failed",
+        )
+
+    job.status = ScanJobStatus.FAILED
+    job.finished_at = _utcnow()
+    job.error_message = payload.error_message[:512]
+    db.commit()
+    db.refresh(job)
+    return _scan_job_to_out(job, device.device_uid)

@@ -1,8 +1,12 @@
 # VulnWatch Agent
 
 Agent local care colectează date despre sistem și le trimite către backend
-pentru evaluare. Configurat o singură dată cu `enroll`, apoi pornește scanări
-oricând cu `scan.py`.
+pentru evaluare. După înrolare, suportă două moduri de operare:
+
+1. **Daemon (recomandat)** — agent-ul rulează în fundal și execută scanările
+   cerute din UI-ul platformei (buton **Scan now** pe pagina `/devices`).
+2. **One-shot** — `python scan.py` rulează o singură scanare și iese (util pentru
+   debug, scripting sau scheduled tasks).
 
 ## Instalare
 
@@ -27,7 +31,7 @@ Comanda este interactivă:
 3. Creează dispozitivul în backend și **salvează tokenul automat** la
    `~/.vulnwatch/config.ini` (permisiuni `0600` pe POSIX).
 
-User-ul nu mai trebuie să copieze tokenul manual — fluxul e fully automated.
+User-ul nu copiază tokenul manual — fluxul e complet automatizat.
 
 ### Opțiuni non-interactive
 
@@ -37,7 +41,73 @@ python scan.py enroll --email me@example.com --password '...' \
                        --api http://127.0.0.1:8000/api/v1
 ```
 
-## Rulare scan
+## Mod daemon (Scan now din UI)
+
+```bash
+python scan.py daemon
+```
+
+Agentul rămâne în foreground, polează backend-ul la 3 secunde și execută scanări
+cerute din UI. Apasă **Ctrl+C** ca să-l oprești.
+
+```
+============================================================
+ VulnWatch Agent — daemon
+============================================================
+ API           : http://127.0.0.1:8000/api/v1
+ Device UID    : laptop-work
+ Poll interval : 3s
+ Auto-scan     : dezactivat
+ Mode          : loop
+
+Astept joburi de la backend... (Ctrl+C pentru oprire)
+
+[14:32:15] Job #4 primit. Colectez date...
+[14:32:18] Job #4 done. Scan #28, score 35/100.
+```
+
+### Opțiuni `daemon`
+
+| Flag                         | Descriere                                                |
+| ---------------------------- | -------------------------------------------------------- |
+| `--poll <sec>`               | Interval polling (default: 3 secunde)                    |
+| `--auto-interval <sec>`      | Scan automat la fiecare N sec (default: dezactivat)      |
+| `--once`                     | Procesează un singur job și iese (testare)               |
+
+Exemplu cu auto-scan la fiecare oră (în plus față de butonul UI):
+
+```bash
+python scan.py daemon --auto-interval 3600
+```
+
+### Cum funcționează (pentru defense)
+
+```
+UI (browser)             Backend                Agent (daemon)
+   │                        │                        │
+   │ POST /scan-jobs        │                        │
+   │ ─────────────────────► │                        │
+   │ ◄─ {job_id, pending}   │                        │
+   │                        │  GET /agent/jobs/next  │
+   │                        │ ◄──────────────────── │  poll @3s
+   │                        │ ── {job_id, uid} ──► │
+   │                        │                        │  collect data
+   │                        │ POST /agent/jobs/{id}  │
+   │                        │       /result          │
+   │                        │ ◄──────────────────── │
+   │ GET /scan-jobs/{id}    │                        │
+   │ ─────────────────────► │ (status: done)         │
+```
+
+- **Pull-based**: agent-ul *cere* joburi, backend-ul nu le *trimite*. Asta
+  înseamnă că agent-ul nu trebuie expus pe rețea — funcționează prin firewall,
+  NAT, VPN. Aceeași strategie folosesc Wazuh, Microsoft Defender for Endpoint,
+  Datadog Agent.
+- **Job queue**: state machine `pending → running → done | failed`. Backend-ul
+  ridică job-ul atomic la `GET /agent/jobs/next` (`SELECT ... FOR UPDATE SKIP
+  LOCKED`) — nu pot doi agenți să prindă același job.
+
+## Mod one-shot (push direct)
 
 ```bash
 python scan.py
@@ -45,49 +115,67 @@ python scan.py
 python scan.py scan
 ```
 
-Output exemplu:
+Trimite un scan unic la `POST /scans` și iese. Util pentru debug sau pentru a
+rula prin Windows Task Scheduler / cron fără daemon persistent.
 
+## Toate comenzile
+
+| Comandă                       | Descriere                                                |
+| ----------------------------- | -------------------------------------------------------- |
+| `python scan.py enroll`       | Înrolare interactivă (login + creare device)             |
+| `python scan.py daemon`       | **Mod foreground**, procesează joburi din UI (recomandat)|
+| `python scan.py daemon --once`| Procesează un singur job și iese                         |
+| `python scan.py`              | Push direct: o scanare unică                             |
+| `python scan.py status`       | Afișează configul curent (fără token)                    |
+| `python scan.py logout`       | Șterge configul local                                    |
+
+## Rulare ca serviciu persistent
+
+### Windows — Task Scheduler (la pornirea sistemului)
+
+```powershell
+$action = New-ScheduledTaskAction `
+    -Execute "python.exe" `
+    -Argument "E:\path\to\agent\scan.py daemon" `
+    -WorkingDirectory "E:\path\to\agent"
+
+$trigger = New-ScheduledTaskTrigger -AtStartup
+
+Register-ScheduledTask `
+    -TaskName "VulnWatchAgent" `
+    -Action $action `
+    -Trigger $trigger `
+    -RunLevel Highest
 ```
-============================================================
- VulnWatch — scanare
-============================================================
- API        : http://127.0.0.1:8000/api/v1
- Device UID : laptop-work
- Timestamp  : 2026-05-03 12:34:56
- Admin      : False
 
-Colectez date sistem...
-  OS       : Windows 11
-  Hostname : DESKTOP-ABC
-  Porturi  : [135, 445, 5040]
-  Procese  : 50
-  Software : 84 programe
+Pentru o variantă cu service-wrapping mai robust, folosește
+[NSSM](https://nssm.cc/) (the non-sucking service manager).
 
-Trimit scanarea...
+### Linux — systemd user service
 
-Scanare trimisa cu succes!
-  Scan ID       : 42
-  Exposure Score: 38/100
-  Findings      : 2
+`~/.config/systemd/user/vulnwatch-agent.service`:
 
-Vulnerabilitati detectate:
-  [HIGH]  Porturi cu risc ridicate expuse
-           Inchide porturile neutilizate din firewall...
-  [MED]   Sesiune activa cu privilegii de administrator
-           Foloseste un cont standard pentru activitatile zilnice...
+```ini
+[Unit]
+Description=VulnWatch Agent (daemon)
+After=network-online.target
 
-Vezi rezultatele: http://127.0.0.1:5173/dashboard?device=laptop-work
+[Service]
+ExecStart=/usr/bin/python3 /path/to/agent/scan.py daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
 ```
 
-## Comenzi disponibile
+Apoi:
 
-| Comandă                | Descriere                                     |
-| ---------------------- | --------------------------------------------- |
-| `python scan.py enroll`| Înregistrare interactivă (login + creare device) |
-| `python scan.py`       | Rulează o scanare (implicit)                  |
-| `python scan.py scan`  | Idem, explicit                                |
-| `python scan.py status`| Afișează configul curent (fără token)         |
-| `python scan.py logout`| Șterge configul local                         |
+```bash
+systemctl --user enable --now vulnwatch-agent
+systemctl --user status vulnwatch-agent
+journalctl --user -u vulnwatch-agent -f
+```
 
 ## Date colectate
 
