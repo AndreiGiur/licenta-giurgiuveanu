@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import { apiGet } from "../api/http";
 import { getScan, listDeviceScans } from "../api/exposure";
 import type { DeviceScanListItem, ScanDetailResponse } from "../api/types";
 import Navbar from "../components/Navbar";
+
+type DeviceListItem = {
+  id: number;
+  device_uid: string;
+  name: string;
+  created_at: string;
+};
 
 /* ── helpers ── */
 function getScoreClass(score: number): string {
@@ -32,17 +40,12 @@ function formatDate(raw: string): string {
   }
 }
 
-const SearchIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-  </svg>
-);
-
 export default function Dashboard() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [deviceId, setDeviceId] = useState(() => searchParams.get("device") ?? "");
+  const [devices, setDevices] = useState<DeviceListItem[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [scans, setScans] = useState<DeviceScanListItem[]>([]);
   const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
@@ -51,12 +54,37 @@ export default function Dashboard() {
 
   const canLoad = useMemo(() => deviceId.trim().length > 0, [deviceId]);
 
-  // Auto-load cand se vine cu ?device= din pagina Devices
+  // Lookup rapid pentru afisarea numelui linga UID
+  const selectedDevice = useMemo(
+    () => devices.find(d => d.device_uid === deviceId.trim()),
+    [devices, deviceId],
+  );
+
+  // Incarca lista de device-uri pentru dropdown
   useEffect(() => {
-    const fromUrl = searchParams.get("device");
-    if (fromUrl) load();
+    apiGet<DeviceListItem[]>("/devices")
+      .then((items) => {
+        setDevices(items);
+        // Daca nu avem ?device= in URL si user-ul are doar un device, il pre-selectam.
+        const fromUrl = searchParams.get("device");
+        if (!fromUrl && items.length === 1) {
+          setDeviceId(items[0].device_uid);
+        }
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : "Eroare la incarcarea device-urilor");
+      })
+      .finally(() => setDevicesLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-load cand avem device selectat (din URL sau din pre-select)
+  useEffect(() => {
+    if (deviceId.trim() && !devicesLoading) {
+      load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId, devicesLoading]);
 
   async function load() {
     setError(null);
@@ -104,24 +132,31 @@ export default function Dashboard() {
           <p className="page-subtitle">Monitorizează expunerile de securitate ale dispozitivelor tale</p>
         </div>
 
-        {/* ── Search bar ── */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
+        {/* ── Device picker ── */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 24, alignItems: "stretch" }}>
           <div style={{ position: "relative", flex: 1 }}>
-            <span style={{
-              position: "absolute", left: 13, top: "50%",
-              transform: "translateY(-50%)", color: "var(--text-muted)",
-              display: "flex", pointerEvents: "none",
-            }}>
-              <SearchIcon />
-            </span>
-            <input
+            <select
               className="form-input"
               value={deviceId}
               onChange={(e) => setDeviceId(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && canLoad && !loading && load()}
-              placeholder="ID dispozitiv (ex: Utilizator 1)"
-              style={{ paddingLeft: 36 }}
-            />
+              disabled={devicesLoading}
+              style={{ width: "100%", cursor: devicesLoading ? "wait" : "pointer" }}
+            >
+              {devicesLoading && <option value="">Se incarca dispozitivele...</option>}
+              {!devicesLoading && devices.length === 0 && (
+                <option value="">Niciun dispozitiv inrolat — du-te la /devices ca sa adaugi unul</option>
+              )}
+              {!devicesLoading && devices.length > 0 && (
+                <>
+                  <option value="">— alege dispozitivul —</option>
+                  {devices.map((d) => (
+                    <option key={d.id} value={d.device_uid}>
+                      {d.name} ({d.device_uid})
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
           </div>
           <button
             disabled={!canLoad || loading}
@@ -131,9 +166,24 @@ export default function Dashboard() {
           >
             {loading
               ? <span className="loading-dots"><span /><span /><span /></span>
-              : "Caută scanări"}
+              : "Reincarca"}
           </button>
         </div>
+
+        {selectedDevice && (
+          <div style={{
+            marginBottom: 16, padding: "8px 12px",
+            background: "var(--bg-elevated)", borderRadius: 8,
+            fontSize: 12, color: "var(--text-secondary)",
+          }}>
+            Vizualizezi scanarile pentru <strong style={{ color: "var(--text-primary)" }}>
+              {selectedDevice.name}
+            </strong>
+            <span style={{ color: "var(--text-muted)", fontFamily: "'JetBrains Mono', monospace" }}>
+              {" "}({selectedDevice.device_uid})
+            </span>
+          </div>
+        )}
 
         {/* ── Error ── */}
         {error && (
@@ -245,9 +295,12 @@ export default function Dashboard() {
                   }}>
                     <span>
                       <span style={{ color: "var(--text-muted)", marginRight: 4 }}>Device</span>
-                      <strong style={{ color: "var(--text-primary)", fontFamily: "'JetBrains Mono', monospace" }}>
-                        {detail.device_uid}
+                      <strong style={{ color: "var(--text-primary)" }}>
+                        {detail.device_name}
                       </strong>
+                      <span style={{ color: "var(--text-muted)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 6 }}>
+                        ({detail.device_uid})
+                      </span>
                     </span>
                     <span>
                       <span style={{ color: "var(--text-muted)", marginRight: 4 }}>Data</span>

@@ -133,10 +133,17 @@ Scriptul produce `dist\VulnWatchAgent.exe` (~30 MB) și îl publică în
 #### Pe orice mașină de monitorizat
 
 1. Login UI → **Devices** → click **↓ Descarcă .exe** (banner)
-2. **Dublu-click** pe `VulnWatchAgent.exe` → fereastră grafică de înrolare
-3. Completezi email + parolă + UID → click **Înrolează**
-4. Bifa "Pornește la logon" (default ON) înregistrează agent-ul în
-   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` — niciun admin necesar
+2. **Dublu-click** pe `VulnWatchAgent.exe` → flow grafic în 3 pași:
+   - **Login**: email + parolă + API URL. Dacă nu ai cont → toggle inline
+     "Înregistrează-te".
+   - **Enroll device**: dacă PC-ul e nou pe contul tău, completezi UID + nume
+     și apeși "Înrolează". Dacă PC-ul a mai fost înrolat (ai reinstalat OS-ul,
+     ai șters configul) → primești automat opțiunea "Refolosește device existent"
+     (smart re-link, păstrează istoricul scanărilor).
+   - **Status**: vezi contul logat, numele device-ului, indicator daemon, log
+     live. Butoane: Scan now / Pauză / Open dashboard / Logout.
+3. Bifa "Pornește la logon" (default ON) înregistrează agent-ul în
+   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` — niciun admin necesar.
 
 Agent-ul rulează în background cu icon în system tray. Apeși **Scan now** în UI
 și scanarea e gata în secunde.
@@ -173,10 +180,22 @@ cd server
 python -m pytest
 ```
 
-Rularea acoperă:
+Rularea acoperă (70 teste totale):
 - motorul de reguli (`test_rules.py` — fiecare regulă + saturarea scorului)
 - autentificare (`test_auth.py` — login, logout idempotent, validare email, cookie)
 - flow-ul de scanare și izolarea multi-tenant (`test_devices_and_scans.py`)
+- scan-on-demand prin job queue (`test_scan_jobs.py` — 12 teste)
+- smart re-link + device_name (`test_relink_and_names.py` — 11 teste)
+- download .exe (`test_agent_download.py` — 4 teste)
+- core agent (`agent/tests/test_core*.py` — 17 teste)
+
+## Documentație internă (memory.md)
+
+Fiecare folder are un `memory.md` cu contextul fișierelor din el. Util pentru
+a înțelege rapid o zonă a codebase-ului fără a o citi linie cu linie.
+
+Pornește din `memory.md` (radacina) → urmărește link-urile către `agent/`,
+`server/`, `web/`. Fiecare nivel descrie ce e important la nivelul acela.
 
 ## Configurare producție
 
@@ -194,20 +213,30 @@ COOKIE_SAMESITE=strict
 
 ```
 .
-├── agent/                Agent Python (CLI: enroll/scan/logout)
+├── memory.md             Punct de plecare pentru a înțelege codebase-ul
+├── agent/                Agent Python (GUI Tkinter + CLI + tray + autostart)
+│   ├── core.py           Logica fără UI (collect, HTTP, daemon loop)
+│   ├── scan.py           Entry point — CLI sau GUI după argumente
+│   ├── gui.py            Tkinter: Login → Enroll → Status
+│   ├── tray.py           System tray (pystray + Pillow)
+│   ├── autostart.py      Pornire la logon (HKCU/systemd/launchd)
+│   ├── VulnWatchAgent.spec   PyInstaller spec
+│   ├── build.ps1         Script one-click pentru build .exe
+│   └── tests/            Pytest pentru core (17 teste)
 ├── server/
 │   ├── app/              FastAPI app
 │   │   ├── main.py       Aplicație + CORS
-│   │   ├── routes.py     Endpoint-uri /api/v1/*
-│   │   ├── auth.py       Sesiuni, cookie-uri, PBKDF2
-│   │   ├── models.py     SQLAlchemy 2 models
+│   │   ├── routes.py     Endpoint-uri /api/v1/*  (~22)
+│   │   ├── auth.py       Sesiuni, cookie HttpOnly, PBKDF2
+│   │   ├── models.py     SQLAlchemy 2 (User, Device, Scan, Finding, ScanJob)
 │   │   ├── schemas.py    Pydantic 2 (EmailStr, validări)
-│   │   ├── rules.py      Motor de reguli + calcul exposure_score
-│   │   └── db.py         SQLAlchemy engine
-│   ├── tests/            Pytest (26 teste)
+│   │   ├── rules.py      Motor de reguli + exposure_score
+│   │   ├── db.py         SQLAlchemy engine
+│   │   └── static/agent/ VulnWatchAgent.exe (servit la /agent/download/windows)
+│   ├── tests/            Pytest (53 teste end-to-end)
 │   ├── requirements.txt
 │   └── .env.example
-├── web/                  Frontend React + TypeScript
+├── web/                  Frontend React + TypeScript + Vite
 │   ├── src/
 │   │   ├── api/          Client HTTP unificat (cookie-based)
 │   │   ├── components/   Navbar, ProtectedRoute
@@ -215,3 +244,5 @@ COOKIE_SAMESITE=strict
 │   └── vite.config.ts
 └── docker-compose.yml    Postgres pentru dev
 ```
+
+Pentru detalii pe orice folder, deschide `<folder>/memory.md`.

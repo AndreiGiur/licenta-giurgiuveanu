@@ -52,6 +52,7 @@ class ScanIn(BaseModel):
 class ScanCreateOut(BaseModel):
     scan_id: int
     device_uid: str
+    device_name: str
     exposure_score: int
     findings: List[Dict[str, Any]]
 
@@ -65,6 +66,7 @@ class DeviceScanListItem(BaseModel):
 class ScanDetailOut(BaseModel):
     scan_id: int
     device_uid: str
+    device_name: str
     created_at: str
     exposure_score: int
     findings: List[Dict[str, Any]]
@@ -77,6 +79,7 @@ class ScanJobOut(BaseModel):
     """Snapshot al unui ScanJob — folosit la creare si la polling status."""
     job_id: int
     device_uid: str
+    device_name: str
     status: str
     created_at: str
     started_at: str | None = None
