@@ -95,13 +95,33 @@ def get_enrollment() -> tuple[str, str, str]:
     return api_base, device_uid, device_token
 
 
-def save_enrollment(api_base: str, device_uid: str, device_token: str) -> None:
+def get_enrollment_meta() -> dict:
+    """Returneaza metadate vizuale despre enrollment (pentru afisare in GUI):
+    device_name, user_email. Cheile lipsa returneaza string gol."""
+    cfg = read_config()
+    if not cfg.has_section("agent"):
+        return {"device_name": "", "user_email": ""}
+    return {
+        "device_name": cfg.get("agent", "device_name", fallback="").strip(),
+        "user_email": cfg.get("agent", "user_email", fallback="").strip(),
+    }
+
+
+def save_enrollment(api_base: str, device_uid: str, device_token: str,
+                    device_name: str = "", user_email: str = "") -> None:
+    """Salveaza configul de enrollment. `device_name` si `user_email` sunt
+    optionale dar recomandate — sunt afisate in GUI ca sa user-ul stie pe
+    ce cont si ce device e logat."""
     cfg = configparser.ConfigParser()
     cfg["agent"] = {
         "api_base": api_base.rstrip("/"),
         "device_uid": device_uid,
         "device_token": device_token,
     }
+    if device_name:
+        cfg["agent"]["device_name"] = device_name
+    if user_email:
+        cfg["agent"]["user_email"] = user_email
     write_config(cfg)
 
 
@@ -266,6 +286,38 @@ def api_create_device(api_base: str, session_token: str, device_uid: str, name: 
     )
 
 
+def api_get_device_by_uid(api_base: str, session_token: str, device_uid: str) -> dict | None:
+    """Returneaza device-ul daca exista pe contul user-ului, altfel None.
+    Folosit pentru smart re-link (verificare daca user-ul are deja un device
+    cu acest UID inainte de a-l recrea)."""
+    try:
+        return _request(
+            "GET", f"{api_base}/devices/by-uid/{device_uid}",
+            headers={"X-Session-Token": session_token},
+        )
+    except ApiError as e:
+        if "404" in str(e):
+            return None
+        raise
+
+
+def api_relink_device(api_base: str, session_token: str, device_uid: str) -> dict:
+    """Re-emite tokenul pentru un device existent (smart re-link).
+    Returneaza dict-ul cu noul device_token plain (afisat o singura data)."""
+    return _request(
+        "POST", f"{api_base}/devices/{device_uid}/relink",
+        headers={"X-Session-Token": session_token},
+    )
+
+
+def api_me(api_base: str, session_token: str) -> dict:
+    """Verifica daca un session_token este valid si returneaza user-ul."""
+    return _request(
+        "GET", f"{api_base}/auth/me",
+        headers={"X-Session-Token": session_token},
+    )
+
+
 def api_logout(api_base: str, session_token: str) -> None:
     try:
         _request("DELETE", f"{api_base}/auth/logout",
@@ -421,31 +473,72 @@ def _interruptible_sleep(seconds: float, should_stop: Callable[[], bool]) -> Non
 
 # ── Helper pentru fluxul de enrollment (folosit si de CLI si de GUI) ─────────
 
-def perform_enrollment(api_base: str, email: str, password: str,
-                       device_uid: str, device_name: str,
-                       allow_create_account: bool = True,
-                       log: LogFn = _noop_log) -> None:
+def login_or_register(api_base: str, email: str, password: str,
+                      allow_create_account: bool = True,
+                      log: LogFn = _noop_log) -> str:
     """
-    Login (sau register-then-login) + creare device + salvare config local.
-    Arunca ApiError daca esueaza.
+    Login. Daca esueaza cu 401 si `allow_create_account=True`, incearca
+    register-then-login. Returneaza session_token. Arunca ApiError la esec.
     """
     api_base = api_base.rstrip("/")
     log("Autentificare...", "info")
     try:
-        session_token = api_login(api_base, email, password)
+        return api_login(api_base, email, password)
     except ApiError as e:
         if "401" in str(e) or "invalid credentials" in str(e).lower():
             if not allow_create_account:
                 raise
             log("Credentiale invalide → incerc creare cont nou.", "info")
             api_register(api_base, email, password)
-            session_token = api_login(api_base, email, password)
-        else:
-            raise
+            return api_login(api_base, email, password)
+        raise
+
+
+def enroll_device_with_session(api_base: str, session_token: str,
+                                device_uid: str, device_name: str,
+                                relink_if_exists: bool = False,
+                                log: LogFn = _noop_log) -> dict:
+    """
+    Creeaza un device pe contul autentificat. Returneaza dict-ul cu plain
+    `device_token`. NU salveaza configul local — apelantul decide cand.
+
+    `relink_if_exists`: daca True si device-ul cu acest UID exista deja, face
+    POST /devices/{uid}/relink (re-emitere token, fara duplicare).
+    """
+    api_base = api_base.rstrip("/")
+
+    if relink_if_exists:
+        existing = api_get_device_by_uid(api_base, session_token, device_uid)
+        if existing:
+            log(f"Device existent ({existing.get('name', '?')}) — re-emit tokenul.", "info")
+            return api_relink_device(api_base, session_token, device_uid)
 
     log("Inregistrez dispozitivul...", "info")
+    return api_create_device(api_base, session_token, device_uid, device_name)
+
+
+def perform_enrollment(api_base: str, email: str, password: str,
+                       device_uid: str, device_name: str,
+                       allow_create_account: bool = True,
+                       relink_if_exists: bool = False,
+                       log: LogFn = _noop_log) -> None:
+    """
+    Compus: login (sau register-then-login) + creare/relink device + salvare
+    config local. Apelantul nu trebuie sa stie despre session_token.
+
+    Mentinut pentru CLI (`python scan.py enroll`) si pentru testare.
+    GUI-ul separa pasii in mai multe ecrane si foloseste login_or_register +
+    enroll_device_with_session direct.
+    """
+    api_base = api_base.rstrip("/")
+    session_token = login_or_register(api_base, email, password,
+                                      allow_create_account=allow_create_account,
+                                      log=log)
     try:
-        created = api_create_device(api_base, session_token, device_uid, device_name)
+        created = enroll_device_with_session(
+            api_base, session_token, device_uid, device_name,
+            relink_if_exists=relink_if_exists, log=log,
+        )
     except ApiError as e:
         api_logout(api_base, session_token)
         raise ApiError(f"Eroare la creare device: {e}")
@@ -455,7 +548,9 @@ def perform_enrollment(api_base: str, email: str, password: str,
         api_logout(api_base, session_token)
         raise ApiError("Backend-ul nu a returnat device_token")
 
-    save_enrollment(api_base, device_uid, device_token)
+    save_enrollment(api_base, device_uid, device_token,
+                    device_name=created.get("name", device_name),
+                    user_email=email)
     api_logout(api_base, session_token)
     log("Inrolare reusita. Configul e salvat.", "ok")
 

@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+.venv-build/
 *.egg-info/
 
 # Agent - contine token-uri secrete
@@ -12,6 +13,15 @@ agent/config.ini
 # Server
 server/.env
 server/.venv/
+
+# Build artifacts (PyInstaller output)
+build/
+dist/
+server/app/static/agent/*.exe
+server/static/agent/*.exe
+
+# Pytest
+.pytest_cache/
 
 # OS
 .DS_Store

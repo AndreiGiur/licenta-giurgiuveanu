@@ -53,13 +53,14 @@ router = APIRouter()
 
 # ── Helperi scan-job ──────────────────────────────────────────────────────────
 
-def _scan_job_to_out(job: ScanJob, device_uid: str) -> ScanJobOut:
+def _scan_job_to_out(job: ScanJob, device: Device) -> ScanJobOut:
     """Serializeaza un ScanJob pentru raspunsuri UI. Adauga exposure_score
     daca jobul a produs un Scan finalizat."""
     exposure_score = job.scan.exposure_score if (job.scan_id and getattr(job, "scan", None)) else None
     return ScanJobOut(
         job_id=job.id,
-        device_uid=device_uid,
+        device_uid=device.device_uid,
+        device_name=device.name,
         status=job.status,
         created_at=job.created_at.isoformat(),
         started_at=job.started_at.isoformat() if job.started_at else None,
@@ -191,6 +192,69 @@ def list_devices(db: Session = Depends(get_db), user: User = Depends(require_use
     ]
 
 
+# ── Smart re-link ────────────────────────────────────────────────────────────
+#
+# Cand agent-ul ruleaza pentru prima data pe o masina noua, sau dupa
+# reinstalarea OS-ului, vrem ca user-ul sa nu duplice device-ul.
+# Flow-ul este:
+#   1. Agent (dupa login) cere GET /devices/by-uid/{uid}
+#      → 200 daca device-ul exista deja (display info, oferi re-link)
+#      → 404 daca nu exista (agent face POST /devices ca de obicei)
+#   2. Daca user-ul confirma re-link, agent face POST /devices/{uid}/relink
+#      care invalideaza tokenul vechi si emite unul nou. Scan-urile istorice
+#      raman atasate de device.
+
+@router.get("/devices/by-uid/{device_uid}", response_model=DeviceOut)
+def get_device_by_uid(
+    device_uid: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Verifica daca un device cu acest UID exista pe contul user-ului.
+    Folosit de agent in flow-ul de smart re-link."""
+    device = db.execute(
+        select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="device not found")
+    return DeviceOut(
+        id=device.id,
+        device_uid=device.device_uid,
+        name=device.name,
+        created_at=device.created_at.isoformat(),
+    )
+
+
+@router.post("/devices/{device_uid}/relink", response_model=DeviceCreateOut)
+def relink_device(
+    device_uid: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Re-emite tokenul pentru un device existent (acelasi UID, acelasi owner).
+    Tokenul vechi este invalidat. Scan-urile istorice raman atasate.
+    Util pentru: reinstalare OS, mutare agent, recuperare token pierdut."""
+    device = db.execute(
+        select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    plain_token = Device.generate_token()
+    device.device_token_hash = hash_token(plain_token)
+    device.device_token_prefix = plain_token[:8]
+    db.commit()
+    db.refresh(device)
+
+    return DeviceCreateOut(
+        id=device.id,
+        device_uid=device.device_uid,
+        name=device.name,
+        created_at=device.created_at.isoformat(),
+        device_token=plain_token,
+    )
+
+
 @router.post("/scans", response_model=ScanCreateOut)
 def create_scan(
     payload: ScanIn,
@@ -243,6 +307,7 @@ def create_scan(
     return ScanCreateOut(
         scan_id=scan.id,
         device_uid=device.device_uid,
+        device_name=device.name,
         exposure_score=score,
         findings=findings,
     )
@@ -298,6 +363,7 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
     return ScanDetailOut(
         scan_id=scan.id,
         device_uid=device.device_uid,
+        device_name=device.name,
         created_at=scan.created_at.isoformat(),
         exposure_score=scan.exposure_score,
         findings=[
@@ -350,7 +416,7 @@ def create_scan_job(
         ).order_by(ScanJob.id.desc())
     ).scalars().first()
     if existing:
-        return _scan_job_to_out(existing, device.device_uid)
+        return _scan_job_to_out(existing, device)
 
     job = ScanJob(
         device_id=device.id,
@@ -360,7 +426,7 @@ def create_scan_job(
     db.add(job)
     db.commit()
     db.refresh(job)
-    return _scan_job_to_out(job, device.device_uid)
+    return _scan_job_to_out(job, device)
 
 
 @router.get("/scan-jobs/{job_id}", response_model=ScanJobOut)
@@ -376,7 +442,7 @@ def get_scan_job(
     device = db.get(Device, job.device_id)
     if not device or device.owner_id != user.id:
         raise HTTPException(status_code=404, detail="scan job not found")
-    return _scan_job_to_out(job, device.device_uid)
+    return _scan_job_to_out(job, device)
 
 
 @router.get("/devices/{device_uid}/scan-jobs", response_model=list[ScanJobOut])
@@ -396,7 +462,7 @@ def list_scan_jobs(
         select(ScanJob).where(ScanJob.device_id == device.id)
         .order_by(ScanJob.id.desc()).limit(20)
     ).scalars().all()
-    return [_scan_job_to_out(j, device.device_uid) for j in jobs]
+    return [_scan_job_to_out(j, device) for j in jobs]
 
 
 # ── Endpoint-uri pentru agent (auth: X-Device-Token) ─────────────────────────
@@ -480,7 +546,7 @@ def agent_submit_result(
     job.scan_id = scan.id
     db.commit()
     db.refresh(job)
-    return _scan_job_to_out(job, device.device_uid)
+    return _scan_job_to_out(job, device)
 
 
 @router.post("/agent/jobs/{job_id}/fail", response_model=ScanJobOut)
@@ -507,7 +573,7 @@ def agent_submit_failure(
     job.error_message = payload.error_message[:512]
     db.commit()
     db.refresh(job)
-    return _scan_job_to_out(job, device.device_uid)
+    return _scan_job_to_out(job, device)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

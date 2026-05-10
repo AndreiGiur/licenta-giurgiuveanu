@@ -28,18 +28,26 @@ Scriptul:
 
 1. Login în UI → **Devices** → **↓ Descarcă .exe** (banner deasupra listei).
 2. **Dublu-click** pe `VulnWatchAgent.exe` (descărcat din UI).
-3. La prima rulare se deschide o fereastră grafică:
-   - completezi **Email**, **Parolă**, **API URL**, **Device UID**, **Nume**
-   - bifezi (recomandat) "Pornește automat la logon"
-   - apeși **Înrolează dispozitiv**
-4. Fereastra se transformă în **panoul de status**:
-   - dot verde + "Daemon activ"
-   - butoane: **Scan now** / **Pauză** / **Deschide dashboard** / **Autostart** / **Ieșire**
-   - log live al joburilor
-5. Iconul în **system tray** (lângă ceas) — chiar dacă închizi fereastra cu X,
+3. **Pagina 1 — Login**: completezi email + parolă + API URL. Dacă nu ai cont,
+   click pe link "Înregistrează-te" (toggle inline; același formular).
+4. **Pagina 2 — Enroll device** (după login reușit):
+   - **dacă ai mai folosit acest PC pe acest cont** (ai reinstalat OS-ul, ai
+     șters configul local etc.) → apare automat opțiunea **"Refolosește device
+     existent"** cu detaliile (nume, UID, dată înregistrare). Click → primești
+     token nou pentru același device, istoricul scanărilor rămâne.
+   - **dacă e PC nou** → completezi UID-ul (default: hostname) + nume afișat,
+     bifezi "Pornește automat la logon" (recomandat), apeși **Înrolează acest PC**.
+5. **Pagina 3 — Status**: panou cu cont logat + nume device + indicator daemon.
+   Butoane: **Scan now** / **Pauză** / **Open dashboard** / **Logout**. Log
+   live al joburilor.
+6. Iconul în **system tray** (lângă ceas) — chiar dacă închizi fereastra cu X,
    daemon-ul rămâne să răspundă la "Scan now" din UI. Click dreapta pe icon →
-   meniu cu Pauză / Deschide dashboard / Ieșire.
-6. La logon următor, agent-ul pornește automat (dacă ai bifat autostart).
+   meniu cu Pauză / Open dashboard / Ieșire.
+7. La logon următor, agent-ul pornește automat (dacă ai bifat autostart).
+
+**Logout** șterge configul local și revine la pagina de login. Device-ul
+rămâne pe contul tău în dashboard — îl poți reactiva oricând cu același cont
+(smart re-link automat).
 
 **Totul fără să tastezi vreo comandă.**
 
