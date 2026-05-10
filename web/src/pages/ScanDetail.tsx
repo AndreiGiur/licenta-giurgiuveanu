@@ -117,7 +117,10 @@ export default function ScanDetail() {
             <h1 className="page-title">Scan #{scanId}</h1>
             {data && (
               <p className="page-subtitle">
-                Device: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--accent)" }}>{data.device_uid}</span>
+                Device: <strong style={{ color: "var(--text-primary)" }}>{data.device_name}</strong>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--text-muted)", marginLeft: 6 }}>
+                  ({data.device_uid})
+                </span>
                 {" · "}{formatDate(data.created_at)}
               </p>
             )}

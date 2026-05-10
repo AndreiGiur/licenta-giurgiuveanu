@@ -31,6 +31,7 @@ export type ScanPayload = {
 export type ScanDetailResponse = {
   scan_id: number;
   device_uid: string;
+  device_name: string;
   created_at: string;
   exposure_score: number;
   findings: Finding[];
@@ -49,6 +50,7 @@ export type ScanJobStatus =
 export type ScanJobResponse = {
   job_id: number;
   device_uid: string;
+  device_name: string;
   status: ScanJobStatus;
   created_at: string;
   started_at?: string | null;

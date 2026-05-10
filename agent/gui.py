@@ -1,25 +1,27 @@
 """
 VulnWatch Agent — interfata grafica (Tkinter).
 
-Doua moduri afisate dinamic, in functie de starea configului local:
+Trei pagini afisate dinamic, in functie de stare:
 
-1. **Enrollment** (cand nu exista config) — formular cu Email / Parola /
-   API URL / UID device / Nume. La submit:
-   - face login (sau register-then-login daca contul nu exista),
-   - creeaza device-ul,
-   - salveaza tokenul in `~/.vulnwatch/config.ini`,
-   - ofera (default ON) inregistrare in autostart la logon.
+1. **Login** (cand nu exista config valid) — formular cu Email / Parola / API URL
+   + link "Nu ai cont? Inregistreaza-te" (toggle inline).
 
-2. **Status** (dupa enrollment) — afiseaza ID-ul, hostname-ul, log live al
-   joburilor, butoane:
-     [Scan now]  → cere o scanare imediata via push (`POST /scans`)
-     [Pauza/Reia] → comuta starea daemon-ului
-     [Inchide]   → opreste agent-ul (doar fereastra; daemon-ul ramane in tray)
-     [Iesire complet] → opreste si daemon-ul si fereastra
+2. **Enroll Device** (post-login, masina noua) — afiseaza UID detectat,
+   nume editabil, bifa autostart. Submit → POST /devices → salveaza config →
+   pagina Status.
 
-Daemon-ul ruleaza pe thread separat. Mesajele de log curg printr-un
-`queue.Queue` consumat de `after()` cu un interval de 100ms (Tk e
-single-threaded — niciun update direct la widget-uri din alte threaduri).
+   Subvarianta **Re-link** (post-login, device gasit): "Acest PC pare sa fie
+   deja inrolat ca <Nume>. Refoloseste-l?" → POST /devices/{uid}/relink →
+   salveaza config → pagina Status.
+
+3. **Status** (config valid) — afiseaza email-ul user-ului + numele device-ului,
+   indicator daemon, butoane Scan now / Pauza / Open dashboard / Logout.
+   La pornire, daemon-ul porneste automat. Logout sterge configul local
+   si revine la pagina de Login.
+
+Tot codul UI ruleaza pe thread-ul principal Tk. Daemon-ul ruleaza pe thread
+separat care comunica prin queue.Queue. Niciun update direct la widget-uri
+din alte thread-uri.
 """
 
 from __future__ import annotations
@@ -43,9 +45,7 @@ from . import autostart, core
 
 
 class DaemonRunner:
-    """Wrapper peste core.daemon_loop care ruleaza pe thread separat.
-
-    Comunica cu UI prin `log_queue` (mesaje de log) si flag-uri thread-safe."""
+    """Wrapper peste core.daemon_loop care ruleaza pe thread separat."""
 
     def __init__(self, log_queue: "queue.Queue[tuple[str, str]]"):
         self.log_queue = log_queue
@@ -109,7 +109,7 @@ class DaemonRunner:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Tema vizuala (paleta din frontend pentru consistenta)
+# Tema vizuala
 # ──────────────────────────────────────────────────────────────────────────────
 
 THEME = {
@@ -144,18 +144,20 @@ class AgentApp:
     def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title("VulnWatch Agent")
-        self.root.geometry("680x520")
-        self.root.minsize(560, 420)
+        self.root.geometry("680x560")
+        self.root.minsize(560, 460)
         self.root.configure(bg=THEME["bg"])
-        try:
-            self.root.iconbitmap(default="")  # icon-ul nativ se ataseaza la build
-        except Exception:
-            pass
 
         self.log_queue: "queue.Queue[tuple[str, str]]" = queue.Queue(maxsize=1000)
         self.daemon = DaemonRunner(self.log_queue)
-        self.tray = None  # initializat doar dupa enrollment, daca pystray e disponibil
+        self.tray = None
         self._tray_started = False
+
+        # State pentru flow-ul de login → enroll
+        self._session_token: str | None = None
+        self._login_email: str = ""
+        self._api_base: str = core.DEFAULT_API_BASE
+        self._existing_device: dict | None = None
 
         self._configure_styles()
         self._render_root()
@@ -175,7 +177,6 @@ class AgentApp:
         style.configure(".", background=THEME["bg"], foreground=THEME["text"],
                         fieldbackground=THEME["elevated"], borderwidth=0)
         style.configure("TFrame", background=THEME["bg"])
-        style.configure("Surface.TFrame", background=THEME["surface"])
         style.configure("TLabel", background=THEME["bg"], foreground=THEME["text"])
         style.configure("Dim.TLabel", background=THEME["bg"],
                         foreground=THEME["text_dim"], font=("Segoe UI", 9))
@@ -183,6 +184,8 @@ class AgentApp:
                         foreground=THEME["text"], font=("Segoe UI", 16, "bold"))
         style.configure("Subtitle.TLabel", background=THEME["bg"],
                         foreground=THEME["text_dim"], font=("Segoe UI", 10))
+        style.configure("Brand.TLabel", background=THEME["bg"],
+                        foreground=THEME["accent"], font=("Segoe UI", 11, "bold"))
 
         style.configure("TEntry", fieldbackground=THEME["elevated"],
                         foreground=THEME["text"], bordercolor=THEME["border"],
@@ -204,10 +207,17 @@ class AgentApp:
         style.configure("Danger.TButton", background=THEME["surface"],
                         foreground=THEME["red"], padding=(12, 6), borderwidth=0)
 
+        style.configure("Link.TButton", background=THEME["bg"],
+                        foreground=THEME["accent"], padding=0, borderwidth=0,
+                        font=("Segoe UI", 9, "underline"))
+        style.map("Link.TButton",
+                  background=[("active", THEME["bg"])],
+                  foreground=[("active", "#7dd3fc")])
+
         style.configure("TCheckbutton", background=THEME["bg"],
                         foreground=THEME["text"])
 
-    # ── Routing intre paginile UI ─────────────────────────────────────────────
+    # ── Routing ──────────────────────────────────────────────────────────────
 
     def _clear_root(self) -> None:
         for w in self.root.winfo_children():
@@ -217,100 +227,290 @@ class AgentApp:
         self._clear_root()
         if core.is_enrolled():
             self._render_status_page()
-            # Pornire automata daemon dupa render (asa logul iese in widget)
             self.root.after(50, self._auto_start_daemon)
         else:
-            self._render_enroll_page()
+            self._render_login_page()
 
-    # ── Pagina ENROLL ─────────────────────────────────────────────────────────
+    # ── Pagina LOGIN ─────────────────────────────────────────────────────────
 
-    def _render_enroll_page(self) -> None:
-        wrap = ttk.Frame(self.root, style="TFrame", padding=24)
+    def _render_login_page(self) -> None:
+        wrap = ttk.Frame(self.root, style="TFrame", padding=32)
         wrap.pack(fill="both", expand=True)
 
-        ttk.Label(wrap, text="Inrolare dispozitiv", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(wrap, text="Conecteaza-te cu acelasi cont folosit in dashboard. "
-                  "Daca emailul nu exista, contul va fi creat.",
-                  style="Subtitle.TLabel", wraplength=600).pack(anchor="w", pady=(4, 16))
+        ttk.Label(wrap, text="VULNWATCH AGENT", style="Brand.TLabel").pack(anchor="w")
+
+        self._login_title = tk.StringVar(value="Autentificare")
+        ttk.Label(wrap, textvariable=self._login_title, style="Title.TLabel").pack(anchor="w", pady=(8, 4))
+
+        self._login_subtitle = tk.StringVar(
+            value="Logheaza-te cu acelasi cont folosit in dashboard."
+        )
+        ttk.Label(wrap, textvariable=self._login_subtitle, style="Subtitle.TLabel",
+                  wraplength=560).pack(anchor="w", pady=(0, 20))
 
         form = ttk.Frame(wrap, style="TFrame")
         form.pack(fill="x")
 
-        def add_row(label: str, var: tk.StringVar, show: str = "", placeholder: str = "") -> ttk.Entry:
-            ttk.Label(form, text=label, style="Dim.TLabel").pack(anchor="w", pady=(8, 2))
-            entry = ttk.Entry(form, textvariable=var, show=show)
-            entry.pack(fill="x")
-            if placeholder and not var.get():
-                var.set(placeholder)
-            return entry
+        self._var_email    = tk.StringVar()
+        self._var_password = tk.StringVar()
+        self._var_api      = tk.StringVar(value=core.DEFAULT_API_BASE)
+        self._auth_mode    = tk.StringVar(value="login")
 
-        self._var_email     = tk.StringVar()
-        self._var_password  = tk.StringVar()
-        self._var_api       = tk.StringVar(value=core.DEFAULT_API_BASE)
-        self._var_uid       = tk.StringVar(value=socket.gethostname().lower())
-        self._var_name      = tk.StringVar(value=f"{platform.system()} {socket.gethostname()}")
-        self._var_autostart = tk.BooleanVar(value=True)
+        ttk.Label(form, text="Email", style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
+        e_email = ttk.Entry(form, textvariable=self._var_email)
+        e_email.pack(fill="x", pady=(0, 12))
+        e_email.focus_set()
 
-        e1 = add_row("Email",         self._var_email)
-        e1.focus_set()
-        add_row("Parola",            self._var_password, show="•")
-        add_row("API URL",           self._var_api)
-        add_row("Device UID",        self._var_uid)
-        add_row("Nume afisat",       self._var_name)
+        ttk.Label(form, text="Parola", style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
+        ttk.Entry(form, textvariable=self._var_password, show="•").pack(fill="x", pady=(0, 12))
 
-        opts = ttk.Frame(wrap, style="TFrame")
-        opts.pack(fill="x", pady=(16, 8))
-        ttk.Checkbutton(opts, text="Porneste automat la logon (recomandat)",
-                        variable=self._var_autostart).pack(anchor="w")
+        ttk.Label(form, text="API URL", style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
+        ttk.Entry(form, textvariable=self._var_api).pack(fill="x", pady=(0, 8))
 
-        # Mesaj de status / eroare
-        self._enroll_msg = tk.StringVar()
-        msg_label = ttk.Label(wrap, textvariable=self._enroll_msg,
-                              foreground=THEME["amber"],
-                              background=THEME["bg"], wraplength=600)
-        msg_label.pack(anchor="w", pady=(8, 4))
+        self._login_msg = tk.StringVar()
+        ttk.Label(wrap, textvariable=self._login_msg,
+                  foreground=THEME["amber"], background=THEME["bg"],
+                  wraplength=560).pack(anchor="w", pady=(8, 4))
 
         actions = ttk.Frame(wrap, style="TFrame")
         actions.pack(fill="x", pady=(8, 0))
 
-        self._enroll_btn = ttk.Button(actions, text="Inroleaza dispozitiv",
-                                      style="Accent.TButton",
-                                      command=self._submit_enrollment)
-        self._enroll_btn.pack(side="left")
+        self._login_submit_btn = ttk.Button(
+            actions, text="Autentificare", style="Accent.TButton",
+            command=self._submit_login,
+        )
+        self._login_submit_btn.pack(side="left")
 
-    def _submit_enrollment(self) -> None:
+        toggle_frame = ttk.Frame(wrap, style="TFrame")
+        toggle_frame.pack(fill="x", pady=(20, 0))
+
+        self._toggle_label = tk.StringVar(value="Nu ai cont?")
+        ttk.Label(toggle_frame, textvariable=self._toggle_label,
+                  style="Dim.TLabel").pack(side="left")
+
+        self._toggle_btn_text = tk.StringVar(value="Inregistreaza-te")
+        self._toggle_btn = ttk.Button(
+            toggle_frame, textvariable=self._toggle_btn_text, style="Link.TButton",
+            command=self._toggle_auth_mode,
+        )
+        self._toggle_btn.pack(side="left", padx=(4, 0))
+
+    def _toggle_auth_mode(self) -> None:
+        if self._auth_mode.get() == "login":
+            self._auth_mode.set("register")
+            self._login_title.set("Cont nou")
+            self._login_subtitle.set("Creeaza un cont VulnWatch (vei putea folosi acelasi cont si in dashboard).")
+            self._login_submit_btn.configure(text="Creeaza cont")
+            self._toggle_label.set("Ai deja cont?")
+            self._toggle_btn_text.set("Autentifica-te")
+        else:
+            self._auth_mode.set("login")
+            self._login_title.set("Autentificare")
+            self._login_subtitle.set("Logheaza-te cu acelasi cont folosit in dashboard.")
+            self._login_submit_btn.configure(text="Autentificare")
+            self._toggle_label.set("Nu ai cont?")
+            self._toggle_btn_text.set("Inregistreaza-te")
+
+    def _submit_login(self) -> None:
         email = self._var_email.get().strip().lower()
         password = self._var_password.get()
         api = self._var_api.get().strip().rstrip("/")
-        uid = self._var_uid.get().strip()
-        name = self._var_name.get().strip()
+        mode = self._auth_mode.get()
 
         if not email or not password:
-            self._enroll_msg.set("Email si parola sunt obligatorii.")
-            return
-        if not uid or not name:
-            self._enroll_msg.set("Device UID si numele afisat sunt obligatorii.")
+            self._login_msg.set("Email si parola sunt obligatorii.")
             return
         if len(password) < 8:
-            self._enroll_msg.set("Parola trebuie sa aiba minim 8 caractere.")
+            self._login_msg.set("Parola trebuie sa aiba minim 8 caractere.")
+            return
+
+        self._login_submit_btn.configure(state="disabled")
+        self._login_msg.set("Se autentifica..." if mode == "login" else "Se creeaza contul...")
+
+        def worker() -> None:
+            try:
+                if mode == "register":
+                    core.api_register(api, email, password)
+                token = core.api_login(api, email, password)
+                core.api_me(api, token)
+                hostname = socket.gethostname().lower()
+                existing = core.api_get_device_by_uid(api, token, hostname)
+                self.root.after(0, lambda: self._on_login_success(api, token, email, existing))
+            except core.ApiError as e:
+                self.root.after(0, lambda err=str(e): self._on_login_failure(err))
+            except Exception as e:  # noqa: BLE001
+                self.root.after(0, lambda err=str(e): self._on_login_failure(err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_login_success(self, api: str, token: str, email: str,
+                          existing: dict | None) -> None:
+        self._session_token = token
+        self._login_email = email
+        self._api_base = api
+        self._existing_device = existing
+        self._render_enroll_page()
+
+    def _on_login_failure(self, error: str) -> None:
+        self._login_submit_btn.configure(state="normal")
+        if "email already registered" in error.lower():
+            self._login_msg.set("Acest email este deja inregistrat. Foloseste 'Autentifica-te'.")
+        elif "invalid credentials" in error.lower():
+            self._login_msg.set("Email sau parola incorecte.")
+        else:
+            self._login_msg.set(f"Eroare: {error}")
+
+    # ── Pagina ENROLL DEVICE ─────────────────────────────────────────────────
+
+    def _render_enroll_page(self) -> None:
+        self._clear_root()
+        wrap = ttk.Frame(self.root, style="TFrame", padding=32)
+        wrap.pack(fill="both", expand=True)
+
+        head = ttk.Frame(wrap, style="TFrame")
+        head.pack(fill="x")
+        ttk.Label(head, text="VULNWATCH AGENT", style="Brand.TLabel").pack(side="left")
+        ttk.Label(head, text=f"  •  {self._login_email}",
+                  style="Dim.TLabel").pack(side="left")
+
+        if self._existing_device:
+            self._render_relink_section(wrap)
+        else:
+            self._render_new_enroll_section(wrap)
+
+    def _render_relink_section(self, wrap: ttk.Frame) -> None:
+        existing = self._existing_device or {}
+        ttk.Label(wrap, text="Refoloseste device existent",
+                  style="Title.TLabel").pack(anchor="w", pady=(12, 4))
+        ttk.Label(
+            wrap,
+            text=(f"Acest PC pare deja inrolat pe contul tau ca "
+                  f"\"{existing.get('name', '?')}\". Cel mai probabil "
+                  f"ai reinstalat sistemul sau ai sters configul local. "
+                  f"Vrei sa reactivezi device-ul existent?"),
+            style="Subtitle.TLabel", wraplength=580,
+        ).pack(anchor="w", pady=(0, 20))
+
+        card = tk.Frame(wrap, bg=THEME["surface"], bd=0,
+                        highlightthickness=1, highlightbackground=THEME["border"])
+        card.pack(fill="x", pady=(0, 16))
+        for k, label in [("name", "Nume"), ("device_uid", "UID"), ("created_at", "Inregistrat")]:
+            row = tk.Frame(card, bg=THEME["surface"])
+            row.pack(fill="x", padx=12, pady=4)
+            tk.Label(row, text=label, bg=THEME["surface"], fg=THEME["text_muted"],
+                     font=("Segoe UI", 9), width=14, anchor="w").pack(side="left")
+            tk.Label(row, text=str(existing.get(k, "?"))[:60], bg=THEME["surface"],
+                     fg=THEME["text"], font=("Consolas", 10)).pack(side="left")
+
+        self._enroll_msg = tk.StringVar()
+        ttk.Label(wrap, textvariable=self._enroll_msg, foreground=THEME["amber"],
+                  background=THEME["bg"], wraplength=580).pack(anchor="w", pady=(0, 8))
+
+        self._var_autostart = tk.BooleanVar(value=True)
+        ttk.Checkbutton(wrap, text="Porneste automat la logon (recomandat)",
+                        variable=self._var_autostart).pack(anchor="w", pady=(8, 16))
+
+        actions = ttk.Frame(wrap, style="TFrame")
+        actions.pack(fill="x")
+        self._enroll_btn = ttk.Button(
+            actions, text="Refoloseste device-ul",
+            style="Accent.TButton", command=self._submit_relink,
+        )
+        self._enroll_btn.pack(side="left", padx=(0, 8))
+
+        ttk.Button(actions, text="Inroleaza ca device nou",
+                   style="Secondary.TButton",
+                   command=self._switch_to_new_enroll).pack(side="left")
+
+    def _switch_to_new_enroll(self) -> None:
+        self._existing_device = None
+        self._render_enroll_page()
+
+    def _render_new_enroll_section(self, wrap: ttk.Frame) -> None:
+        ttk.Label(wrap, text="Inroleaza acest PC", style="Title.TLabel").pack(anchor="w", pady=(12, 4))
+        ttk.Label(
+            wrap,
+            text="Acest PC va trimite scanari de securitate catre contul tau. "
+                 "Poti vedea rezultatele in dashboard, la /devices.",
+            style="Subtitle.TLabel", wraplength=580,
+        ).pack(anchor="w", pady=(0, 20))
+
+        sysinfo = tk.Frame(wrap, bg=THEME["surface"], bd=0,
+                           highlightthickness=1, highlightbackground=THEME["border"])
+        sysinfo.pack(fill="x", pady=(0, 16))
+        for label, value in [
+            ("Sistem", f"{platform.system()} {platform.release()}"),
+            ("Hostname", socket.gethostname()),
+        ]:
+            row = tk.Frame(sysinfo, bg=THEME["surface"])
+            row.pack(fill="x", padx=12, pady=4)
+            tk.Label(row, text=label, bg=THEME["surface"], fg=THEME["text_muted"],
+                     font=("Segoe UI", 9), width=14, anchor="w").pack(side="left")
+            tk.Label(row, text=value, bg=THEME["surface"], fg=THEME["text"],
+                     font=("Consolas", 10)).pack(side="left")
+
+        form = ttk.Frame(wrap, style="TFrame")
+        form.pack(fill="x")
+
+        self._var_uid  = tk.StringVar(value=socket.gethostname().lower())
+        self._var_name = tk.StringVar(value=f"{platform.system()} {socket.gethostname()}")
+
+        ttk.Label(form, text="Device UID (identificator tehnic)",
+                  style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
+        ttk.Entry(form, textvariable=self._var_uid).pack(fill="x", pady=(0, 12))
+
+        ttk.Label(form, text="Nume afisat (cum apare in dashboard)",
+                  style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
+        ttk.Entry(form, textvariable=self._var_name).pack(fill="x", pady=(0, 12))
+
+        self._enroll_msg = tk.StringVar()
+        ttk.Label(wrap, textvariable=self._enroll_msg, foreground=THEME["amber"],
+                  background=THEME["bg"], wraplength=580).pack(anchor="w", pady=(8, 4))
+
+        self._var_autostart = tk.BooleanVar(value=True)
+        ttk.Checkbutton(wrap, text="Porneste automat la logon (recomandat)",
+                        variable=self._var_autostart).pack(anchor="w", pady=(4, 16))
+
+        actions = ttk.Frame(wrap, style="TFrame")
+        actions.pack(fill="x")
+        self._enroll_btn = ttk.Button(
+            actions, text="Inroleaza acest PC",
+            style="Accent.TButton", command=self._submit_enroll,
+        )
+        self._enroll_btn.pack(side="left", padx=(0, 8))
+
+        ttk.Button(actions, text="Logout",
+                   style="Secondary.TButton",
+                   command=self._logout_from_enroll).pack(side="right")
+
+    def _logout_from_enroll(self) -> None:
+        if self._session_token:
+            try:
+                core.api_logout(self._api_base, self._session_token)
+            except Exception:
+                pass
+        self._session_token = None
+        self._login_email = ""
+        self._existing_device = None
+        self._render_login_page()
+
+    def _submit_enroll(self) -> None:
+        uid = self._var_uid.get().strip()
+        name = self._var_name.get().strip()
+        if not uid or not name:
+            self._enroll_msg.set("UID si nume sunt obligatorii.")
             return
 
         self._enroll_btn.configure(state="disabled")
-        self._enroll_msg.set("Inrolare in curs... (poate dura cateva secunde)")
+        self._enroll_msg.set("Se inregistreaza dispozitivul...")
 
-        # Inrolarea poate face mai multe cereri HTTP — o rulam pe thread
-        # ca UI-ul sa nu se blocheze.
         def worker() -> None:
             try:
-                core.perform_enrollment(api, email, password, uid, name,
-                                        allow_create_account=True,
-                                        log=lambda m, s="info": None)
-                if self._var_autostart.get():
-                    ok, msg = autostart.enable()
-                    autostart_msg = f"Autostart: {msg}" if ok else f"Autostart esuat: {msg}"
-                else:
-                    autostart_msg = ""
-                self.root.after(0, lambda: self._on_enroll_success(autostart_msg))
+                created = core.enroll_device_with_session(
+                    self._api_base, self._session_token, uid, name,
+                    relink_if_exists=False, log=lambda m, s="info": None,
+                )
+                self._finalize_enrollment(created)
             except core.ApiError as e:
                 self.root.after(0, lambda err=str(e): self._on_enroll_failure(err))
             except Exception as e:  # noqa: BLE001
@@ -318,38 +518,101 @@ class AgentApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_enroll_success(self, autostart_msg: str) -> None:
-        if autostart_msg:
-            self._enroll_msg.set(autostart_msg)
-        # Render pagina principala
-        self._render_root()
+    def _submit_relink(self) -> None:
+        uid = (self._existing_device or {}).get("device_uid", "")
+        if not uid:
+            self._enroll_msg.set("Lipseste UID-ul device-ului existent.")
+            return
+
+        self._enroll_btn.configure(state="disabled")
+        self._enroll_msg.set("Se reactiveaza device-ul...")
+
+        def worker() -> None:
+            try:
+                created = core.api_relink_device(self._api_base, self._session_token, uid)
+                self._finalize_enrollment(created)
+            except core.ApiError as e:
+                self.root.after(0, lambda err=str(e): self._on_enroll_failure(err))
+            except Exception as e:  # noqa: BLE001
+                self.root.after(0, lambda err=str(e): self._on_enroll_failure(err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finalize_enrollment(self, created: dict) -> None:
+        device_token = created.get("device_token")
+        if not device_token:
+            self.root.after(0, lambda: self._on_enroll_failure(
+                "Backend-ul nu a returnat device_token"))
+            return
+
+        device_uid = created.get("device_uid", "")
+        device_name = created.get("name", device_uid)
+
+        core.save_enrollment(
+            self._api_base, device_uid, device_token,
+            device_name=device_name, user_email=self._login_email,
+        )
+
+        if self._var_autostart.get():
+            try:
+                autostart.enable()
+            except Exception:
+                pass
+
+        try:
+            core.api_logout(self._api_base, self._session_token)
+        except Exception:
+            pass
+        self._session_token = None
+
+        self.root.after(0, self._render_root)
 
     def _on_enroll_failure(self, error: str) -> None:
         self._enroll_btn.configure(state="normal")
-        self._enroll_msg.set(f"Eroare: {error}")
+        if "already exists" in error.lower():
+            self._enroll_msg.set(
+                "Acest UID exista deja pe contul tau. Foloseste alt UID, "
+                "sau reincarca pagina ca sa apara optiunea de re-link."
+            )
+        else:
+            self._enroll_msg.set(f"Eroare: {error}")
 
     # ── Pagina STATUS ─────────────────────────────────────────────────────────
 
     def _render_status_page(self) -> None:
+        self._clear_root()
         wrap = ttk.Frame(self.root, style="TFrame", padding=20)
         wrap.pack(fill="both", expand=True)
 
         try:
             api_base, device_uid, _ = core.get_enrollment()
         except RuntimeError:
-            self._render_enroll_page()
+            self._render_login_page()
             return
 
-        # Header
+        meta = core.get_enrollment_meta()
+        device_name = meta.get("device_name") or device_uid
+        user_email = meta.get("user_email") or "(unknown account)"
+
         header = ttk.Frame(wrap, style="TFrame")
         header.pack(fill="x")
+        ttk.Label(header, text="VULNWATCH AGENT", style="Brand.TLabel").pack(anchor="w")
 
-        ttk.Label(header, text="VulnWatch Agent", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(header,
-                  text=f"Conectat ca {device_uid} • {api_base}",
-                  style="Subtitle.TLabel").pack(anchor="w", pady=(2, 12))
+        info = tk.Frame(wrap, bg=THEME["surface"], bd=0,
+                        highlightthickness=1, highlightbackground=THEME["border"])
+        info.pack(fill="x", pady=(12, 12))
+        for label, value in [
+            ("Cont", user_email),
+            ("Device", f"{device_name}  ({device_uid})"),
+            ("API", api_base),
+        ]:
+            row = tk.Frame(info, bg=THEME["surface"])
+            row.pack(fill="x", padx=12, pady=4)
+            tk.Label(row, text=label, bg=THEME["surface"], fg=THEME["text_muted"],
+                     font=("Segoe UI", 9), width=8, anchor="w").pack(side="left")
+            tk.Label(row, text=value, bg=THEME["surface"], fg=THEME["text"],
+                     font=("Segoe UI", 10)).pack(side="left")
 
-        # Bara de status (dot + text)
         status_bar = ttk.Frame(wrap, style="TFrame")
         status_bar.pack(fill="x", pady=(0, 12))
         self._status_dot = tk.Canvas(status_bar, width=12, height=12,
@@ -359,7 +622,6 @@ class AgentApp:
         ttk.Label(status_bar, textvariable=self._status_var,
                   background=THEME["bg"], foreground=THEME["text"]).pack(side="left")
 
-        # Butoane actiuni
         actions = ttk.Frame(wrap, style="TFrame")
         actions.pack(fill="x", pady=(0, 12))
 
@@ -373,26 +635,19 @@ class AgentApp:
                                      command=self._on_toggle_pause)
         self._pause_btn.pack(side="left", padx=(0, 6))
 
-        ttk.Button(actions, text="Deschide dashboard",
+        ttk.Button(actions, text="Open dashboard",
                    style="Secondary.TButton",
                    command=self._open_dashboard).pack(side="left", padx=(0, 6))
 
-        ttk.Button(actions, text="Autostart",
-                   style="Secondary.TButton",
-                   command=self._on_toggle_autostart).pack(side="left", padx=(0, 6))
-
-        ttk.Button(actions, text="Iesire",
+        ttk.Button(actions, text="Logout",
                    style="Danger.TButton",
-                   command=self._on_quit).pack(side="right")
+                   command=self._on_logout).pack(side="right")
 
-        # Log live
-        log_label = ttk.Label(wrap, text="Activitate", style="Dim.TLabel")
-        log_label.pack(anchor="w", pady=(8, 4))
+        ttk.Label(wrap, text="Activitate", style="Dim.TLabel").pack(anchor="w", pady=(4, 4))
 
         log_frame = tk.Frame(wrap, bg=THEME["surface"], bd=0,
                              highlightthickness=1, highlightbackground=THEME["border"])
         log_frame.pack(fill="both", expand=True)
-
         self._log_text = tk.Text(log_frame, bg=THEME["surface"], fg=THEME["text"],
                                  insertbackground=THEME["text"],
                                  font=("Consolas", 9), bd=0, padx=10, pady=8,
@@ -404,6 +659,14 @@ class AgentApp:
         self._log_text.configure(yscrollcommand=scroll.set)
         for sev, color in SEVERITY_COLOR.items():
             self._log_text.tag_configure(sev, foreground=color)
+
+        autostart_state = autostart.is_enabled()
+        self._autostart_var = tk.BooleanVar(value=autostart_state)
+        bottom = ttk.Frame(wrap, style="TFrame")
+        bottom.pack(fill="x", pady=(8, 0))
+        ttk.Checkbutton(bottom, text="Porneste automat la logon",
+                        variable=self._autostart_var,
+                        command=self._on_toggle_autostart).pack(side="left")
 
         self._set_status_indicator("starting")
 
@@ -417,7 +680,6 @@ class AgentApp:
             self._maybe_start_tray()
 
     def _on_scan_now(self) -> None:
-        """Push direct (fara coada). Mai rapid pentru testare."""
         try:
             api_base, device_uid, device_token = core.get_enrollment()
         except RuntimeError:
@@ -461,29 +723,47 @@ class AgentApp:
         webbrowser.open(f"{frontend}/dashboard?device={device_uid}")
 
     def _on_toggle_autostart(self) -> None:
-        if autostart.is_enabled():
-            ok, msg = autostart.disable()
-        else:
+        if self._autostart_var.get():
             ok, msg = autostart.enable()
+        else:
+            ok, msg = autostart.disable()
         self._append_log(msg, "ok" if ok else "error")
 
-    def _on_quit(self) -> None:
-        if not messagebox.askyesno("Iesire VulnWatch",
-                                   "Opresti agentul si fereastra?\n\n"
-                                   "Pentru ca scanarile sa functioneze din UI, agentul "
-                                   "trebuie sa ruleze. Daca ai activat autostart, va "
-                                   "porni la urmatorul logon."):
+    def _on_logout(self) -> None:
+        if not messagebox.askyesno(
+            "Logout din acest PC",
+            "Logout sterge configul local. Va trebui sa te logezi din nou ca "
+            "sa ruleze scanari pe acest PC.\n\n"
+            "Device-ul ramane pe contul tau in dashboard si poti sa-l "
+            "reactivezi oricand cu acelasi cont.\n\n"
+            "Continui?",
+        ):
             return
-        self._shutdown_and_exit()
+        self.daemon.stop()
+        if self.tray:
+            try:
+                self.tray.stop()
+            except Exception:
+                pass
+            self.tray = None
+            self._tray_started = False
+        self.daemon.join(timeout=2.0)
+        self.daemon = DaemonRunner(self.log_queue)
+        core.clear_config()
+        self._render_login_page()
 
     def _on_close_window(self) -> None:
-        """User-ul a apasat X. Daca tray-ul e activ, ascundem fereastra
-        (daemon ramane). Daca nu, intrebam ce vrea sa faca."""
         if self._tray_started:
             self.root.withdraw()
             return
-        # Fara tray — comportament clasic: confirma iesirea
-        self._on_quit()
+        if not messagebox.askyesno(
+            "Iesire VulnWatch",
+            "Opresti agentul si fereastra?\n\n"
+            "Pentru ca scanarile sa functioneze din UI, agentul trebuie sa "
+            "ruleze. Daca ai activat autostart, va porni la urmatorul logon.",
+        ):
+            return
+        self._shutdown_and_exit()
 
     def _shutdown_and_exit(self) -> None:
         self.daemon.stop()
@@ -510,7 +790,6 @@ class AgentApp:
             severity = "info"
         self._log_text.configure(state="normal")
         self._log_text.insert("end", msg + "\n", severity)
-        # Trim daca devine prea mare (>5000 linii)
         line_count = int(self._log_text.index("end-1c").split(".")[0])
         if line_count > 5000:
             self._log_text.delete("1.0", f"{line_count-4000}.0")
@@ -537,7 +816,7 @@ class AgentApp:
         if hasattr(self, "tray") and self.tray:
             self.tray.update_tooltip(f"VulnWatch Agent — {self._status_var.get()}")
 
-    # ── Tray (daca pystray e disponibil) ──────────────────────────────────────
+    # ── Tray ──────────────────────────────────────────────────────────────────
 
     def _maybe_start_tray(self) -> None:
         from . import tray
@@ -574,6 +853,5 @@ def run_gui() -> int:
     try:
         return AgentApp().run()
     except tk.TclError as e:
-        # Fara display (server, SSH fara X) — afisam in stdout si iesim curat
         print(f"GUI indisponibil ({e}). Foloseste CLI: python scan.py daemon")
         return 1
