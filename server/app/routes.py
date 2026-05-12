@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Response, status, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Header, Response, status, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -35,7 +35,9 @@ from .schemas import (
     DeviceCreateOut,
     DeviceOut,
     DeviceScanListItem,
+    HeartbeatIn,
     JobFailureIn,
+    JobProgressIn,
     JobResultIn,
     LoginIn,
     MeOut,
@@ -43,6 +45,7 @@ from .schemas import (
     ScanCreateOut,
     ScanDetailOut,
     ScanIn,
+    ScanJobCreateIn,
     ScanJobOut,
     TokenOut,
 )
@@ -68,11 +71,29 @@ def _scan_job_to_out(job: ScanJob, device: Device) -> ScanJobOut:
         scan_id=job.scan_id,
         exposure_score=exposure_score,
         error_message=job.error_message,
+        scan_type=job.scan_type,
+        progress=job.progress,
+        phase=job.phase,
     )
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _device_to_out(device: Device) -> DeviceOut:
+    """Serializeaza un Device cu campurile de online + agent meta."""
+    caps = device.capabilities if isinstance(device.capabilities, list) else []
+    return DeviceOut(
+        id=device.id,
+        device_uid=device.device_uid,
+        name=device.name,
+        created_at=device.created_at.isoformat(),
+        is_online=device.is_online,
+        last_heartbeat=device.last_heartbeat.isoformat() if device.last_heartbeat else None,
+        agent_version=device.agent_version,
+        capabilities=caps,
+    )
 
 
 def _device_for_token_or_401(db: Session, x_device_token: str | None) -> Device:
@@ -169,27 +190,14 @@ def create_device(payload: DeviceCreateIn, db: Session = Depends(get_db), user: 
     db.commit()
     db.refresh(device)
 
-    return DeviceCreateOut(
-        id=device.id,
-        device_uid=device.device_uid,
-        name=device.name,
-        created_at=device.created_at.isoformat(),
-        device_token=plain_token,
-    )
+    out = _device_to_out(device)
+    return DeviceCreateOut(**out.model_dump(), device_token=plain_token)
 
 
 @router.get("/devices", response_model=list[DeviceOut])
 def list_devices(db: Session = Depends(get_db), user: User = Depends(require_user)):
     rows = db.execute(select(Device).where(Device.owner_id == user.id).order_by(Device.id.desc())).scalars().all()
-    return [
-        DeviceOut(
-            id=d.id,
-            device_uid=d.device_uid,
-            name=d.name,
-            created_at=d.created_at.isoformat(),
-        )
-        for d in rows
-    ]
+    return [_device_to_out(d) for d in rows]
 
 
 # ── Smart re-link ────────────────────────────────────────────────────────────
@@ -217,12 +225,7 @@ def get_device_by_uid(
     ).scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="device not found")
-    return DeviceOut(
-        id=device.id,
-        device_uid=device.device_uid,
-        name=device.name,
-        created_at=device.created_at.isoformat(),
-    )
+    return _device_to_out(device)
 
 
 @router.post("/devices/{device_uid}/relink", response_model=DeviceCreateOut)
@@ -246,13 +249,8 @@ def relink_device(
     db.commit()
     db.refresh(device)
 
-    return DeviceCreateOut(
-        id=device.id,
-        device_uid=device.device_uid,
-        name=device.name,
-        created_at=device.created_at.isoformat(),
-        device_token=plain_token,
-    )
+    out = _device_to_out(device)
+    return DeviceCreateOut(**out.model_dump(), device_token=plain_token)
 
 
 @router.post("/scans", response_model=ScanCreateOut)
@@ -360,6 +358,7 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
     if not device or device.owner_id != user.id:
         raise HTTPException(status_code=404, detail="scan not found")
 
+    payload = scan.payload or {}
     return ScanDetailOut(
         scan_id=scan.id,
         device_uid=device.device_uid,
@@ -376,7 +375,8 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
             }
             for f in scan.findings
         ],
-        payload=scan.payload or {},
+        payload=payload,
+        scan_type=payload.get("scan_type", "standard"),
     )
 
 
@@ -395,10 +395,12 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
 @router.post("/devices/{device_uid}/scan-jobs", response_model=ScanJobOut)
 def create_scan_job(
     device_uid: str,
+    payload: ScanJobCreateIn = Body(default_factory=ScanJobCreateIn),
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
-    """User cere o scanare on-demand pentru un device al sau."""
+    """User cere o scanare on-demand pentru un device al sau.
+    `scan_type` controleaza ce nivel de scanare ruleaza agentul."""
     device = db.execute(
         select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
     ).scalar_one_or_none()
@@ -422,6 +424,7 @@ def create_scan_job(
         device_id=device.id,
         requested_by_user_id=user.id,
         status=ScanJobStatus.PENDING,
+        scan_type=payload.scan_type,
     )
     db.add(job)
     db.commit()
@@ -495,7 +498,7 @@ def agent_get_next_job(
     job.started_at = _utcnow()
     db.commit()
 
-    return AgentJobOut(job_id=job.id, device_uid=device.device_uid)
+    return AgentJobOut(job_id=job.id, device_uid=device.device_uid, scan_type=job.scan_type)
 
 
 @router.post("/agent/jobs/{job_id}/result", response_model=ScanJobOut)
@@ -518,12 +521,17 @@ def agent_submit_result(
         )
 
     # Construim payload-ul scan-ului in format ScanIn (pentru evaluare).
+    # `scan_type` din job determina ce reguli ruleaza (via min_level filtering).
     scan_dict = {
         "device_uid": device.device_uid,
+        "scan_type": job.scan_type,
         "os": payload.os,
+        "system_info": payload.system_info,
         "network": payload.network,
         "processes": payload.processes,
         "software": payload.software,
+        "persistence": payload.persistence,
+        "forensics": payload.forensics,
     }
     score, findings = evaluate(scan_dict)
 
@@ -547,6 +555,42 @@ def agent_submit_result(
     db.commit()
     db.refresh(job)
     return _scan_job_to_out(job, device)
+
+
+@router.post("/agent/heartbeat", status_code=204)
+def agent_heartbeat(
+    payload: HeartbeatIn,
+    db: Session = Depends(get_db),
+    x_device_token: str | None = Header(default=None),
+):
+    """Agent semnaleaza ca este online. Actualizeaza last_heartbeat + meta."""
+    device = _device_for_token_or_401(db, x_device_token)
+    device.last_heartbeat = _utcnow()
+    device.agent_version = payload.agent_version[:32]
+    device.capabilities = payload.capabilities
+    db.commit()
+
+
+@router.post("/agent/jobs/{job_id}/progress", status_code=204)
+def agent_update_progress(
+    job_id: int,
+    payload: JobProgressIn,
+    db: Session = Depends(get_db),
+    x_device_token: str | None = Header(default=None),
+):
+    """Agent raporteaza progresul intre colectori. UI polleaza /scan-jobs/{id}."""
+    device = _device_for_token_or_401(db, x_device_token)
+    job = db.get(ScanJob, job_id)
+    if not job or job.device_id != device.id:
+        raise HTTPException(status_code=404, detail="scan job not found")
+    if job.status != ScanJobStatus.RUNNING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"job is in state '{job.status}', cannot update progress",
+        )
+    job.progress = max(0, min(100, payload.progress))
+    job.phase = payload.phase[:128]
+    db.commit()
 
 
 @router.post("/agent/jobs/{job_id}/fail", response_model=ScanJobOut)

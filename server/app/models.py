@@ -91,10 +91,14 @@ class Device(Base):
     @property
     def is_online(self) -> bool:
         """Online = last_heartbeat in ultimele 30s. Se calculeaza la query;
-        nu este coloana persistata."""
+        nu este coloana persistata. SQLite poate stoca datetime naive, asa ca
+        normalizam la UTC inainte de calcul."""
         if self.last_heartbeat is None:
             return False
-        delta = utcnow() - self.last_heartbeat
+        hb = self.last_heartbeat
+        if hb.tzinfo is None:
+            hb = hb.replace(tzinfo=timezone.utc)
+        delta = utcnow() - hb
         return delta.total_seconds() < 30
 
     @staticmethod

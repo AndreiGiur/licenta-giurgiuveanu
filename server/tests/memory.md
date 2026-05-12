@@ -17,8 +17,9 @@ Rulare: `python -m pytest server/tests` (din radacina repo-ului).
 | `test_scan_jobs.py`             | 12    | Scan-on-demand flow complet: happy path UI→agent→rezultat, 204 cand nu sunt joburi, atomicitate pickup (doi agenti nu prind acelasi job), dedupe la PENDING (nu si la RUNNING), state machine respinge tranzitii invalide, idempotenta pe finalizare, agent raporteaza failure, **4 teste izolare multi-tenant** pentru job queue. |
 | `test_agent_download.py`        | 4     | Endpoint download .exe: info available true/false, 404 cand artifactul lipseste, file serving cu mime corect, auth required (401 fara cookie/header). |
 | `test_relink_and_names.py`      | 11    | Smart re-link + device_name: `GET /devices/by-uid/` returneaza 200/404, izoleaza pe owner; `POST /devices/{uid}/relink` re-emite token (vechiul invalidat) si pastreaza istoricul scan-urilor; `device_name` apare in toate cele 4 raspunsuri (`ScanCreateOut`, `ScanDetailOut`, `ScanJobOut`, lista joburi). |
+| `test_heartbeat.py`             | 3     | `POST /agent/heartbeat` marcheaza device-ul online, returneaza 401 fara token, `is_online` apare pe `GET /devices` si `GET /devices/by-uid/{uid}`. |
 
-## Total: 53 teste end-to-end + 17 unit tests in `agent/tests/` = **70 teste**.
+## Total: 56 teste end-to-end + 17 unit tests in `agent/tests/` = **73 teste**.
 
 ## Pattern important
 

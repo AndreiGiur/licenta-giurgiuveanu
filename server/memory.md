@@ -52,9 +52,11 @@ OpenAPI/Swagger la `http://127.0.0.1:8000/docs`.
 | `GET    /api/v1/scan-jobs/{id}`                       | cookie / X-Session  | UI polleaza status job               |
 | `POST   /api/v1/scans`                                | X-Device-Token      | Agent push direct (legacy & debug)   |
 | `GET    /api/v1/scans/{id}`                           | cookie / X-Session  | Detalii scan + findings              |
-| `GET    /api/v1/agent/jobs/next`                      | X-Device-Token      | Agent ridica job (atomic, FOR UPDATE SKIP LOCKED) |
+| `GET    /api/v1/agent/jobs/next`                      | X-Device-Token      | Agent ridica job (atomic, FOR UPDATE SKIP LOCKED); returneaza `scan_type` |
 | `POST   /api/v1/agent/jobs/{id}/result`               | X-Device-Token      | Agent finalizeaza job                |
 | `POST   /api/v1/agent/jobs/{id}/fail`                 | X-Device-Token      | Agent raporteaza esec                |
+| `POST   /api/v1/agent/jobs/{id}/progress`             | X-Device-Token      | Agent raporteaza progres intre colectori (Advanced/Deep) |
+| `POST   /api/v1/agent/heartbeat`                      | X-Device-Token      | Agent → backend la 10s (online status + version + capabilities) |
 | `GET    /api/v1/agent/download/info`                  | cookie / X-Session  | Info despre .exe (size, available)   |
 | `GET    /api/v1/agent/download/windows`               | cookie / X-Session  | Descarca `VulnWatchAgent.exe`        |
 
