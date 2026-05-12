@@ -76,9 +76,26 @@ class Device(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    # Heartbeat: agent semnaleaza ca este online la fiecare ~10s.
+    # is_online se calculeaza la cerere (last_heartbeat < 30s); nu e coloana.
+    last_heartbeat: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    agent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    capabilities: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     owner: Mapped["User"] = relationship(back_populates="devices")
     scans: Mapped[list["Scan"]] = relationship(back_populates="device", cascade="all, delete-orphan")
     scan_jobs: Mapped[list["ScanJob"]] = relationship(back_populates="device", cascade="all, delete-orphan")
+
+    @property
+    def is_online(self) -> bool:
+        """Online = last_heartbeat in ultimele 30s. Se calculeaza la query;
+        nu este coloana persistata."""
+        if self.last_heartbeat is None:
+            return False
+        delta = utcnow() - self.last_heartbeat
+        return delta.total_seconds() < 30
 
     @staticmethod
     def generate_token() -> str:
@@ -166,6 +183,16 @@ class ScanJob(Base):
 
     # Mesaj de eroare in caz de failed (max 512c; truncat daca e mai lung).
     error_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    # Tipul scanarii ales de user (standard / advanced / deep). Agentul
+    # foloseste valoarea ca sa stie ce SCAN_PROFILE sa aplice. Backend-ul
+    # o foloseste pentru evaluate() (filtrare reguli dupa min_level).
+    scan_type: Mapped[str] = mapped_column(String(16), default="standard")
+
+    # Progres raportat de agent intre colectori (0-100) + faza curenta.
+    # Util pentru UI in cazul scanarilor Advanced/Deep care dureaza minute.
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    phase: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     device: Mapped["Device"] = relationship(back_populates="scan_jobs")
     scan: Mapped["Scan | None"] = relationship(foreign_keys=[scan_id])
