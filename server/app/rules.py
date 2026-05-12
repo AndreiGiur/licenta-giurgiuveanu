@@ -246,3 +246,351 @@ def check_eol_os(scan: dict) -> dict | None:
                 ),
             }
     return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REGULI NOI (16): 2 standard + 6 advanced + 8 deep
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@rule("FW-DISABLED-1", min_level="standard")
+def check_firewall_disabled(scan: dict) -> dict | None:
+    profiles = (scan.get("system_info", {}) or {}).get("firewall", {}).get("profiles", {})
+    disabled = [p for p in ("domain", "public") if profiles.get(p) is False]
+    if not disabled:
+        return None
+    return {
+        "rule_id": "FW-DISABLED-1",
+        "title": "Windows Firewall dezactivat pe profil critic",
+        "severity": "high",
+        "evidence": {"disabled_profiles": disabled},
+        "recommendation": (
+            "Activeaza firewall: netsh advfirewall set allprofiles state on"
+        ),
+    }
+
+
+@rule("USER-ADMIN-1", min_level="standard")
+def check_extra_admins(scan: dict) -> dict | None:
+    users = (scan.get("system_info", {}) or {}).get("local_users", []) or []
+    current = (scan.get("os", {}) or {}).get("username", "").lower()
+    extra = [
+        u["name"] for u in users
+        if u.get("is_admin")
+        and u.get("name", "").lower() not in ("administrator",)
+        and u.get("name", "").lower() != current
+    ]
+    if not extra:
+        return None
+    return {
+        "rule_id": "USER-ADMIN-1",
+        "title": "Conturi locale cu privilegii de administrator neasteptate",
+        "severity": "medium",
+        "evidence": {"extra_admin_accounts": extra},
+        "recommendation": (
+            "Revoca drepturile inutile: net localgroup administrators <user> /delete"
+        ),
+    }
+
+
+@rule("STARTUP-SUSPICIOUS-1", min_level="advanced")
+def check_suspicious_startup(scan: dict) -> dict | None:
+    startup = (scan.get("persistence", {}) or {}).get("startup", []) or []
+    SUSP = ("%temp%", "%appdata%", "\\temp\\", "\\appdata\\local\\temp",
+            "\\users\\public\\", "\\programdata\\temp")
+    suspicious = [
+        s for s in startup
+        if any(p in s.get("path", "").lower() for p in SUSP)
+    ]
+    if not suspicious:
+        return None
+    return {
+        "rule_id": "STARTUP-SUSPICIOUS-1",
+        "title": "Startup entry in director suspect",
+        "severity": "high",
+        "evidence": {"entries": [{"key": s.get("key"), "path": s.get("path")} for s in suspicious]},
+        "recommendation": (
+            "Sterge cheile suspecte din HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run."
+        ),
+    }
+
+
+@rule("TASK-SUSPICIOUS-1", min_level="advanced")
+def check_suspicious_tasks(scan: dict) -> dict | None:
+    tasks = (scan.get("persistence", {}) or {}).get("tasks", []) or []
+    FLAGS = ("-enc ", "-encodedcommand", " -e ")
+    suspicious = [
+        t for t in tasks
+        if "powershell" in t.get("action", "").lower()
+        and any(f in t.get("action", "").lower() for f in FLAGS)
+    ]
+    if not suspicious:
+        return None
+    return {
+        "rule_id": "TASK-SUSPICIOUS-1",
+        "title": "Task Scheduler cu comanda PowerShell encodata",
+        "severity": "high",
+        "evidence": {"tasks": [{"name": t.get("name"), "action": t.get("action", "")[:200]} for t in suspicious]},
+        "recommendation": (
+            "Sterge task-urile: schtasks /delete /tn \"<TaskName>\" /f"
+        ),
+    }
+
+
+@rule("SVC-SUSPICIOUS-1", min_level="advanced")
+def check_suspicious_services(scan: dict) -> dict | None:
+    services = (scan.get("persistence", {}) or {}).get("services", []) or []
+    STD = ("c:\\windows\\", "c:\\program files\\", "c:\\program files (x86)\\")
+    suspicious = [
+        s for s in services
+        if s.get("status", "").lower() == "running"
+        and s.get("binary_path", "")
+        and not any(s.get("binary_path", "").lower().startswith(p) for p in STD)
+    ]
+    if not suspicious:
+        return None
+    return {
+        "rule_id": "SVC-SUSPICIOUS-1",
+        "title": "Servicii Windows cu executabil in path nestandard",
+        "severity": "medium",
+        "evidence": {"services": [{"name": s.get("name"), "path": s.get("binary_path")} for s in suspicious]},
+        "recommendation": (
+            "Verifica si opreste: sc stop <name> && sc delete <name>"
+        ),
+    }
+
+
+@rule("NET-SHARE-1", min_level="advanced")
+def check_network_shares(scan: dict) -> dict | None:
+    shares = (scan.get("network", {}) or {}).get("shares", []) or []
+    DEFAULT = {"admin$", "ipc$", "c$", "d$", "e$", "print$"}
+    non_default = [s for s in shares if s.get("name", "").lower() not in DEFAULT]
+    if not non_default:
+        return None
+    return {
+        "rule_id": "NET-SHARE-1",
+        "title": "Foldere partajate in retea detectate",
+        "severity": "medium",
+        "evidence": {"shares": [{"name": s.get("name"), "path": s.get("path")} for s in non_default]},
+        "recommendation": (
+            "Sterge share-urile inutile: net share <Name> /delete"
+        ),
+    }
+
+
+@rule("PS-POLICY-1", min_level="advanced")
+def check_ps_policy(scan: dict) -> dict | None:
+    policy = (scan.get("persistence", {}) or {}).get("ps_policy", "")
+    if not policy or policy.lower() not in ("bypass", "unrestricted"):
+        return None
+    return {
+        "rule_id": "PS-POLICY-1",
+        "title": f"PowerShell Execution Policy permisiva: {policy}",
+        "severity": "medium",
+        "evidence": {"policy": policy},
+        "recommendation": (
+            "Set-ExecutionPolicy RemoteSigned -Scope LocalMachine"
+        ),
+    }
+
+
+@rule("NET-ESTABLISHED-1", min_level="advanced")
+def check_established_connections(scan: dict) -> dict | None:
+    conns = (scan.get("network", {}) or {}).get("connections", []) or []
+    PRIVATE = ("10.", "127.", "192.168.", "169.254.", "::1", "fe80:",
+               "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
+               "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+               "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")
+    STD_PORTS = {80, 443, 53, 22, 25, 587, 465, 993, 995, 8080, 8443}
+    suspicious = [
+        c for c in conns
+        if c.get("remote_ip")
+        and not any(c["remote_ip"].startswith(p) for p in PRIVATE)
+        and c.get("remote_port", 0) not in STD_PORTS
+    ]
+    if not suspicious:
+        return None
+    return {
+        "rule_id": "NET-ESTABLISHED-1",
+        "title": "Conexiuni active pe porturi nestandard catre IP-uri externe",
+        "severity": "low",
+        "evidence": {"connections": [
+            {"ip": c.get("remote_ip"), "port": c.get("remote_port"), "process": c.get("process")}
+            for c in suspicious[:20]
+        ]},
+        "recommendation": (
+            "Verifica conexiunile cu netstat -b sau Resource Monitor."
+        ),
+    }
+
+
+@rule("REG-HIJACK-1", min_level="deep")
+def check_registry_hijack(scan: dict) -> dict | None:
+    reg = (scan.get("persistence", {}) or {}).get("reg_persistence", {}) or {}
+    suspicious = {k: v for k, v in reg.items() if v}
+    if not suspicious:
+        return None
+    return {
+        "rule_id": "REG-HIJACK-1",
+        "title": "Persistenta prin registry (AppInit_DLLs / IFEO / Winlogon)",
+        "severity": "critical",
+        "evidence": {"registry_keys": suspicious},
+        "recommendation": (
+            "Investigheaza si sterge valorile suspecte din regedit.exe."
+        ),
+    }
+
+
+@rule("WMI-PERSIST-1", min_level="deep")
+def check_wmi_persistence(scan: dict) -> dict | None:
+    subs = (scan.get("persistence", {}) or {}).get("wmi_subscriptions", []) or []
+    if not subs:
+        return None
+    return {
+        "rule_id": "WMI-PERSIST-1",
+        "title": "Subscriptii WMI active detectate",
+        "severity": "critical",
+        "evidence": {"subscriptions": [{"name": s.get("name"), "command": s.get("command")} for s in subs]},
+        "recommendation": (
+            "Sterge cu: Get-WMIObject -Namespace root\\subscription -Class __EventFilter | Remove-WMIObject"
+        ),
+    }
+
+
+@rule("CERT-UNTRUSTED-1", min_level="deep")
+def check_untrusted_certs(scan: dict) -> dict | None:
+    certs = (scan.get("forensics", {}) or {}).get("certificates", []) or []
+    KNOWN = ("microsoft", "digicert", "comodo", "sectigo", "verisign",
+             "globalsign", "entrust", "thawte", "geotrust", "symantec",
+             "let's encrypt", "lets encrypt", "amazon", "google trust services",
+             "go daddy", "starfield", "identrust", "isrg")
+    suspicious = [
+        c for c in certs
+        if not any(k in c.get("issuer", "").lower() for k in KNOWN)
+        and not any(k in c.get("subject", "").lower() for k in ("microsoft", "windows"))
+    ]
+    if not suspicious:
+        return None
+    return {
+        "rule_id": "CERT-UNTRUSTED-1",
+        "title": "Certificate root necunoscute instalate",
+        "severity": "high",
+        "evidence": {"certificates": [
+            {"subject": c.get("subject"), "issuer": c.get("issuer"), "thumbprint": (c.get("thumbprint") or "")[:40]}
+            for c in suspicious[:20]
+        ]},
+        "recommendation": (
+            "Certificatele root necunoscute permit interceptari HTTPS (MITM). "
+            "Sterge din certmgr.msc → Trusted Root Certification Authorities."
+        ),
+    }
+
+
+@rule("AV-DISABLED-1", min_level="deep")
+def check_av_disabled(scan: dict) -> dict | None:
+    defender = (scan.get("system_info", {}) or {}).get("defender", {})
+    if not defender:
+        return None
+    issues = []
+    if defender.get("enabled") is False:
+        issues.append("Windows Defender dezactivat")
+    age = defender.get("signature_age_days", 0)
+    if isinstance(age, (int, float)) and age > 7:
+        issues.append(f"Semnaturi vechi ({age} zile)")
+    if not issues:
+        return None
+    return {
+        "rule_id": "AV-DISABLED-1",
+        "title": "Windows Defender dezactivat sau semnaturi expirate",
+        "severity": "high",
+        "evidence": {"issues": issues, "defender": defender},
+        "recommendation": (
+            "Activeaza: Set-MpPreference -DisableRealtimeMonitoring $false. Update: Update-MpSignature."
+        ),
+    }
+
+
+@rule("EVENTLOG-BRUTEFORCE-1", min_level="deep")
+def check_brute_force(scan: dict) -> dict | None:
+    events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
+    failures = [e for e in events if e.get("event_id") == 4625]
+    if len(failures) < 10:
+        return None
+    accounts = sorted({e.get("account", "") for e in failures})[:5]
+    return {
+        "rule_id": "EVENTLOG-BRUTEFORCE-1",
+        "title": f"Posibil atac brute-force ({len(failures)} esecuri de autentificare)",
+        "severity": "high",
+        "evidence": {"failed_logon_count": len(failures), "sample_accounts": accounts},
+        "recommendation": (
+            "Restrictioneaza RDP/SMB la IP-uri de incredere. Configureaza Account Lockout Policy."
+        ),
+    }
+
+
+@rule("EVENTLOG-PRIVESC-1", min_level="deep")
+def check_privesc(scan: dict) -> dict | None:
+    events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
+    SYS = {"system", "local service", "network service", "administrator", ""}
+    suspicious = [
+        e for e in events
+        if e.get("event_id") == 4672
+        and e.get("account", "").lower() not in SYS
+        and not e.get("account", "").endswith("$")
+    ]
+    if not suspicious:
+        return None
+    accounts = sorted({e.get("account", "") for e in suspicious})
+    return {
+        "rule_id": "EVENTLOG-PRIVESC-1",
+        "title": "Privilegii speciale acordate conturilor non-sistem",
+        "severity": "high",
+        "evidence": {"accounts": accounts, "event_count": len(suspicious)},
+        "recommendation": (
+            "Verifica daca aceste conturi necesita privilegii speciale. Revizuieste User Rights Assignment."
+        ),
+    }
+
+
+@rule("HOSTS-TAMPERED-1", min_level="deep")
+def check_hosts_tampered(scan: dict) -> dict | None:
+    entries = (scan.get("forensics", {}) or {}).get("hosts", []) or []
+    OK = {("127.0.0.1", "localhost"), ("::1", "localhost"),
+          ("127.0.0.1", "localhost.localdomain")}
+    suspicious = [
+        h for h in entries
+        if (h.get("ip", ""), h.get("hostname", "").lower()) not in OK
+    ]
+    if not suspicious:
+        return None
+    return {
+        "rule_id": "HOSTS-TAMPERED-1",
+        "title": "Fisierul hosts modificat cu intrari nestandard",
+        "severity": "medium",
+        "evidence": {"entries": [{"ip": h.get("ip"), "hostname": h.get("hostname")} for h in suspicious]},
+        "recommendation": (
+            "Hosts este modificat de malware pentru redirectionare trafic. "
+            "Restaureaza: notepad C:\\Windows\\System32\\drivers\\etc\\hosts"
+        ),
+    }
+
+
+@rule("BITLOCKER-OFF-1", min_level="deep")
+def check_bitlocker_off(scan: dict) -> dict | None:
+    volumes = (scan.get("system_info", {}) or {}).get("bitlocker", []) or []
+    sys_vols = [
+        v for v in volumes
+        if v.get("volume", "").upper().startswith("C")
+        and v.get("protection_status", "").lower() in ("off", "disabled", "unknown")
+    ]
+    if not sys_vols:
+        return None
+    return {
+        "rule_id": "BITLOCKER-OFF-1",
+        "title": "Volumul de sistem nu este protejat cu BitLocker",
+        "severity": "medium",
+        "evidence": {"volumes": [{"volume": v.get("volume"), "status": v.get("protection_status")} for v in sys_vols]},
+        "recommendation": (
+            "Activeaza: Enable-BitLocker -MountPoint 'C:' -EncryptionMethod XtsAes256 -UsedSpaceOnly -TpmProtector"
+        ),
+    }

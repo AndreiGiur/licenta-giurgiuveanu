@@ -18,8 +18,10 @@ Rulare: `python -m pytest server/tests` (din radacina repo-ului).
 | `test_agent_download.py`        | 4     | Endpoint download .exe: info available true/false, 404 cand artifactul lipseste, file serving cu mime corect, auth required (401 fara cookie/header). |
 | `test_relink_and_names.py`      | 11    | Smart re-link + device_name: `GET /devices/by-uid/` returneaza 200/404, izoleaza pe owner; `POST /devices/{uid}/relink` re-emite token (vechiul invalidat) si pastreaza istoricul scan-urilor; `device_name` apare in toate cele 4 raspunsuri (`ScanCreateOut`, `ScanDetailOut`, `ScanJobOut`, lista joburi). |
 | `test_heartbeat.py`             | 3     | `POST /agent/heartbeat` marcheaza device-ul online, returneaza 401 fara token, `is_online` apare pe `GET /devices` si `GET /devices/by-uid/{uid}`. |
+| `test_scan_types.py`            | 6     | `evaluate(scan)` filtreaza regulile dupa `scan_type` (standard < advanced < deep); LEVEL_ORDER constants; toate regulile inregistrate prin `@rule` au `_rule_id` + `_min_level`. |
+| `test_new_rules.py`             | 25    | Cele 16 reguli noi: cazuri pozitive + cazuri negative (skip pe LH/Microsoft/private IP/etc.). 2 standard (FW/USER), 6 advanced (STARTUP/TASK/SVC/SHARE/PS/CONN), 8 deep (REG/WMI/CERT/AV/BF/PRIV/HOSTS/BITLOCKER). |
 
-## Total: 56 teste end-to-end + 17 unit tests in `agent/tests/` = **73 teste**.
+## Total: 87 teste end-to-end + 17 unit tests in `agent/tests/` = **104 teste**.
 
 ## Pattern important
 
