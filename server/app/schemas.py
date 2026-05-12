@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 
 class RegisterIn(BaseModel):
@@ -31,6 +31,10 @@ class DeviceOut(BaseModel):
     device_uid: str
     name: str
     created_at: str
+    is_online: bool = False
+    last_heartbeat: str | None = None
+    agent_version: str | None = None
+    capabilities: List[str] = []
 
 
 class DeviceCreateOut(DeviceOut):
@@ -47,6 +51,9 @@ class ScanIn(BaseModel):
     network: Dict[str, Any] = {}
     processes: List[Dict[str, Any]] = []
     software: List[Dict[str, Any]] = []
+    system_info: Dict[str, Any] = {}
+    persistence: Dict[str, Any] | None = None
+    forensics: Dict[str, Any] | None = None
 
 
 class ScanCreateOut(BaseModel):
@@ -71,6 +78,7 @@ class ScanDetailOut(BaseModel):
     exposure_score: int
     findings: List[Dict[str, Any]]
     payload: Dict[str, Any] = {}
+    scan_type: str = "standard"
 
 
 # ── Scan-on-demand: schemas pentru job queue ─────────────────────────────────
@@ -87,12 +95,16 @@ class ScanJobOut(BaseModel):
     scan_id: int | None = None
     exposure_score: int | None = None
     error_message: str | None = None
+    scan_type: str = "standard"
+    progress: int = 0
+    phase: str | None = None
 
 
 class AgentJobOut(BaseModel):
-    """Job livrat agentului (cu device_uid pentru ca agentul sa stie ce sa colecteze)."""
+    """Job livrat agentului. `scan_type` ii spune ce nivel sa colecteze."""
     job_id: int
     device_uid: str
+    scan_type: str = "standard"
 
 
 class JobResultIn(BaseModel):
@@ -101,8 +113,32 @@ class JobResultIn(BaseModel):
     network: Dict[str, Any] = {}
     processes: List[Dict[str, Any]] = []
     software: List[Dict[str, Any]] = []
+    system_info: Dict[str, Any] = {}
+    persistence: Dict[str, Any] | None = None
+    forensics: Dict[str, Any] | None = None
 
 
 class JobFailureIn(BaseModel):
     """Agentul raporteaza esec (eroare in colectare, etc.)."""
     error_message: str = Field(max_length=512)
+
+
+# ── Heartbeat + scan-types ───────────────────────────────────────────────────
+
+
+class HeartbeatIn(BaseModel):
+    """Agent → backend la fiecare 10s. Backend marcheaza device-ul ca online."""
+    agent_version: str = Field(max_length=32)
+    capabilities: List[str] = Field(default_factory=list)
+    os_version: str = Field(max_length=128)
+
+
+class ScanJobCreateIn(BaseModel):
+    """UI cere o scanare on-demand de un anumit tip."""
+    scan_type: Literal["standard", "advanced", "deep"] = "standard"
+
+
+class JobProgressIn(BaseModel):
+    """Agent raporteaza progres in timpul executiei (intre colectori)."""
+    progress: int = Field(ge=0, le=100)
+    phase: str = Field(max_length=128)
