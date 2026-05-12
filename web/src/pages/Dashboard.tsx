@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { apiGet } from "../api/http";
-import { getScan, listDeviceScans } from "../api/exposure";
-import type { DeviceScanListItem, ScanDetailResponse } from "../api/types";
+import { getScan, listDeviceScans, listScanJobs } from "../api/exposure";
+import type { DeviceScanListItem, ScanDetailResponse, ScanJobResponse } from "../api/types";
 import Navbar from "../components/Navbar";
 
 type DeviceListItem = {
@@ -51,6 +51,8 @@ export default function Dashboard() {
   const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ScanDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Job activ (pending/running) pentru device-ul selectat — pentru progress bar.
+  const [activeJob, setActiveJob] = useState<ScanJobResponse | null>(null);
 
   const canLoad = useMemo(() => deviceId.trim().length > 0, [deviceId]);
 
@@ -117,6 +119,39 @@ export default function Dashboard() {
     return () => { cancel = true; };
   }, [selectedScanId]);
 
+  // Polling job activ — afisat ca progress bar live (Advanced/Deep dureaza minute).
+  useEffect(() => {
+    const uid = deviceId.trim();
+    if (!uid) {
+      setActiveJob(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const lastDoneId = { current: null as number | null };
+
+    async function tick() {
+      try {
+        const jobs = await listScanJobs(uid);
+        if (cancelled) return;
+        const active = jobs.find(j => j.status === "running" || j.status === "pending");
+        setActiveJob(active ?? null);
+        // Daca tocmai a terminat un job, reincarca lista de scanari pentru a vedea noul rezultat.
+        const newest = jobs.find(j => j.status === "done");
+        if (!active && newest && newest.scan_id && newest.scan_id !== lastDoneId.current) {
+          lastDoneId.current = newest.scan_id;
+          load();
+        }
+      } catch {
+        if (!cancelled) setActiveJob(null);
+      }
+      if (!cancelled) timer = setTimeout(tick, 2000);
+    }
+    tick();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId]);
+
   const highCount   = detail?.findings.filter(f => f.severity.toLowerCase() === "high").length   ?? 0;
   const medCount    = detail?.findings.filter(f => f.severity.toLowerCase() === "medium").length ?? 0;
   const lowCount    = detail?.findings.filter(f => f.severity.toLowerCase() === "low").length    ?? 0;
@@ -182,6 +217,26 @@ export default function Dashboard() {
             <span style={{ color: "var(--text-muted)", fontFamily: "'JetBrains Mono', monospace" }}>
               {" "}({selectedDevice.device_uid})
             </span>
+          </div>
+        )}
+
+        {/* ── Job activ ── */}
+        {activeJob && (activeJob.status === "running" || activeJob.status === "pending") && (
+          <div className="dashboard-active-job">
+            <div className="active-job-header">
+              <span className={`scan-type-badge ${activeJob.scan_type ?? "standard"}`}>
+                {(activeJob.scan_type ?? "standard").toUpperCase()}
+              </span>
+              <span>
+                {activeJob.status === "pending"
+                  ? "Se asteapta agentul…"
+                  : `Scanare in curs: ${activeJob.phase ?? "Pornire…"}`}
+              </span>
+            </div>
+            <div className="job-progress-bar">
+              <div className="job-progress-fill" style={{ width: `${activeJob.progress ?? 0}%` }} />
+            </div>
+            <span className="job-progress-label">{activeJob.progress ?? 0}%</span>
           </div>
         )}
 
