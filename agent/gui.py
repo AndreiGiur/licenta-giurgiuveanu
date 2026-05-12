@@ -622,22 +622,30 @@ class AgentApp:
         ttk.Label(status_bar, textvariable=self._status_var,
                   background=THEME["bg"], foreground=THEME["text"]).pack(side="left")
 
+        # Info despre niveluri suportate + hint platforma-centric
+        levels_info = tk.Frame(wrap, bg=THEME["surface"], bd=0,
+                               highlightthickness=1, highlightbackground=THEME["border"])
+        levels_info.pack(fill="x", pady=(0, 12))
+        tk.Label(levels_info,
+                 text=f"Niveluri suportate: {' / '.join(s.title() for s in core.SCAN_PROFILES)}",
+                 bg=THEME["surface"], fg=THEME["accent"],
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=12, pady=(8, 0))
+        tk.Label(levels_info,
+                 text="ℹ Scanarea se initiaza din platforma web — agentul ruleaza in fundal.",
+                 bg=THEME["surface"], fg=THEME["text_dim"],
+                 font=("Segoe UI", 9)).pack(anchor="w", padx=12, pady=(2, 8))
+
         actions = ttk.Frame(wrap, style="TFrame")
         actions.pack(fill="x", pady=(0, 12))
 
-        self._scan_btn = ttk.Button(actions, text="Scan now",
-                                    style="Accent.TButton",
-                                    command=self._on_scan_now)
-        self._scan_btn.pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Deschide platforma",
+                   style="Accent.TButton",
+                   command=self._open_dashboard).pack(side="left", padx=(0, 6))
 
         self._pause_btn = ttk.Button(actions, text="Pauza",
                                      style="Secondary.TButton",
                                      command=self._on_toggle_pause)
         self._pause_btn.pack(side="left", padx=(0, 6))
-
-        ttk.Button(actions, text="Open dashboard",
-                   style="Secondary.TButton",
-                   command=self._open_dashboard).pack(side="left", padx=(0, 6))
 
         ttk.Button(actions, text="Logout",
                    style="Danger.TButton",
@@ -678,31 +686,6 @@ class AgentApp:
         if self.daemon.start():
             self._set_status_indicator("running")
             self._maybe_start_tray()
-
-    def _on_scan_now(self) -> None:
-        try:
-            api_base, device_uid, device_token = core.get_enrollment()
-        except RuntimeError:
-            self._append_log("Agent neinrolat.", "error")
-            return
-
-        self._scan_btn.configure(state="disabled")
-        self._append_log(f"[{_ts()}] Scan now: colectez date locale...", "info")
-
-        def worker() -> None:
-            try:
-                data = core.collect_system_data(device_uid)
-                result = core.api_send_scan(api_base, device_token, data)
-                msg = (f"[{_ts()}] Scan trimis. Scan #{result.get('scan_id')}, "
-                       f"score {result.get('exposure_score')}/100.")
-                self.root.after(0, lambda: self._append_log(msg, "ok"))
-            except core.ApiError as e:
-                self.root.after(0, lambda err=str(e):
-                    self._append_log(f"[{_ts()}] Scan now esuat: {err}", "error"))
-            finally:
-                self.root.after(0, lambda: self._scan_btn.configure(state="normal"))
-
-        threading.Thread(target=worker, daemon=True).start()
 
     def _on_toggle_pause(self) -> None:
         new_paused = not self.daemon.is_paused()
