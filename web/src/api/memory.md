@@ -10,8 +10,8 @@ Cookie HttpOnly de sesiune este trimis automat (`credentials: "include"`).
 | `http.ts`      | **Modulul fundamental.** Defineste `API_BASE_URL` (default `/api/v1`, override prin `VITE_API_BASE_URL`), clasa `HttpError` cu `status` + `body`, functia `http<T>(path, opts)` cu timeout 8s default, AbortController, parse JSON safe. Helpere: `apiGet<T>(path)`, `apiPost<TReq, TRes>(path, body)`, `apiDelete<T>(path)`. Toate seteaza `credentials: "include"`. |
 | `client.ts`    | Re-exporta tot din `http.ts` — pentru compatibilitate cu cod care importa din `client`. Nu adauga logica noua. |
 | `auth.ts`      | Wrapper-i pentru endpoint-urile de auth: `registerUser`, `loginUser` (raspunsul contine `session_token` dar nu il folosim — cookie-ul e sursa de adevar), `fetchMe`, `logoutUser`. Frontend-ul **niciodata** nu citeste tokenul. |
-| `exposure.ts`  | Wrapper-i pentru endpoint-urile de scan-uri si device-uri: `listDeviceScans`, `getScan`, `requestScan` (POST scan-job), `getScanJob` (polling status), `listScanJobs` (istoric), `getAgentDownloadInfo` (verifica daca .exe e build-uit). |
-| `types.ts`     | **Tipuri TypeScript pentru raspunsurile API.** `Finding`, `DeviceScanListItem`, `ScanPayload` (struct de date colectate de agent), `ScanDetailResponse` (cu `device_uid` + `device_name`), `ScanJobStatus` (union type), `ScanJobResponse`. Reflectă schemas-urile Pydantic din backend (`server/app/schemas.py`). |
+| `exposure.ts`  | Wrapper-i pentru endpoint-urile de scan-uri si device-uri: `listDeviceScans`, `getScan`, `requestScan(uid, scanType)` (POST scan-job cu tip), `getScanJob` (polling status), `listScanJobs` (istoric), `getAgentDownloadInfo` (verifica daca .exe e build-uit). |
+| `types.ts`     | **Tipuri TypeScript pentru raspunsurile API.** `ScanType` (literal union), `Finding`, `DeviceScanListItem`, `Device` (cu `is_online`/`last_heartbeat`/`agent_version`/`capabilities`), `ScanPayload` (cu `system_info`/`persistence`/`forensics`), `ScanDetailResponse` (+`scan_type`), `ScanJobStatus`, `ScanJobResponse` (+`progress`/`phase`/`scan_type`). Reflectă schemas-urile Pydantic din backend. |
 
 ## Pattern de folosire
 

@@ -3,6 +3,7 @@ import type {
   DeviceScanListItem,
   ScanDetailResponse,
   ScanJobResponse,
+  ScanType,
 } from "./types";
 
 export function listDeviceScans(deviceId: string) {
@@ -17,11 +18,12 @@ export function getScan(scanId: number) {
 
 // ── Scan-on-demand ──────────────────────────────────────────────────────────
 
-/** UI cere o scanare on-demand pentru un device. Returneaza jobul (initial pending). */
-export function requestScan(deviceUid: string) {
-  return apiPost<Record<string, never>, ScanJobResponse>(
+/** UI cere o scanare on-demand pentru un device. `scanType` controleaza
+ * ce nivel de scanare ruleaza agentul (standard/advanced/deep). */
+export function requestScan(deviceUid: string, scanType: ScanType = "standard") {
+  return apiPost<{ scan_type: ScanType }, ScanJobResponse>(
     `/devices/${encodeURIComponent(deviceUid)}/scan-jobs`,
-    {},
+    { scan_type: scanType },
   );
 }
 
