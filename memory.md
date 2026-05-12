@@ -31,8 +31,20 @@ Fiecare folder are propriul `memory.md` cu detalii. Vezi:
 
 1. **Setup once**: `docker compose up -d` → backend porneste → frontend porneste → login UI.
 2. **Build agent .exe** (o data per release): `agent/build.ps1` produce `dist/VulnWatchAgent.exe` si il copiaza in `server/app/static/agent/`.
-3. **Pe orice masina monitorizata**: descarca .exe din UI → dublu-click → login + enroll → daemon ruleaza in tray.
-4. **Scan**: din UI (`/devices` → "Scan now") sau din .exe ("Scan now" in pagina status). Job queue prin backend, polling 3s.
+3. **Pe orice masina monitorizata**: descarca .exe din UI → dublu-click → login + enroll → daemon ruleaza in tray. **Heartbeat la 10s** semnaleaza platforma ca agentul e online.
+4. **Scan**: **inițiat din platforma web** (`/devices` → selector tip + "Scanează acum"). Agentul este executor: ridica jobul, foloseste `scan_type` pentru a alege profilul de colectare, trimite progress updates intre colectori. **Job queue prin backend**, polling 3s.
+
+## Scan types (3 niveluri)
+
+Strategy Pattern cu `SCAN_PROFILES` dict + decorator `@rule(min_level)`:
+
+| Nivel | Timp estimat | Ce colecteaza in plus fata de nivelul anterior |
+| --------- | --- | --- |
+| **standard** | 45-90 s | porturi LISTEN, OS, firewall, useri locali, top 30 procese, software instalat |
+| **advanced** | 3-8 min | toate procesele + cmdline, port→proces, ESTABLISHED connections, servicii, startup, task scheduler, shares, PS execution policy, adaptoare retea |
+| **deep** | 10-20 min | WMI subscriptions, AppInit_DLLs/IFEO/Winlogon, Event Log Security (4625/4672/4720), hosts file, DNS+ARP, root certificates, BitLocker, Defender, fisiere recent modificate in System32/Program Files |
+
+**23 reguli totale** (7 standard initiale + 16 noi): vezi `server/app/memory.md` pentru lista completa.
 
 ## Convenții
 
