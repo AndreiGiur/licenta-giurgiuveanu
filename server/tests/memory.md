@@ -20,8 +20,9 @@ Rulare: `python -m pytest server/tests` (din radacina repo-ului).
 | `test_heartbeat.py`             | 3     | `POST /agent/heartbeat` marcheaza device-ul online, returneaza 401 fara token, `is_online` apare pe `GET /devices` si `GET /devices/by-uid/{uid}`. |
 | `test_scan_types.py`            | 6     | `evaluate(scan)` filtreaza regulile dupa `scan_type` (standard < advanced < deep); LEVEL_ORDER constants; toate regulile inregistrate prin `@rule` au `_rule_id` + `_min_level`. |
 | `test_new_rules.py`             | 25    | Cele 16 reguli noi: cazuri pozitive + cazuri negative (skip pe LH/Microsoft/private IP/etc.). 2 standard (FW/USER), 6 advanced (STARTUP/TASK/SVC/SHARE/PS/CONN), 8 deep (REG/WMI/CERT/AV/BF/PRIV/HOSTS/BITLOCKER). |
+| `test_progress.py`              | 4     | End-to-end scan_type: propagat in `AgentJobOut`; progress update flow + polling; rejected pe job done (409); deep scan declanseaza reguli min_level=deep, `ScanDetailOut.scan_type` propagat. |
 
-## Total: 87 teste end-to-end + 17 unit tests in `agent/tests/` = **104 teste**.
+## Total: 91 teste end-to-end + 17 unit tests in `agent/tests/` = **108 teste**.
 
 ## Pattern important
 
