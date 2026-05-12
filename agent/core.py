@@ -26,8 +26,107 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+import dataclasses
+
 import psutil
 import requests
+
+
+# ── Strategy Pattern: profiluri de scanare ─────────────────────────────────────
+
+
+@dataclasses.dataclass(frozen=True)
+class ScanProfile:
+    """Strategie de colectare pentru un nivel de scanare. Flag-urile booleane
+    activeaza/dezactiveaza sub-colectorii individual. Folosit de colectorii
+    composabili din `agent/collectors/`."""
+    # Procese
+    process_limit: int | None = 30
+    include_cmdline: bool = False
+
+    # Standard
+    include_software: bool = True
+    include_users: bool = True
+    include_firewall: bool = True
+
+    # Advanced
+    include_connections: bool = False
+    include_port_process: bool = False
+    include_net_adapters: bool = False
+    include_persistence: bool = False  # umbrella pentru collect_persistence
+    include_services: bool = False
+    include_startup: bool = False
+    include_tasks: bool = False
+    include_shares: bool = False
+    include_ps_policy: bool = False
+
+    # Deep
+    include_wmi: bool = False
+    include_reg_hijack: bool = False
+    include_forensics: bool = False  # umbrella pentru collect_forensics
+    include_defender: bool = False
+    include_bitlocker: bool = False
+    include_eventlog: bool = False
+    include_hosts: bool = False
+    include_certs: bool = False
+    include_arp_dns: bool = False
+    include_recent_files: bool = False
+
+
+SCAN_PROFILES: dict[str, ScanProfile] = {
+    "standard": ScanProfile(
+        process_limit=30,
+        include_cmdline=False,
+        include_software=True,
+        include_users=True,
+        include_firewall=True,
+    ),
+    "advanced": ScanProfile(
+        process_limit=None,
+        include_cmdline=True,
+        include_software=True,
+        include_users=True,
+        include_firewall=True,
+        include_connections=True,
+        include_port_process=True,
+        include_net_adapters=True,
+        include_persistence=True,
+        include_services=True,
+        include_startup=True,
+        include_tasks=True,
+        include_shares=True,
+        include_ps_policy=True,
+    ),
+    "deep": ScanProfile(
+        process_limit=None,
+        include_cmdline=True,
+        include_software=True,
+        include_users=True,
+        include_firewall=True,
+        include_connections=True,
+        include_port_process=True,
+        include_net_adapters=True,
+        include_persistence=True,
+        include_services=True,
+        include_startup=True,
+        include_tasks=True,
+        include_shares=True,
+        include_ps_policy=True,
+        include_wmi=True,
+        include_reg_hijack=True,
+        include_forensics=True,
+        include_defender=True,
+        include_bitlocker=True,
+        include_eventlog=True,
+        include_hosts=True,
+        include_certs=True,
+        include_arp_dns=True,
+        include_recent_files=True,
+    ),
+}
+
+
+AGENT_VERSION = "2.0.0"
 
 
 # ── Configuratie locala ────────────────────────────────────────────────────────
@@ -137,99 +236,61 @@ def is_admin() -> bool:
         return False
 
 
-def get_open_ports() -> list[int]:
-    """Lista porturilor TCP in stare LISTEN."""
-    open_ports: list[int] = []
-    try:
-        for conn in psutil.net_connections(kind="tcp"):
-            if conn.status != psutil.CONN_LISTEN:
-                continue
-            laddr = conn.laddr
-            if laddr and laddr.port not in open_ports:
-                open_ports.append(laddr.port)
-    except (psutil.AccessDenied, PermissionError):
-        # Pe Linux poate cere root. Nu blocam scanul.
-        pass
-    except Exception:
-        pass
-    return sorted(open_ports)
+def collect_system_data(device_uid: str, scan_type: str = "standard",
+                        progress_cb: Callable[[int, str], None] | None = None) -> dict:
+    """Orchestrator: ruleaza colectorii activi pentru `scan_type` ales.
+    `progress_cb(percent, phase)` este apelat intre colectori — util pentru
+    UI in cazul scanarilor Advanced/Deep care dureaza minute. Default
+    `scan_type="standard"` pentru backward compatibility cu apelantii vechi."""
+    from . import collectors  # import tardiv: evita circular cu colectorii
 
+    cfg = SCAN_PROFILES.get(scan_type, SCAN_PROFILES["standard"])
 
-def get_processes(limit: int = 50) -> list[dict]:
-    processes: list[dict] = []
-    for proc in psutil.process_iter(["pid", "name", "memory_info", "username"]):
-        try:
-            info = proc.info
-            mem = info["memory_info"]
-            processes.append({
-                "pid": info["pid"],
-                "name": info["name"] or "",
-                "memory_mb": round(mem.rss / (1024 * 1024), 1) if mem else 0,
-                "username": info["username"] or "",
-            })
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-    processes.sort(key=lambda x: x["memory_mb"], reverse=True)
-    return processes[:limit]
-
-
-def get_installed_software() -> list[dict]:
-    """Windows: registry HKLM Uninstall. Alte SO: lista goala."""
-    software: list[dict] = []
-    if platform.system() != "Windows":
-        return software
-    try:
-        import winreg  # type: ignore[import-not-found]
-    except ImportError:
-        return software
-
-    keys = [
-        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
-    ]
-    for key_path in keys:
-        try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path)
-        except FileNotFoundError:
-            continue
-        i = 0
-        while True:
+    def step(pct: int, phase: str) -> None:
+        if progress_cb is not None:
             try:
-                subkey_name = winreg.EnumKey(key, i)
-                subkey = winreg.OpenKey(key, subkey_name)
-                try:
-                    name, _ = winreg.QueryValueEx(subkey, "DisplayName")
-                    version = ""
-                    try:
-                        version, _ = winreg.QueryValueEx(subkey, "DisplayVersion")
-                    except FileNotFoundError:
-                        pass
-                    if name:
-                        software.append({"name": name, "version": version})
-                except FileNotFoundError:
-                    pass
-                winreg.CloseKey(subkey)
-                i += 1
-            except OSError:
-                break
-        winreg.CloseKey(key)
-    return software
+                progress_cb(pct, phase)
+            except Exception:
+                pass
 
+    step(5, "Sistem & OS")
+    sys_data = collectors.collect_system(cfg)
 
-def collect_system_data(device_uid: str) -> dict:
+    step(15, "Retea")
+    net_data = collectors.collect_network(cfg)
+
+    step(35, "Procese")
+    procs = collectors.collect_processes(cfg)
+
+    step(55, "Software")
+    software = collectors.collect_software(cfg)
+
+    persistence = None
+    if cfg.include_persistence:
+        step(70, "Persistente")
+        persistence = collectors.collect_persistence(cfg)
+
+    forensics = None
+    if cfg.include_forensics:
+        step(85, "Forensics")
+        forensics = collectors.collect_forensics(cfg)
+
+    step(95, "Finalizare")
+
+    os_keys = ("system", "release", "version", "machine", "hostname",
+               "uptime_seconds", "is_admin", "username")
+    si_keys = ("local_users", "firewall", "bitlocker", "defender")
+
     return {
         "device_uid": device_uid,
-        "os": {
-            "system": platform.system(),
-            "release": platform.release(),
-            "version": platform.version(),
-            "machine": platform.machine(),
-            "hostname": socket.gethostname(),
-            "is_admin": is_admin(),
-        },
-        "network": {"open_ports": get_open_ports()},
-        "processes": get_processes(),
-        "software": get_installed_software(),
+        "scan_type": scan_type,
+        "os": {k: sys_data.get(k) for k in os_keys if k in sys_data},
+        "system_info": {k: sys_data[k] for k in si_keys if k in sys_data},
+        "network": net_data,
+        "processes": procs,
+        "software": software,
+        "persistence": persistence,
+        "forensics": forensics,
     }
 
 
