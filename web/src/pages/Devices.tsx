@@ -3,16 +3,15 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { apiDelete, apiGet, apiPost, API_BASE_URL } from "../api/http";
 import { requestScan, getScanJob, getAgentDownloadInfo } from "../api/exposure";
-import type { ScanJobResponse } from "../api/types";
-
-type Device = {
-  id: number;
-  device_uid: string;
-  name: string;
-  created_at: string;
-};
+import type { Device, ScanJobResponse, ScanType } from "../api/types";
 
 type DeviceCreateResponse = Device & { device_token: string };
+
+const SCAN_TYPE_LABEL: Record<ScanType, string> = {
+  standard: "Standard (est. 45–90 s)",
+  advanced: "Advanced (est. 3–8 min)",
+  deep: "Deep (est. 10–20 min)",
+};
 
 // Cat asteapta UI-ul ca daemon-ul sa preia jobul inainte sa avertizeze user-ul.
 const PICKUP_TIMEOUT_MS = 30_000;
@@ -52,6 +51,8 @@ export default function Devices() {
   const [activeJob, setActiveJob] = useState<Record<string, ScanJobResponse>>({});
   // Map device_uid -> mesaj de notificare ("pornit", "finalizat", "esuat")
   const [jobNotice, setJobNotice] = useState<Record<string, string>>({});
+  // Map device_uid -> tipul de scanare ales pentru urmatoarea cerere.
+  const [scanTypeByDevice, setScanTypeByDevice] = useState<Record<string, ScanType>>({});
   // Tinem ref-uri ca sa anulam polling-urile la unmount.
   const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -63,9 +64,13 @@ export default function Devices() {
     getAgentDownloadInfo()
       .then(info => setAgentInfo({ available: info.available, size_bytes: info.size_bytes }))
       .catch(() => setAgentInfo({ available: false, size_bytes: null }));
+
+    // Refresh online status la 15s (heartbeat = 10s, prag offline = 30s).
+    const refresh = setInterval(loadDevices, 15_000);
+
     return () => {
-      // cleanup la unmount
       Object.values(pollTimers.current).forEach(t => clearTimeout(t));
+      clearInterval(refresh);
     };
   }, []);
 
@@ -190,10 +195,11 @@ export default function Devices() {
   }, [stopPolling]);
 
   async function handleScanNow(deviceUid: string) {
-    setJobNotice(prev => ({ ...prev, [deviceUid]: "Se cere scanare..." }));
+    const scanType = scanTypeByDevice[deviceUid] ?? "standard";
+    setJobNotice(prev => ({ ...prev, [deviceUid]: `Se cere scanare ${scanType}...` }));
     stopPolling(deviceUid);
     try {
-      const job = await requestScan(deviceUid);
+      const job = await requestScan(deviceUid, scanType);
       setActiveJob(prev => ({ ...prev, [deviceUid]: job }));
       setJobNotice(prev => ({
         ...prev,
@@ -368,6 +374,8 @@ export default function Devices() {
                 const job = activeJob[d.device_uid];
                 const notice = jobNotice[d.device_uid];
                 const inFlight = job && (job.status === "pending" || job.status === "running");
+                const isOnline = d.is_online === true;
+                const selectedType = scanTypeByDevice[d.device_uid] ?? "standard";
                 const noticeColor =
                   job?.status === "done" ? "var(--green)" :
                   job?.status === "failed" ? "var(--red)" :
@@ -376,21 +384,19 @@ export default function Devices() {
                 <div key={d.id} className="device-card">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="device-uid">{d.device_uid}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div className="device-uid">{d.device_uid}</div>
+                        <span className={`device-online-badge ${isOnline ? "online" : "offline"}`}>
+                          {isOnline ? "● Online" : "○ Offline"}
+                        </span>
+                        {isOnline && d.agent_version && (
+                          <span className="device-meta-inline">v{d.agent_version}</span>
+                        )}
+                      </div>
                       <div className="device-name">{d.name}</div>
                       <div className="device-meta">înregistrat: {formatDate(d.created_at)}</div>
                     </div>
                     <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                      <button
-                        onClick={() => handleScanNow(d.device_uid)}
-                        disabled={!!inFlight}
-                        className="btn btn-primary btn-sm"
-                        title="Cere o scanare on-demand de la agent"
-                      >
-                        {inFlight
-                          ? <span className="loading-dots"><span /><span /><span /></span>
-                          : "Scan now"}
-                      </button>
                       <button
                         onClick={() => navigate(`/dashboard?device=${encodeURIComponent(d.device_uid)}`)}
                         className="btn btn-accent btn-sm"
@@ -406,7 +412,48 @@ export default function Devices() {
                       </button>
                     </div>
                   </div>
-                  {notice && (
+
+                  <div className="scan-controls">
+                    <select
+                      className="scan-type-select"
+                      value={selectedType}
+                      onChange={e => setScanTypeByDevice(prev => ({
+                        ...prev,
+                        [d.device_uid]: e.target.value as ScanType,
+                      }))}
+                      disabled={!isOnline || !!inFlight}
+                    >
+                      {(["standard", "advanced", "deep"] as ScanType[]).map(t => (
+                        <option key={t} value={t}>{SCAN_TYPE_LABEL[t]}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleScanNow(d.device_uid)}
+                      disabled={!isOnline || !!inFlight}
+                      className="btn btn-primary btn-sm"
+                      title={!isOnline ? "Agentul nu este conectat" : "Porneşte scanare"}
+                    >
+                      {inFlight
+                        ? <span className="loading-dots"><span /><span /><span /></span>
+                        : "Scanează acum"}
+                    </button>
+                  </div>
+
+                  {inFlight && (
+                    <div className="job-progress">
+                      <div className="job-progress-bar">
+                        <div
+                          className="job-progress-fill"
+                          style={{ width: `${job?.progress ?? 0}%` }}
+                        />
+                      </div>
+                      <span className="job-progress-label">
+                        {job?.progress ?? 0}% — {job?.phase ?? "Pornire…"}
+                      </span>
+                    </div>
+                  )}
+
+                  {notice && !inFlight && (
                     <div style={{
                       marginTop: 10,
                       padding: "6px 10px",
