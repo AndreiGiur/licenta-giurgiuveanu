@@ -1,12 +1,57 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getScan } from "../api/exposure";
 import type { ScanDetailResponse, Finding } from "../api/types";
 import Navbar from "../components/Navbar";
 
+type Category = "persistence" | "network" | "system" | "software" | "processes" | "forensics";
+
+const CATEGORY_META: Record<Category, { label: string; icon: string }> = {
+  persistence: { label: "Persistență", icon: "🔒" },
+  network:     { label: "Rețea", icon: "🌐" },
+  system:      { label: "Sistem & OS", icon: "🖥️" },
+  software:    { label: "Software", icon: "📦" },
+  processes:   { label: "Procese & Servicii", icon: "⚙️" },
+  forensics:   { label: "Event Log & Forensics", icon: "📋" },
+};
+
+const RULE_CATEGORY: Record<string, Category> = {
+  "NET-OPEN-PORTS-1":   "network",
+  "NET-MANY-PORTS-2":   "network",
+  "NET-SHARE-1":        "network",
+  "NET-ESTABLISHED-1":  "network",
+  "OS-ADMIN-1":         "system",
+  "OS-EOL-1":           "system",
+  "FW-DISABLED-1":      "system",
+  "USER-ADMIN-1":       "system",
+  "PS-POLICY-1":        "system",
+  "AV-DISABLED-1":      "system",
+  "BITLOCKER-OFF-1":    "system",
+  "SW-VULNERABLE-1":    "software",
+  "PROC-SUSPICIOUS-1":  "processes",
+  "PROC-POWERSHELL-2":  "processes",
+  "SVC-SUSPICIOUS-1":   "processes",
+  "STARTUP-SUSPICIOUS-1": "persistence",
+  "TASK-SUSPICIOUS-1":    "persistence",
+  "REG-HIJACK-1":         "persistence",
+  "WMI-PERSIST-1":        "persistence",
+  "EVENTLOG-BRUTEFORCE-1": "forensics",
+  "EVENTLOG-PRIVESC-1":    "forensics",
+  "HOSTS-TAMPERED-1":      "forensics",
+  "CERT-UNTRUSTED-1":      "forensics",
+};
+
+function categoryOf(ruleId: string): Category {
+  return RULE_CATEGORY[ruleId] ?? "system";
+}
+
+const SEVERITY_RANK: Record<string, number> = {
+  critical: 4, high: 3, medium: 2, low: 1, info: 0,
+};
+
 function getSeverityClass(sev: string): string {
   switch (sev.toLowerCase()) {
-    case "critical": return "severity-high";
+    case "critical": return "severity-critical";
     case "high":     return "severity-high";
     case "medium":   return "severity-medium";
     case "low":      return "severity-low";
@@ -30,42 +75,30 @@ function formatDate(raw: string): string {
   } catch { return raw; }
 }
 
-function FindingCard({ finding }: { finding: Finding }) {
-  const [open, setOpen] = useState(false);
+function FindingDetailPanel({ finding }: { finding: Finding }) {
   return (
-    <div className={`finding-card ${finding.severity.toLowerCase()}`}>
-      <div className="finding-header">
-        <span className="finding-title">{finding.title}</span>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-          <span className={`severity-badge ${getSeverityClass(finding.severity)}`}>
-            {finding.severity}
-          </span>
-          <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "'JetBrains Mono', monospace" }}>
-            {finding.rule_id}
-          </span>
-        </div>
+    <div className={`finding-detail ${finding.severity.toLowerCase()}`}>
+      <div className="finding-detail-header">
+        <span className={`severity-badge ${getSeverityClass(finding.severity)}`}>
+          {finding.severity.toUpperCase()}
+        </span>
+        <h3 className="finding-detail-title">{finding.title}</h3>
+        <span className="finding-detail-id">{finding.rule_id}</span>
       </div>
-      <div className="finding-rec">{finding.recommendation}</div>
-      {!!finding.evidence && Object.keys(finding.evidence as object).length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <button
-            onClick={() => setOpen(o => !o)}
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11, padding: "2px 8px", border: "1px solid var(--border)" }}
-          >
-            {open ? "▲ Ascunde dovezi" : "▼ Dovezi"}
-          </button>
-          {open && (
-            <pre style={{
-              marginTop: 8, padding: "10px 12px",
-              background: "var(--bg-base)", borderRadius: 8,
-              fontSize: 11, color: "var(--text-secondary)",
-              overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
-            }}>
-              {JSON.stringify(finding.evidence, null, 2)}
-            </pre>
-          )}
-        </div>
+
+      <section className="finding-section">
+        <h4>Recomandare</h4>
+        <p>{finding.recommendation}</p>
+      </section>
+
+      {!!finding.evidence && typeof finding.evidence === "object" &&
+        Object.keys(finding.evidence as object).length > 0 && (
+        <section className="finding-section">
+          <h4>Dovezi</h4>
+          <pre className="finding-evidence">
+            {JSON.stringify(finding.evidence, null, 2)}
+          </pre>
+        </section>
       )}
     </div>
   );
@@ -78,7 +111,8 @@ export default function ScanDetail() {
   const [data, setData] = useState<ScanDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [rawOpen, setRawOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<Category | null>(null);
+  const [selectedFindingIdx, setSelectedFindingIdx] = useState(0);
 
   useEffect(() => {
     const id = Number(scanId);
@@ -101,47 +135,65 @@ export default function ScanDetail() {
     return () => { cancelled = true; };
   }, [scanId]);
 
-  const highCount     = data?.findings.filter(f => ["high","critical"].includes(f.severity.toLowerCase())).length ?? 0;
-  const medCount      = data?.findings.filter(f => f.severity.toLowerCase() === "medium").length ?? 0;
-  const lowCount      = data?.findings.filter(f => f.severity.toLowerCase() === "low").length    ?? 0;
-  const payload       = data?.payload;
+  const findingsByCategory = useMemo(() => {
+    if (!data) return {} as Record<Category, Finding[]>;
+    const out: Partial<Record<Category, Finding[]>> = {};
+    for (const f of data.findings) {
+      const cat = categoryOf(f.rule_id);
+      (out[cat] ??= []).push(f);
+    }
+    for (const cat of Object.keys(out) as Category[]) {
+      out[cat]!.sort((a, b) =>
+        (SEVERITY_RANK[b.severity.toLowerCase()] ?? 0) -
+        (SEVERITY_RANK[a.severity.toLowerCase()] ?? 0)
+      );
+    }
+    return out as Record<Category, Finding[]>;
+  }, [data]);
+
+  const categories = useMemo(() => {
+    return (Object.keys(CATEGORY_META) as Category[])
+      .filter(c => (findingsByCategory[c]?.length ?? 0) > 0);
+  }, [findingsByCategory]);
+
+  useEffect(() => {
+    if (!activeCategory && categories.length > 0) {
+      setActiveCategory(categories[0]);
+    }
+  }, [categories, activeCategory]);
+
+  useEffect(() => {
+    setSelectedFindingIdx(0);
+  }, [activeCategory]);
+
+  const activeFindings = activeCategory ? (findingsByCategory[activeCategory] ?? []) : [];
+  const selectedFinding = activeFindings[selectedFindingIdx];
+
+  const scanType = data?.scan_type ?? "standard";
 
   return (
     <div className="page">
       <Navbar />
 
-      <div className="container" style={{ paddingTop: 32, paddingBottom: 48 }}>
-        {/* ── Header ── */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-          <div>
-            <h1 className="page-title">Scan #{scanId}</h1>
-            {data && (
-              <p className="page-subtitle">
-                Device: <strong style={{ color: "var(--text-primary)" }}>{data.device_name}</strong>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--text-muted)", marginLeft: 6 }}>
-                  ({data.device_uid})
-                </span>
-                {" · "}{formatDate(data.created_at)}
-              </p>
-            )}
-          </div>
-          <button
-            onClick={() => navigate(data ? `/dashboard?device=${data.device_uid}` : "/dashboard")}
-            className="btn btn-ghost"
-            style={{ border: "1px solid var(--border)" }}
-          >
-            ← Înapoi
-          </button>
-        </div>
+      <div className="container scan-detail-page">
+        <header className="scan-detail-topbar">
+          <button onClick={() => navigate(-1)} className="btn btn-ghost"
+                  style={{ border: "1px solid var(--border)" }}>← Înapoi</button>
+          {data && (
+            <div className="scan-detail-meta">
+              <h1>{data.device_name}</h1>
+              <span className={`scan-type-badge ${scanType}`}>{scanType.toUpperCase()}</span>
+              <span className="scan-date">{formatDate(data.created_at)}</span>
+            </div>
+          )}
+        </header>
 
-        {/* ── Loading ── */}
         {loading && (
           <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
             <span className="loading-dots"><span /><span /><span /></span>
           </div>
         )}
 
-        {/* ── Error ── */}
         {error && (
           <div className="alert alert-error">
             <div className="alert-title">Eroare</div>
@@ -149,164 +201,65 @@ export default function ScanDetail() {
           </div>
         )}
 
-        {/* ── Content ── */}
         {data && (
-          <>
-            {/* Stats */}
-            <div className="stat-grid">
-              <div className="stat-card">
-                <div className={`stat-value ${getScoreClass(data.exposure_score)}`}
-                  style={{ background: "transparent", border: "none", padding: 0 }}>
-                  {data.exposure_score}
-                </div>
-                <div className="stat-label">Exposure Score</div>
+          <div className="scan-detail-grid">
+            <aside className="scan-detail-sidebar">
+              <div className={`score-gauge ${getScoreClass(data.exposure_score)}`}>
+                <div className="score-value">{data.exposure_score}</div>
+                <div className="score-label">/ 100</div>
               </div>
-              <div className="stat-card">
-                <div className="stat-value" style={{ color: "var(--red)" }}>{highCount}</div>
-                <div className="stat-label">High / Critical</div>
+              <div className="score-summary">
+                <strong>{data.findings.length}</strong> vulnerabilități găsite
               </div>
-              <div className="stat-card">
-                <div className="stat-value" style={{ color: "var(--amber)" }}>{medCount}</div>
-                <div className="stat-label">Medium</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-value" style={{ color: "var(--green)" }}>{lowCount}</div>
-                <div className="stat-label">Low</div>
-              </div>
-            </div>
 
-            {/* Findings */}
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <span className="card-title">Vulnerabilități detectate</span>
-                <span className="card-badge">{data.findings.length} findings</span>
-              </div>
-              <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {data.findings.length === 0 && (
-                  <div style={{ padding: "30px 0", textAlign: "center", color: "var(--green)", fontSize: 13 }}>
-                    ✓ Nicio vulnerabilitate detectată
-                  </div>
+              <nav className="category-nav">
+                {categories.map(cat => {
+                  const items = findingsByCategory[cat] ?? [];
+                  const topSev = items[0]?.severity?.toLowerCase() ?? "info";
+                  return (
+                    <button
+                      key={cat}
+                      className={`category-item ${activeCategory === cat ? "active" : ""}`}
+                      onClick={() => setActiveCategory(cat)}
+                    >
+                      <span className="category-icon">{CATEGORY_META[cat].icon}</span>
+                      <span className="category-label">{CATEGORY_META[cat].label}</span>
+                      <span className={`category-count severity-${topSev}`}>{items.length}</span>
+                    </button>
+                  );
+                })}
+                {categories.length === 0 && (
+                  <div className="no-findings">✓ Nicio vulnerabilitate detectată</div>
                 )}
-                {data.findings.map((f) => (
-                  <FindingCard key={`${data.scan_id}-${f.rule_id}-${f.title}`} finding={f} />
-                ))}
-              </div>
-            </div>
+              </nav>
+            </aside>
 
-            {/* Date sistem colectate */}
-            {payload && (
-              <div className="card">
-                <div className="card-header" style={{ cursor: "pointer" }} onClick={() => setRawOpen(o => !o)}>
-                  <span className="card-title">Date sistem colectate</span>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{rawOpen ? "▲ Ascunde" : "▼ Afișează"}</span>
-                </div>
-                {rawOpen && (
-                  <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-                    {/* OS Info */}
-                    {payload.os && (
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
-                          Sistem de operare
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
-                          {Object.entries(payload.os).map(([k, v]) => (
-                            <div key={k} style={{ background: "var(--bg-elevated)", padding: "8px 12px", borderRadius: 8 }}>
-                              <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>{k}</div>
-                              <div style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", color: String(v) === "true" ? "var(--red)" : "var(--text-primary)" }}>
-                                {String(v)}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Porturi */}
-                    {payload.network?.open_ports && payload.network.open_ports.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
-                          Porturi deschise ({payload.network.open_ports.length})
-                        </div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                          {payload.network.open_ports.map(p => (
-                            <span key={p} style={{
-                              background: "var(--bg-elevated)", padding: "4px 10px",
-                              borderRadius: 6, fontSize: 12,
-                              fontFamily: "'JetBrains Mono', monospace",
-                              color: [21,23,25,139,445,3389,5900,5985,5986].includes(p) ? "var(--red)" : "var(--text-primary)",
-                              border: [21,23,25,139,445,3389,5900,5985,5986].includes(p) ? "1px solid var(--red)" : "1px solid var(--border)",
-                            }}>
-                              {p}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Procese */}
-                    {payload.processes && payload.processes.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
-                          Procese active (top {payload.processes.length} după memorie)
-                        </div>
-                        <div style={{ overflowX: "auto" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                            <thead>
-                              <tr style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
-                                <th style={{ textAlign: "left", padding: "6px 8px" }}>PID</th>
-                                <th style={{ textAlign: "left", padding: "6px 8px" }}>Nume</th>
-                                <th style={{ textAlign: "right", padding: "6px 8px" }}>Memorie (MB)</th>
-                                <th style={{ textAlign: "left", padding: "6px 8px" }}>Utilizator</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {payload.processes.map((p, i) => (
-                                <tr key={i} style={{ borderBottom: "1px solid var(--border-subtle, #222)" }}>
-                                  <td style={{ padding: "5px 8px", fontFamily: "'JetBrains Mono', monospace", color: "var(--text-muted)" }}>{p.pid}</td>
-                                  <td style={{ padding: "5px 8px", fontFamily: "'JetBrains Mono', monospace" }}>{p.name}</td>
-                                  <td style={{ padding: "5px 8px", textAlign: "right", color: "var(--text-secondary)" }}>{p.memory_mb}</td>
-                                  <td style={{ padding: "5px 8px", color: "var(--text-muted)", fontSize: 11 }}>{p.username ?? ""}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Software instalat */}
-                    {payload.software && payload.software.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
-                          Software instalat ({payload.software.length} programe)
-                        </div>
-                        <div style={{ overflowX: "auto", maxHeight: 300, overflowY: "auto" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                            <thead>
-                              <tr style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
-                                <th style={{ textAlign: "left", padding: "6px 8px" }}>Aplicație</th>
-                                <th style={{ textAlign: "left", padding: "6px 8px" }}>Versiune</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {payload.software.map((s, i) => (
-                                <tr key={i} style={{ borderBottom: "1px solid var(--border-subtle, #222)" }}>
-                                  <td style={{ padding: "5px 8px" }}>{s.name}</td>
-                                  <td style={{ padding: "5px 8px", fontFamily: "'JetBrains Mono', monospace", color: "var(--text-muted)" }}>{s.version ?? "—"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
+            <main className="scan-detail-main">
+              {activeCategory && activeFindings.length > 0 ? (
+                <>
+                  <div className="finding-list">
+                    {activeFindings.map((f, i) => (
+                      <button
+                        key={`${f.rule_id}-${i}`}
+                        className={`finding-list-item ${i === selectedFindingIdx ? "active" : ""}`}
+                        onClick={() => setSelectedFindingIdx(i)}
+                      >
+                        <span className={`severity-dot severity-${f.severity.toLowerCase()}`}></span>
+                        <span className="finding-list-title">{f.title}</span>
+                      </button>
+                    ))}
                   </div>
-                )}
-              </div>
-            )}
-          </>
+                  {selectedFinding && <FindingDetailPanel finding={selectedFinding} />}
+                </>
+              ) : (
+                <div className="empty-state" style={{ padding: 48, textAlign: "center", color: "var(--text-muted)" }}>
+                  {categories.length === 0
+                    ? "Scanare curată — nicio vulnerabilitate detectată."
+                    : "Selectează o categorie din stânga pentru a vedea detaliile."}
+                </div>
+              )}
+            </main>
+          </div>
         )}
       </div>
     </div>
