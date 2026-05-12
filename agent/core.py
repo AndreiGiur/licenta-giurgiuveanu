@@ -420,11 +420,16 @@ def api_get_next_job(api_base: str, device_token: str) -> dict | None:
 
 
 def api_submit_job_result(api_base: str, device_token: str, job_id: int, payload: dict) -> dict:
+    """Trimite rezultatul scanarii. `system_info`, `persistence` si `forensics`
+    sunt optionale (pentru Advanced/Deep)."""
     body = {
-        "os": payload["os"],
+        "os": payload.get("os", {}),
+        "system_info": payload.get("system_info", {}),
         "network": payload.get("network", {}),
         "processes": payload.get("processes", []),
         "software": payload.get("software", []),
+        "persistence": payload.get("persistence"),
+        "forensics": payload.get("forensics"),
     }
     return _request(
         "POST", f"{api_base}/agent/jobs/{job_id}/result",
@@ -441,6 +446,39 @@ def api_submit_job_failure(api_base: str, device_token: str, job_id: int, error_
     )
 
 
+def api_heartbeat(api_base: str, device_token: str, agent_version: str,
+                  capabilities: list[str], os_version: str) -> None:
+    """Trimite heartbeat la backend (la fiecare ~10s). Best-effort: nu arunca
+    daca esueaza — daemon-ul continua sa polleze pentru joburi."""
+    try:
+        _request(
+            "POST", f"{api_base}/agent/heartbeat",
+            json={
+                "agent_version": agent_version,
+                "capabilities": capabilities,
+                "os_version": os_version,
+            },
+            headers={"X-Device-Token": device_token},
+            timeout=10,
+        )
+    except ApiError:
+        pass
+
+
+def api_send_progress(api_base: str, device_token: str, job_id: int,
+                       progress: int, phase: str) -> None:
+    """Trimite progres pentru un job activ (intre colectori). Best-effort."""
+    try:
+        _request(
+            "POST", f"{api_base}/agent/jobs/{job_id}/progress",
+            json={"progress": int(progress), "phase": phase[:128]},
+            headers={"X-Device-Token": device_token},
+            timeout=5,
+        )
+    except ApiError:
+        pass
+
+
 # ── Bucla daemon (refolosita de CLI si GUI) ───────────────────────────────────
 
 def _ts() -> str:
@@ -449,15 +487,23 @@ def _ts() -> str:
 
 def run_one_job(api_base: str, device_uid: str, device_token: str,
                 job: dict, log: LogFn = _noop_log) -> None:
-    """Executa un job primit de la coada. Raporteaza rezultatul/esecul."""
+    """Executa un job primit de la coada. Foloseste `scan_type` din job
+    pentru a alege profilul de colectare. Trimite progress updates intre
+    colectori (util pentru Advanced/Deep care dureaza minute)."""
     job_id = job["job_id"]
-    log(f"[{_ts()}] Job #{job_id} primit. Colectez date...", "info")
+    scan_type = job.get("scan_type", "standard")
+    log(f"[{_ts()}] Job #{job_id} primit ({scan_type}). Colectez date...", "info")
+
+    def progress_cb(pct: int, phase: str) -> None:
+        log(f"[{_ts()}] Job #{job_id} {pct}% — {phase}", "info")
+        api_send_progress(api_base, device_token, job_id, pct, phase)
+
     try:
-        data = collect_system_data(device_uid)
+        data = collect_system_data(device_uid, scan_type=scan_type, progress_cb=progress_cb)
         result = api_submit_job_result(api_base, device_token, job_id, data)
         score = result.get("exposure_score")
         scan_id = result.get("scan_id")
-        log(f"[{_ts()}] Job #{job_id} done. Scan #{scan_id}, score {score}/100.", "ok")
+        log(f"[{_ts()}] Job #{job_id} done ({scan_type}). Scan #{scan_id}, score {score}/100.", "ok")
     except ApiError as e:
         log(f"[{_ts()}] Job #{job_id} failed: {e}", "error")
         try:
@@ -476,13 +522,15 @@ def daemon_loop(
     api_base: str, device_uid: str, device_token: str,
     *,
     poll_interval: int = 3,
+    heartbeat_interval: int = 10,
     auto_interval: int = 0,
     log: LogFn = _noop_log,
     should_stop: Callable[[], bool] = lambda: False,
     should_pause: Callable[[], bool] = lambda: False,
 ) -> None:
     """
-    Bucla principala a daemon-ului. Polleaza coada de joburi si executa.
+    Bucla principala a daemon-ului. Trimite heartbeat la fiecare 10s,
+    polleaza coada de joburi si executa scanarile.
 
     `should_stop`  → callback ce returneaza True cand bucla trebuie sa iasa
                      (folosit de GUI cand user-ul apasa Quit).
@@ -490,11 +538,21 @@ def daemon_loop(
                      (folosit de tray pentru optiunea "Pauza").
     """
     last_auto_scan = time.monotonic()
+    last_heartbeat = 0.0  # forteaza heartbeat la primul tick
+
+    capabilities = list(SCAN_PROFILES.keys())
+    os_version = f"{platform.system()} {platform.release()} {platform.version()}"
 
     while not should_stop():
         if should_pause():
             time.sleep(min(poll_interval, 1))
             continue
+
+        # 0) Heartbeat (best-effort, nu blocheaza polling-ul)
+        now = time.monotonic()
+        if now - last_heartbeat >= heartbeat_interval:
+            api_heartbeat(api_base, device_token, AGENT_VERSION, capabilities, os_version)
+            last_heartbeat = now
 
         # 1) Polleaza pentru un job
         try:
