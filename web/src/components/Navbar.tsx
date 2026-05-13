@@ -1,25 +1,22 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { fetchMe, logoutUser } from "../api/auth";
-
-const ShieldIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-    stroke="#021018" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-  </svg>
-);
+import { fetchMe, logoutUser, type Me } from "../api/auth";
+import { ThemeToggle } from "./ThemeToggle";
+import { UserAvatar } from "./UserAvatar";
 
 export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [email, setEmail] = useState<string | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
+    let cancel = false;
     fetchMe()
-      .then((user) => setEmail(user.email))
-      .catch(() => setEmail(null));
-  }, []);
+      .then((user) => { if (!cancel) setMe(user); })
+      .catch(() => { if (!cancel) setMe(null); });
+    return () => { cancel = true; };
+  }, [location.pathname]);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -31,51 +28,55 @@ export default function Navbar() {
     }
   }
 
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = (path: string) =>
+    location.pathname === path || location.pathname.startsWith(path + "/");
 
   return (
     <nav className="navbar">
       <div className="navbar-inner">
-        {/* Left: brand + nav links */}
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <div className="navbar-brand" onClick={() => navigate("/dashboard")}>
-            <div className="navbar-brand-icon">
-              <ShieldIcon />
-            </div>
-            <span className="navbar-brand-name">VulnWatch</span>
-          </div>
-
-          <div className="navbar-nav">
-            <button
-              onClick={() => navigate("/dashboard")}
-              className={`nav-link ${isActive("/dashboard") ? "active" : ""}`}
-            >
-              Dashboard
-            </button>
-            <button
-              onClick={() => navigate("/devices")}
-              className={`nav-link ${isActive("/devices") ? "active" : ""}`}
-            >
-              Devices
-            </button>
-          </div>
+        <div
+          className="navbar-brand"
+          onClick={() => navigate("/dashboard")}
+          style={{ cursor: "pointer" }}
+        >
+          <span className="navbar-brand-mark">●</span>
+          <span className="navbar-brand-text">VulnWatch</span>
         </div>
 
-        {/* Right: user badge + logout */}
-        <div className="navbar-right">
-          {email && (
-            <div className="user-badge">
-              <span className="user-dot" />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{email}</span>
-            </div>
-          )}
+        <div className="navbar-links">
           <button
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="btn btn-danger btn-sm"
+            onClick={() => navigate("/dashboard")}
+            className={`navbar-link ${isActive("/dashboard") ? "active" : ""}`}
           >
-            {loggingOut ? "..." : "Logout"}
+            Dashboard
           </button>
+          <button
+            onClick={() => navigate("/devices")}
+            className={`navbar-link ${isActive("/devices") ? "active" : ""}`}
+          >
+            Dispozitive
+          </button>
+        </div>
+
+        <div className="navbar-actions">
+          <ThemeToggle />
+          {me && (
+            <>
+              <UserAvatar
+                email={me.email}
+                pictureUrl={me.google_picture_url ?? undefined}
+                size={32}
+              />
+              <button
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="btn btn-ghost btn-sm"
+                style={{ border: "1px solid var(--border)" }}
+              >
+                {loggingOut ? "..." : "Logout"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </nav>
