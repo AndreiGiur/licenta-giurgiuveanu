@@ -31,7 +31,7 @@ class User(Base):
     # Google OAuth fields
     google_sub: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
     google_picture_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    auth_provider: Mapped[str] = mapped_column(String(16), default="password")
+    auth_provider: Mapped[str] = mapped_column(String(16), default="password", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

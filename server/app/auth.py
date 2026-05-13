@@ -48,7 +48,11 @@ def create_password(password: str) -> tuple[str, str]:
     return salt, pwd_hash
 
 
-def verify_password(password: str, salt_hex: str, pwd_hash_hex: str) -> bool:
+def verify_password(password: str, salt_hex: str | None, pwd_hash_hex: str | None) -> bool:
+    """Verifica parola. Returneaza False daca user-ul nu are parola setata
+    (cont Google-only — `salt_hex` sau `pwd_hash_hex` lipsesc)."""
+    if salt_hex is None or pwd_hash_hex is None:
+        return False
     calc = _pbkdf2_hash(password, salt_hex)
     return hmac.compare_digest(calc, pwd_hash_hex)
 
