@@ -446,6 +446,20 @@ def api_submit_job_failure(api_base: str, device_token: str, job_id: int, error_
     )
 
 
+def api_google_enroll(api_base: str, id_token: str, device_uid: str, device_name: str) -> dict:
+    """Trimite id_token Google la backend pentru a crea/relink Device.
+    Returneaza dict cu device_token (plain), device_uid, device_name, user_email."""
+    return _request(
+        "POST", f"{api_base}/agent/google-enroll",
+        json={
+            "id_token": id_token,
+            "device_uid": device_uid,
+            "device_name": device_name,
+        },
+        timeout=15,
+    )
+
+
 def api_heartbeat(api_base: str, device_token: str, agent_version: str,
                   capabilities: list[str], os_version: str) -> None:
     """Trimite heartbeat la backend (la fiecare ~10s). Best-effort: nu arunca
