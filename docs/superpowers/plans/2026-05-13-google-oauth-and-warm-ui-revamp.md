@@ -37,7 +37,9 @@
 3. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
    - **Web application**:
      - Name: "VulnWatch Web"
-     - Authorized redirect URIs: `http://127.0.0.1:8000/api/v1/auth/google/callback`
+     - Authorized JavaScript origins: `http://localhost:5173`, `http://localhost:8000`
+     - Authorized redirect URIs: **`http://localhost:8000/api/v1/auth/google/callback`**
+     - **Important**: folosește `localhost`, nu `127.0.0.1` — browserele tratează cele două ca domenii diferite pentru cookies. Frontend-ul rulează pe `localhost:5173`, deci callback-ul TREBUIE să fie tot pe `localhost` ca să păstrăm cookie-ul de sesiune. (Opțional poți adăuga și varianta cu `127.0.0.1` pentru robustețe.)
    - **Desktop app**:
      - Name: "VulnWatch Agent"
      - (Desktop apps nu cer redirect URIs explicit — Google permite orice port loopback)
@@ -419,7 +421,7 @@ GOOGLE_CLIENT_ID_WEB = os.environ.get("GOOGLE_CLIENT_ID_WEB", "")
 GOOGLE_CLIENT_SECRET_WEB = os.environ.get("GOOGLE_CLIENT_SECRET_WEB", "")
 GOOGLE_REDIRECT_URI_WEB = os.environ.get(
     "GOOGLE_REDIRECT_URI_WEB",
-    "http://127.0.0.1:8000/api/v1/auth/google/callback",
+    "http://localhost:8000/api/v1/auth/google/callback",
 )
 GOOGLE_CLIENT_ID_DESKTOP = os.environ.get("GOOGLE_CLIENT_ID_DESKTOP", "")
 FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173")
@@ -437,7 +439,7 @@ GOOGLE_CLIENT_ID_WEB = os.environ.get("GOOGLE_CLIENT_ID_WEB", "")
 GOOGLE_CLIENT_SECRET_WEB = os.environ.get("GOOGLE_CLIENT_SECRET_WEB", "")
 GOOGLE_REDIRECT_URI_WEB = os.environ.get(
     "GOOGLE_REDIRECT_URI_WEB",
-    "http://127.0.0.1:8000/api/v1/auth/google/callback",
+    "http://localhost:8000/api/v1/auth/google/callback",
 )
 GOOGLE_CLIENT_ID_DESKTOP = os.environ.get("GOOGLE_CLIENT_ID_DESKTOP", "")
 FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173")
