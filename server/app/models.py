@@ -24,9 +24,14 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
 
-    # PBKDF2 fields
-    password_salt: Mapped[str] = mapped_column(String(64))
-    password_hash: Mapped[str] = mapped_column(String(128))
+    # PBKDF2 fields — NULLABLE pentru utilizatorii Google-only
+    password_salt: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    # Google OAuth fields
+    google_sub: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    google_picture_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    auth_provider: Mapped[str] = mapped_column(String(16), default="password")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
