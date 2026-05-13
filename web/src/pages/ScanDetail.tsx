@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { motion } from "framer-motion";
 import { getScan } from "../api/exposure";
 import type { ScanDetailResponse, Finding } from "../api/types";
 import Navbar from "../components/Navbar";
+import { ScoreGauge } from "../components/ScoreGauge";
 
 type Category = "persistence" | "network" | "system" | "software" | "processes" | "forensics";
 
@@ -57,13 +59,6 @@ function getSeverityClass(sev: string): string {
     case "low":      return "severity-low";
     default:         return "severity-info";
   }
-}
-
-function getScoreClass(score: number): string {
-  if (score >= 70) return "score-high";
-  if (score >= 40) return "score-medium";
-  if (score > 0)  return "score-low";
-  return "score-none";
 }
 
 function formatDate(raw: string): string {
@@ -202,12 +197,14 @@ export default function ScanDetail() {
         )}
 
         {data && (
-          <div className="scan-detail-grid">
+          <motion.div
+            className="scan-detail-grid"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          >
             <aside className="scan-detail-sidebar">
-              <div className={`score-gauge ${getScoreClass(data.exposure_score)}`}>
-                <div className="score-value">{data.exposure_score}</div>
-                <div className="score-label">/ 100</div>
-              </div>
+              <ScoreGauge value={data.exposure_score} size={160} />
               <div className="score-summary">
                 <strong>{data.findings.length}</strong> vulnerabilități găsite
               </div>
@@ -216,15 +213,24 @@ export default function ScanDetail() {
                 {categories.map(cat => {
                   const items = findingsByCategory[cat] ?? [];
                   const topSev = items[0]?.severity?.toLowerCase() ?? "info";
+                  const isActive = activeCategory === cat;
                   return (
                     <button
                       key={cat}
-                      className={`category-item ${activeCategory === cat ? "active" : ""}`}
+                      className={`category-item ${isActive ? "active" : ""}`}
                       onClick={() => setActiveCategory(cat)}
+                      style={{ position: "relative" }}
                     >
-                      <span className="category-icon">{CATEGORY_META[cat].icon}</span>
-                      <span className="category-label">{CATEGORY_META[cat].label}</span>
-                      <span className={`category-count severity-${topSev}`}>{items.length}</span>
+                      {isActive && (
+                        <motion.div
+                          layoutId="category-indicator"
+                          className="category-indicator"
+                          transition={{ type: "spring", stiffness: 350, damping: 30 }}
+                        />
+                      )}
+                      <span className="category-icon" style={{ position: "relative" }}>{CATEGORY_META[cat].icon}</span>
+                      <span className="category-label" style={{ position: "relative" }}>{CATEGORY_META[cat].label}</span>
+                      <span className={`category-count severity-${topSev}`} style={{ position: "relative" }}>{items.length}</span>
                     </button>
                   );
                 })}
@@ -259,7 +265,7 @@ export default function ScanDetail() {
                 </div>
               )}
             </main>
-          </div>
+          </motion.div>
         )}
       </div>
     </div>
