@@ -46,6 +46,24 @@ Strategy Pattern cu `SCAN_PROFILES` dict + decorator `@rule(min_level)`:
 
 **23 reguli totale** (7 standard initiale + 16 noi): vezi `server/app/memory.md` pentru lista completa.
 
+## Autentificare
+
+**Hybrid: Google OAuth + email/parola.**
+
+- **Google OAuth Web**: `GET /api/v1/auth/google/url` → user redirect spre Google → callback la `/api/v1/auth/google/callback` → cookie sesiune + redirect spre `/dashboard`
+- **Google OAuth Desktop (agent)**: `google-auth-oauthlib.InstalledAppFlow.run_local_server(port=0)` cu PKCE → agent trimite `id_token` la `POST /api/v1/agent/google-enroll` → primește `device_token`
+- **Email/parola**: păstrat ca alternativa (utilizatori fără Google)
+- **Account linking by email**: cont existent cu parola + login Google la același email → `auth_provider="both"`
+- **Device creation**: NUMAI prin executabil (eliminat din platform UI). Platform UI permite doar listare + ștergere.
+
+## UI Theme
+
+- **Paleta**: Honey & Plum cu light + dark mode toggle (CSS variables în `[data-theme="light"]` / `[data-theme="dark"]`)
+- **Fonturi**: `Fraunces` (display serif), `Outfit` (body sans), `JetBrains Mono` (code) — Google Fonts
+- **Animații**: Framer Motion v12 — page-enter, layout transitions cu `layoutId` (sidebar indicator), ScoreGauge tween număr + SVG ring; CSS — hover lift, pulse online badge, shimmer progress bar
+- **Theme persist**: `localStorage.vw-theme` + `prefers-color-scheme` fallback
+- **Componente cheie**: `<ThemeProvider>`, `<ThemeToggle>`, `<ScoreGauge>`, `<GoogleButton>`, `<UserAvatar>`
+
 ## Convenții
 
 - **Limba in cod si comentarii**: romana (cum a cerut autorul lucrarii). Erori si log-uri tot in romana.

@@ -74,6 +74,16 @@ python scan.py logout      # delete local config
 - Plain token is shown once at enrollment and cannot be recovered
 - Agent sends `X-Device-Token` header; `_device_for_token_or_401()` in `routes.py` validates it
 
+**Google OAuth (hybrid):**
+- **Web**: `GET /api/v1/auth/google/url` returnează URL Google; callback la `GET /api/v1/auth/google/callback` schimbă code → id_token, upsert User by email, setează cookie sesiune, redirect spre `FRONTEND_BASE_URL/dashboard`
+- **Desktop (agent)**: `google-auth-oauthlib.InstalledAppFlow.run_local_server(port=0)` face Loopback Redirect + PKCE; agent trimite `id_token` la `POST /api/v1/agent/google-enroll` → primește `device_token`
+- Cont existent cu email/parolă + login Google la același email → `auth_provider="both"` (account linking automat by email)
+- Env vars: `GOOGLE_CLIENT_ID_WEB`, `GOOGLE_CLIENT_SECRET_WEB`, `GOOGLE_REDIRECT_URI_WEB`, `GOOGLE_CLIENT_ID_DESKTOP`, `FRONTEND_BASE_URL` în `server/.env`
+- Agent: `agent/google_config.py` (gitignored) conține `GOOGLE_CLIENT_ID` (desktop)
+- **Important**: foloseste `localhost` (nu `127.0.0.1`) în redirect URI pentru consistență cu cookie-uri (browserele tratează cele două ca domenii diferite)
+
+**Crearea device-urilor**: NUMAI prin executabil. Platform UI permite doar listare + ștergere. Pentru a conecta un device nou: descarcă agentul → login Google (sau email/parolă) → enrollment automat.
+
 ### Scan-on-demand flow (pull model, platform-centric)
 
 The agent never exposes a port — all connections are agent-initiated outbound HTTPS. The platform drives everything: the user picks `scan_type`, watches progress live, sees results. The agent is just the executor.
@@ -119,6 +129,18 @@ Every query that returns user-owned data filters by `owner_id == user.id`. The `
 ### Frontend API client
 
 `web/src/api/http.ts` exports a single `http<T>()` function. All API calls use `credentials: "include"` for cookie auth. The Vite dev server proxies `/api/*` to `http://127.0.0.1:8000` — no CORS issues in dev.
+
+### Theme system (Honey & Plum)
+
+`<ThemeProvider>` în `web/src/components/ThemeProvider.tsx` — gestionează `data-theme` pe `<html>`, persistă în `localStorage` (`vw-theme`), respectă `prefers-color-scheme` la primul vizit. Toggle prin `<ThemeToggle>` în Navbar.
+
+**Paleta**: Honey & Plum — light (#fefaf2 cream + #f4c95d honey + #2d1b3d plum text) și dark (#1a0e22 plum bg + #f4c95d honey + #fff8e6 cream text). CSS variables în `:root,[data-theme="light"]` și `[data-theme="dark"]`. Severity colors warm-tinted: plum/raspberry pentru high/critical, honey pentru medium, lavandă pentru low.
+
+**Tipografie**: `Fraunces` (display serif), `Outfit` (body sans), `JetBrains Mono` (code) — Google Fonts.
+
+**Animații**: Framer Motion v12 pentru page-enter, layout transitions cu `layoutId`, ScoreGauge tween (number animation + SVG ring fill); CSS pentru hover lift, pulse online badge, shimmer progress bar. Respectă `prefers-reduced-motion`.
+
+**Componente reutilizabile**: `<ScoreGauge>`, `<GoogleButton>`, `<UserAvatar>`, `<ThemeToggle>`, `<ThemeProvider>`.
 
 ### Database
 
