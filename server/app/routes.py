@@ -810,3 +810,55 @@ def _upsert_google_user(db: Session, email: str, google_sub: str, picture: str |
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/agent/google-enroll", response_model=GoogleAgentEnrollOut)
+def agent_google_enroll(payload: GoogleAgentEnrollIn, db: Session = Depends(get_db)):
+    """Agent trimite id_token (deja obtinut prin loopback OAuth) + device info.
+    Backend verifica tokenul, creeaza/gaseste User + Device, returneaza device_token."""
+    if not config.GOOGLE_CLIENT_ID_DESKTOP:
+        raise HTTPException(status_code=503, detail="Google OAuth nu este configurat")
+    try:
+        google_payload = google_auth.verify_id_token(
+            payload.id_token, config.GOOGLE_CLIENT_ID_DESKTOP
+        )
+    except google_auth.GoogleAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    email = google_payload["email"].lower().strip()
+    google_sub = google_payload["sub"]
+    picture = google_payload.get("picture")
+
+    user = _upsert_google_user(db, email=email, google_sub=google_sub, picture=picture)
+
+    # Device upsert by (owner, uid). Daca exista, re-emite token (echivalent relink).
+    device_uid = payload.device_uid.strip()
+    device_name = payload.device_name.strip()
+    plain_token = Device.generate_token()
+
+    device = db.execute(
+        select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
+    ).scalar_one_or_none()
+    if device is None:
+        device = Device(
+            owner_id=user.id,
+            device_uid=device_uid,
+            name=device_name,
+            device_token_hash=hash_token(plain_token),
+            device_token_prefix=plain_token[:8],
+        )
+        db.add(device)
+    else:
+        device.device_token_hash = hash_token(plain_token)
+        device.device_token_prefix = plain_token[:8]
+        device.name = device_name  # update name daca s-a schimbat
+
+    db.commit()
+    db.refresh(device)
+
+    return GoogleAgentEnrollOut(
+        device_token=plain_token,
+        device_uid=device.device_uid,
+        device_name=device.name,
+        user_email=user.email,
+    )

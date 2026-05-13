@@ -62,5 +62,6 @@ OpenAPI/Swagger la `http://127.0.0.1:8000/docs`.
 | `GET    /api/v1/agent/download/windows`               | cookie / X-Session  | Descarca `VulnWatchAgent.exe`        |
 | `GET    /api/v1/auth/google/url`                      | —                   | Returneaza URL Google OAuth + state CSRF |
 | `GET    /api/v1/auth/google/callback`                 | —                   | Callback Google dupa login: schimba code -> id_token, creeaza/lipeste User, seteaza cookie, redirect spre frontend `/dashboard` |
+| `POST   /api/v1/agent/google-enroll`                  | —                   | Agent enrollment cu Google id_token (creeaza User+Device intr-un singur request, re-emite token pe relink) |
 
 Total endpoint-uri: ~24.
