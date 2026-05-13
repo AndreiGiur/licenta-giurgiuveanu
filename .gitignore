@@ -10,6 +10,9 @@ venv/
 # Agent - contine token-uri secrete
 agent/config.ini
 
+# Agent Google OAuth — local config (nu committe-uim client_id-ul desktop in repo public)
+agent/google_config.py
+
 # Server
 server/.env
 server/.venv/

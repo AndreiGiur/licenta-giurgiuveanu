@@ -1,0 +1,7 @@
+"""Configuratie OAuth pentru agent — copiaza la `google_config.py` si completeaza.
+
+Pentru build-ul production .exe, `build.ps1` ar trebui sa genereze acest fisier
+inainte de PyInstaller (sau sa-l includa explicit in package)."""
+
+# OAuth Client ID de tip "Desktop app" din Google Cloud Console.
+GOOGLE_CLIENT_ID = ""
