@@ -1,9 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import Navbar from "../components/Navbar";
 import { apiDelete, apiGet, API_BASE_URL } from "../api/http";
 import { requestScan, getScanJob, getAgentDownloadInfo } from "../api/exposure";
 import type { Device, ScanJobResponse, ScanType } from "../api/types";
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.06 } },
+};
+const itemVariants = {
+  hidden: { opacity: 0, y: 8 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+};
 
 const SCAN_TYPE_LABEL: Record<ScanType, string> = {
   standard: "Standard (est. 45–90 s)",
@@ -228,7 +238,13 @@ export default function Devices() {
             <span className="card-title">Dispozitivele tale</span>
             <span className="card-badge">{devices.length}</span>
           </div>
-          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <motion.div
+            className="card-body"
+            style={{ display: "flex", flexDirection: "column", gap: 10 }}
+            initial="hidden"
+            animate="visible"
+            variants={containerVariants}
+          >
             {loading && (
               <div className="empty-state">
                 <span className="loading-dots"><span /><span /><span /></span>
@@ -268,7 +284,7 @@ export default function Devices() {
                 job?.status === "failed" ? "var(--red)" :
                 inFlight ? "var(--accent)" : "var(--text-muted)";
               return (
-              <div key={d.id} className="device-card">
+              <motion.div key={d.id} className="device-card" variants={itemVariants}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -365,10 +381,10 @@ export default function Devices() {
                     )}
                   </div>
                 )}
-              </div>
+              </motion.div>
               );
             })}
-          </div>
+          </motion.div>
         </div>
       </div>
     </div>
