@@ -6,7 +6,12 @@ import { apiDelete, apiGet, apiPost } from "./http";
  * il trimite automat la fiecare cerere (datorita `credentials: "include"`).
  */
 
-export type Me = { id: number; email: string };
+export type Me = {
+  id: number;
+  email: string;
+  google_picture_url?: string | null;
+  auth_provider?: "password" | "google" | "both";
+};
 
 export async function registerUser(input: { email: string; password: string }): Promise<Me> {
   return apiPost<typeof input, Me>("/auth/register", input);
@@ -24,4 +29,8 @@ export async function fetchMe(): Promise<Me> {
 
 export async function logoutUser(): Promise<void> {
   await apiDelete<{ ok: boolean }>("/auth/logout");
+}
+
+export async function getGoogleAuthUrl(): Promise<{ auth_url: string; state: string }> {
+  return apiGet<{ auth_url: string; state: string }>("/auth/google/url");
 }

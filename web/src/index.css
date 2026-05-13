@@ -938,3 +938,45 @@ button:focus-visible {
   transform: translateY(-1px);
 }
 .theme-toggle:active { transform: translateY(0); }
+
+/* ============================================================
+   GOOGLE BUTTON + USER AVATAR
+   ============================================================ */
+.google-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 18px;
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.google-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  background: var(--bg-hover);
+}
+.google-button:active:not(:disabled) { transform: translateY(0); }
+.google-button:disabled { opacity: 0.6; cursor: wait; }
+
+.user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--text-inverse);
+  font-family: var(--font-body);
+  font-weight: 600;
+  object-fit: cover;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.user-avatar-initial { background: var(--accent); color: var(--text-inverse); }
