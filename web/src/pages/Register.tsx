@@ -1,13 +1,8 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { registerUser, loginUser, fetchMe } from "../api/auth";
-
-const ShieldIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-    stroke="#021018" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-  </svg>
-);
+import { GoogleButton } from "../components/GoogleButton";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -15,6 +10,10 @@ function isValidEmail(email: string): boolean {
 
 export default function Register() {
   const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,12 +23,7 @@ export default function Register() {
     return () => { cancelled = true; };
   }, [navigate]);
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function onSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     const normalizedEmail = email.trim().toLowerCase();
@@ -47,9 +41,8 @@ export default function Register() {
       await registerUser({ email: normalizedEmail, password: normalizedPassword });
       await loginUser({ email: normalizedEmail, password: normalizedPassword });
       navigate("/dashboard");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Eroare la înregistrare";
-      setError(msg);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Eroare la înregistrare");
     } finally {
       setLoading(false);
     }
@@ -57,16 +50,22 @@ export default function Register() {
 
   return (
     <div className="auth-page">
-      <div className="auth-card">
-        <div className="auth-brand">
-          <div className="auth-brand-icon"><ShieldIcon /></div>
-          <span className="auth-brand-name">VulnWatch</span>
+      <motion.div
+        className="auth-card"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <div className="auth-header">
+          <h1 className="auth-title">Bun venit la VulnWatch</h1>
+          <p className="auth-subtitle">Creează un cont nou</p>
         </div>
 
-        <h1 className="auth-title">Creează cont</h1>
-        <p className="auth-subtitle">Înregistrează-te pentru a începe monitorizarea</p>
+        <GoogleButton label="Înregistrează-te cu Google" onError={setError} />
 
-        <form onSubmit={onSubmit}>
+        <div className="auth-divider"><span>sau</span></div>
+
+        <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
             <label className="form-label">Email</label>
             <input
@@ -76,41 +75,37 @@ export default function Register() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="nume@exemplu.com"
               autoComplete="email"
+              required
             />
           </div>
 
           <div className="form-group">
-            <label className="form-label">Parolă</label>
+            <label className="form-label">Parolă (min. 8 caractere)</label>
             <input
               className="form-input"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Minim 8 caractere"
+              placeholder="••••••••"
               autoComplete="new-password"
+              required
+              minLength={8}
             />
           </div>
 
-          {error && (
-            <div className="alert alert-error" style={{ marginBottom: 16 }}>
-              {error}
-            </div>
-          )}
+          {error && <div className="auth-error">{error}</div>}
 
-          <button type="submit" disabled={loading} className="btn btn-primary">
+          <button type="submit" disabled={loading} className="btn btn-primary auth-submit">
             {loading ? (
               <span className="loading-dots"><span /><span /><span /></span>
-            ) : "Înregistrare"}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/login")}
-            className="btn btn-secondary"
-          >
-            Ai deja cont? <strong>Autentifică-te</strong>
+            ) : "Creează contul"}
           </button>
         </form>
-      </div>
+
+        <p className="auth-switch">
+          Ai deja cont? <Link to="/login" className="auth-link">Autentifică-te</Link>
+        </p>
+      </motion.div>
     </div>
   );
 }
