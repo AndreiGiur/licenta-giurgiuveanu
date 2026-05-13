@@ -19,6 +19,8 @@ class TokenOut(BaseModel):
 class MeOut(BaseModel):
     id: int
     email: str
+    google_picture_url: str | None = None
+    auth_provider: str = "password"
 
 
 class DeviceCreateIn(BaseModel):
@@ -142,3 +144,27 @@ class JobProgressIn(BaseModel):
     """Agent raporteaza progres in timpul executiei (intre colectori)."""
     progress: int = Field(ge=0, le=100)
     phase: str = Field(max_length=128)
+
+
+# ── Google OAuth ─────────────────────────────────────────────────────────────
+
+
+class GoogleAuthUrlOut(BaseModel):
+    """Returnat de GET /auth/google/url — frontend redirect-uieste user-ul."""
+    auth_url: str
+    state: str
+
+
+class GoogleAgentEnrollIn(BaseModel):
+    """Agent trimite id_token + device info la /agent/google-enroll."""
+    id_token: str = Field(min_length=1, max_length=4096)
+    device_uid: str = Field(min_length=1, max_length=128)
+    device_name: str = Field(min_length=1, max_length=128)
+
+
+class GoogleAgentEnrollOut(BaseModel):
+    """Raspuns la /agent/google-enroll."""
+    device_token: str
+    device_uid: str
+    device_name: str
+    user_email: str
