@@ -2,47 +2,129 @@
    VulnWatch Design System – Dark Cybersecurity Theme
    ============================================================ */
 
-:root {
-  /* ── Surfaces ── */
-  --bg-base:     #060d1a;
-  --bg-surface:  #0d1526;
-  --bg-elevated: #111f35;
-  --bg-hover:    #162540;
+:root,
+[data-theme="light"] {
+  /* Fonts */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Outfit', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', Consolas, monospace;
 
-  /* ── Borders ── */
-  --border:        rgba(56, 189, 248, 0.14);
-  --border-strong: rgba(56, 189, 248, 0.30);
-  --border-subtle: rgba(255, 255, 255, 0.05);
+  /* Surface */
+  --bg-base:       #fefaf2;
+  --bg-elevated:   #fff8e6;
+  --bg-hover:      #fdf4d8;
+  --surface:       #ffffff;
 
-  /* ── Accent (cyan) ── */
-  --accent:     #38bdf8;
-  --accent-dim: rgba(56, 189, 248, 0.11);
-  --accent-glow:rgba(56, 189, 248, 0.22);
+  /* Borders */
+  --border:        #f0e4cc;
+  --border-strong: #e8d4a8;
 
-  /* ── Purple ── */
-  --purple:     #818cf8;
-  --purple-dim: rgba(129, 140, 248, 0.11);
+  /* Text */
+  --text-primary:   #2d1b3d;
+  --text-secondary: #5a3a6e;
+  --text-muted:     #8a7458;
+  --text-inverse:   #fff8e6;
 
-  /* ── Text ── */
-  --text-primary:   #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted:     #475569;
+  /* Brand */
+  --accent:        #f4c95d;
+  --accent-strong: #d4a73d;
+  --accent-soft:   #fff4d0;
 
-  /* ── Severity ── */
-  --red:          #f87171;
-  --red-dim:      rgba(248, 113, 113, 0.10);
-  --red-border:   rgba(248, 113, 113, 0.28);
+  /* Severity */
+  --severity-critical: #5a2d6e;
+  --severity-high:     #b8456e;
+  --severity-medium:   #d4a73d;
+  --severity-low:      #a8639a;
+  --severity-info:     #8a7458;
 
-  --amber:        #fbbf24;
-  --amber-dim:    rgba(251, 191, 36, 0.10);
-  --amber-border: rgba(251, 191, 36, 0.28);
+  /* Status */
+  --success: #7a9a5a;
+  --danger:  #c44b4b;
+  --warning: #e8a23d;
 
-  --green:        #4ade80;
-  --green-dim:    rgba(74, 222, 128, 0.10);
-  --green-border: rgba(74, 222, 128, 0.28);
+  /* Shadows (plum-tinted) */
+  --shadow-sm: 0 1px 2px rgba(45,27,61,0.06), 0 2px 6px rgba(45,27,61,0.04);
+  --shadow-md: 0 4px 12px rgba(45,27,61,0.08), 0 8px 24px rgba(45,27,61,0.04);
+  --shadow-lg: 0 12px 32px rgba(45,27,61,0.12), 0 20px 60px rgba(45,27,61,0.08);
 
-  /* ── Typography ── */
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Radius */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-full: 999px;
+
+  /* ── Legacy aliases (preserved so existing classes don't break) ── */
+  --bg-surface:    #ffffff;
+  --border-subtle: rgba(45, 27, 61, 0.06);
+  --accent-dim:    rgba(244, 201, 93, 0.18);
+  --accent-glow:   rgba(244, 201, 93, 0.32);
+  --purple:        #a8639a;
+  --purple-dim:    rgba(168, 99, 154, 0.14);
+  --red:           #c44b4b;
+  --red-dim:       rgba(196, 75, 75, 0.10);
+  --red-border:    rgba(196, 75, 75, 0.28);
+  --amber:         #d4a73d;
+  --amber-dim:     rgba(212, 167, 61, 0.12);
+  --amber-border:  rgba(212, 167, 61, 0.32);
+  --green:         #7a9a5a;
+  --green-dim:     rgba(122, 154, 90, 0.12);
+  --green-border:  rgba(122, 154, 90, 0.32);
+}
+
+[data-theme="dark"] {
+  --bg-base:       #1a0e22;
+  --bg-elevated:   #2d1b3d;
+  --bg-hover:      #3d2a4f;
+  --surface:       #4a3458;
+
+  --border:        #4a3458;
+  --border-strong: #6a4a78;
+
+  --text-primary:   #fff8e6;
+  --text-secondary: #e8d8b8;
+  --text-muted:     #a89880;
+  --text-inverse:   #2d1b3d;
+
+  --accent:        #f4c95d;
+  --accent-strong: #ffd97a;
+  --accent-soft:   #3d2a4f;
+
+  --severity-critical: #ff7aa8;
+  --severity-high:     #ff9a73;
+  --severity-medium:   #ffd97a;
+  --severity-low:      #c8a3d8;
+  --severity-info:     #a89880;
+
+  --success: #a8c285;
+  --danger:  #e88a8a;
+  --warning: #ffd97a;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.20), 0 2px 6px rgba(0,0,0,0.12);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.30), 0 8px 24px rgba(0,0,0,0.20);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.40), 0 20px 60px rgba(0,0,0,0.30);
+
+  /* ── Legacy aliases (dark) ── */
+  --bg-surface:    #2d1b3d;
+  --border-subtle: rgba(255, 248, 230, 0.06);
+  --accent-dim:    rgba(244, 201, 93, 0.16);
+  --accent-glow:   rgba(244, 201, 93, 0.28);
+  --purple:        #c8a3d8;
+  --purple-dim:    rgba(200, 163, 216, 0.14);
+  --red:           #e88a8a;
+  --red-dim:       rgba(232, 138, 138, 0.14);
+  --red-border:    rgba(232, 138, 138, 0.32);
+  --amber:         #ffd97a;
+  --amber-dim:     rgba(255, 217, 122, 0.14);
+  --amber-border:  rgba(255, 217, 122, 0.32);
+  --green:         #a8c285;
+  --green-dim:     rgba(168, 194, 133, 0.14);
+  --green-border:  rgba(168, 194, 133, 0.32);
+}
+
+html {
+  font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.5;
   font-weight: 400;
@@ -51,6 +133,32 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  margin: 0;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+* {
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 *, *::before, *::after {
