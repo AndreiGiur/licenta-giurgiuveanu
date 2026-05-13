@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { apiGet } from "../api/http";
 import { getScan, listDeviceScans, listScanJobs } from "../api/exposure";
 import type { DeviceScanListItem, ScanDetailResponse, ScanJobResponse } from "../api/types";
 import Navbar from "../components/Navbar";
+import { ScoreGauge } from "../components/ScoreGauge";
 
 type DeviceListItem = {
   id: number;
@@ -250,27 +252,30 @@ export default function Dashboard() {
 
         {/* ── Stats row ── */}
         {detail && (
-          <div className="stat-grid">
-            <div className="stat-card">
-              <div className={`stat-value ${getScoreClass(detail.exposure_score)}`}
-                style={{ background: "transparent", border: "none", padding: 0 }}>
-                {detail.exposure_score}
+          <motion.div
+            className="dashboard-stat-row"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <div className="dashboard-score">
+              <ScoreGauge value={detail.exposure_score} size={180} />
+            </div>
+            <div className="dashboard-counts">
+              <div className="count-card">
+                <div className="count-value" style={{ color: "var(--severity-high)" }}>{highCount}</div>
+                <div className="count-label">High / Critical</div>
               </div>
-              <div className="stat-label">Exposure Score</div>
+              <div className="count-card">
+                <div className="count-value" style={{ color: "var(--severity-medium)" }}>{medCount}</div>
+                <div className="count-label">Medium</div>
+              </div>
+              <div className="count-card">
+                <div className="count-value" style={{ color: "var(--severity-low)" }}>{lowCount}</div>
+                <div className="count-label">Low</div>
+              </div>
             </div>
-            <div className="stat-card">
-              <div className="stat-value" style={{ color: "var(--red)" }}>{highCount}</div>
-              <div className="stat-label">High</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value" style={{ color: "var(--amber)" }}>{medCount}</div>
-              <div className="stat-label">Medium</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value" style={{ color: "var(--green)" }}>{lowCount}</div>
-              <div className="stat-label">Low</div>
-            </div>
-          </div>
+          </motion.div>
         )}
 
         {/* ── Main grid ── */}
