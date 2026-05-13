@@ -1,13 +1,8 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { loginUser, fetchMe } from "../api/auth";
-
-const ShieldIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-    stroke="#021018" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-  </svg>
-);
+import { GoogleButton } from "../components/GoogleButton";
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -15,6 +10,10 @@ function isValidEmail(email: string): boolean {
 
 export default function Login() {
   const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Daca user-ul are deja sesiune valida (cookie HttpOnly), il redirectam.
   useEffect(() => {
@@ -25,12 +24,7 @@ export default function Login() {
     return () => { cancelled = true; };
   }, [navigate]);
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function onSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     const normalizedEmail = email.trim().toLowerCase();
@@ -43,9 +37,8 @@ export default function Login() {
     try {
       await loginUser({ email: normalizedEmail, password: normalizedPassword });
       navigate("/dashboard");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Eroare la autentificare";
-      setError(msg);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Eroare la autentificare");
     } finally {
       setLoading(false);
     }
@@ -53,17 +46,24 @@ export default function Login() {
 
   return (
     <div className="auth-page">
-      <div className="auth-card">
-        {/* Brand */}
-        <div className="auth-brand">
-          <div className="auth-brand-icon"><ShieldIcon /></div>
-          <span className="auth-brand-name">VulnWatch</span>
+      <motion.div
+        className="auth-card"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <div className="auth-header">
+          <h1 className="auth-title">Bine ai revenit</h1>
+          <p className="auth-subtitle">Conectează-te la VulnWatch</p>
         </div>
 
-        <h1 className="auth-title">Bine ai revenit</h1>
-        <p className="auth-subtitle">Autentifică-te pentru a accesa platforma</p>
+        <GoogleButton onError={setError} />
 
-        <form onSubmit={onSubmit}>
+        <div className="auth-divider">
+          <span>sau</span>
+        </div>
+
+        <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
             <label className="form-label">Email</label>
             <input
@@ -73,6 +73,7 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="nume@exemplu.com"
               autoComplete="email"
+              required
             />
           </div>
 
@@ -85,29 +86,23 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               autoComplete="current-password"
+              required
             />
           </div>
 
-          {error && (
-            <div className="alert alert-error" style={{ marginBottom: 16 }}>
-              {error}
-            </div>
-          )}
+          {error && <div className="auth-error">{error}</div>}
 
-          <button type="submit" disabled={loading} className="btn btn-primary">
+          <button type="submit" disabled={loading} className="btn btn-primary auth-submit">
             {loading ? (
               <span className="loading-dots"><span /><span /><span /></span>
-            ) : "Autentificare"}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/register")}
-            className="btn btn-secondary"
-          >
-            Nu ai cont? <strong>Înregistrează-te</strong>
+            ) : "Autentifică-te"}
           </button>
         </form>
-      </div>
+
+        <p className="auth-switch">
+          Nu ai cont? <Link to="/register" className="auth-link">Înregistrează-te</Link>
+        </p>
+      </motion.div>
     </div>
   );
 }
