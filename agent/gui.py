@@ -36,7 +36,7 @@ from datetime import datetime
 from tkinter import ttk, messagebox
 from typing import Optional
 
-from . import autostart, core
+from . import autostart, core, google_oauth
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -248,6 +248,21 @@ class AgentApp:
         ttk.Label(wrap, textvariable=self._login_subtitle, style="Subtitle.TLabel",
                   wraplength=560).pack(anchor="w", pady=(0, 20))
 
+        # ── Buton Continua cu Google ────────────────────────────────────────
+        self._google_btn = ttk.Button(
+            wrap, text="Continuă cu Google",
+            style="Accent.TButton",
+            command=self._on_google_login,
+        )
+        self._google_btn.pack(fill="x", pady=(0, 12))
+
+        # Separator "sau"
+        sep_frame = ttk.Frame(wrap, style="TFrame")
+        sep_frame.pack(fill="x", pady=(0, 16))
+        ttk.Separator(sep_frame, orient="horizontal").pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Label(sep_frame, text="sau", style="Dim.TLabel").pack(side="left")
+        ttk.Separator(sep_frame, orient="horizontal").pack(side="left", fill="x", expand=True, padx=(8, 0))
+
         form = ttk.Frame(wrap, style="TFrame")
         form.pack(fill="x")
 
@@ -359,6 +374,54 @@ class AgentApp:
             self._login_msg.set("Email sau parola incorecte.")
         else:
             self._login_msg.set(f"Eroare: {error}")
+
+    # ── Login Google (loopback OAuth) ────────────────────────────────────────
+
+    def _on_google_login(self) -> None:
+        """Flow OAuth desktop: deschide browserul, primeste id_token, enroll."""
+        if not google_oauth.is_configured():
+            messagebox.showerror(
+                "Google OAuth neconfigurat",
+                "agent/google_config.py nu contine GOOGLE_CLIENT_ID.\n"
+                "Vezi google_config.py.example pentru setup."
+            )
+            return
+
+        self._google_btn.configure(state="disabled", text="Se deschide browserul...")
+        self._login_msg.set("")
+
+        def worker() -> None:
+            try:
+                id_tok = google_oauth.login_with_google()
+                device_uid = socket.gethostname().lower()
+                device_name = socket.gethostname()
+                api_base = self._var_api.get().strip().rstrip("/") or core.DEFAULT_API_BASE
+                result = core.api_google_enroll(api_base, id_tok, device_uid, device_name)
+                core.save_enrollment(
+                    api_base=api_base,
+                    device_uid=result["device_uid"],
+                    device_token=result["device_token"],
+                    device_name=result["device_name"],
+                    user_email=result["user_email"],
+                )
+                self.root.after(0, self._on_google_login_success)
+            except google_oauth.GoogleOAuthError as e:
+                self.root.after(0, lambda err=str(e): self._on_google_login_error(err))
+            except core.ApiError as e:
+                self.root.after(0, lambda err=str(e): self._on_google_login_error(err))
+            except Exception as e:  # noqa: BLE001
+                self.root.after(0, lambda err=str(e): self._on_google_login_error(f"Eroare: {err}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_google_login_success(self) -> None:
+        self._google_btn.configure(state="normal", text="Continuă cu Google")
+        self._auto_start_daemon()
+        self._render_status_page()
+
+    def _on_google_login_error(self, error: str) -> None:
+        self._google_btn.configure(state="normal", text="Continuă cu Google")
+        self._login_msg.set(f"Google login esuat: {error}")
 
     # ── Pagina ENROLL DEVICE ─────────────────────────────────────────────────
 
