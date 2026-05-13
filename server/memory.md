@@ -60,5 +60,7 @@ OpenAPI/Swagger la `http://127.0.0.1:8000/docs`.
 | `POST   /api/v1/agent/heartbeat`                      | X-Device-Token      | Agent → backend la 10s (online status + version + capabilities) |
 | `GET    /api/v1/agent/download/info`                  | cookie / X-Session  | Info despre .exe (size, available)   |
 | `GET    /api/v1/agent/download/windows`               | cookie / X-Session  | Descarca `VulnWatchAgent.exe`        |
+| `GET    /api/v1/auth/google/url`                      | —                   | Returneaza URL Google OAuth + state CSRF |
+| `GET    /api/v1/auth/google/callback`                 | —                   | Callback Google dupa login: schimba code -> id_token, creeaza/lipeste User, seteaza cookie, redirect spre frontend `/dashboard` |
 
-Total endpoint-uri: ~22.
+Total endpoint-uri: ~24.

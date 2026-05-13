@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import secrets
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Header, Response, status, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import config, google_auth
 from .auth import (
     clear_session_cookie,
     create_password,
@@ -35,6 +38,9 @@ from .schemas import (
     DeviceCreateOut,
     DeviceOut,
     DeviceScanListItem,
+    GoogleAgentEnrollIn,
+    GoogleAgentEnrollOut,
+    GoogleAuthUrlOut,
     HeartbeatIn,
     JobFailureIn,
     JobProgressIn,
@@ -52,6 +58,32 @@ from .schemas import (
 from .rules import evaluate
 
 router = APIRouter()
+
+
+# ── Google OAuth: state store CSRF in-memory cu TTL 5 minute ─────────────────
+#
+# Nu persistam in DB — flow-ul e scurt si nu vrem sa aglomeram tabelele.
+# State expira automat dupa 5 minute. La fiecare salvare facem si un cleanup
+# oportunist al starilor expirate (evitam memory leak).
+_OAUTH_STATE_STORE: dict[str, float] = {}
+_OAUTH_STATE_TTL = 300  # 5 minute
+
+
+def _store_state(state: str) -> None:
+    """Salveaza state CSRF + curata stari expirate."""
+    now = time.time()
+    expired = [s for s, t in _OAUTH_STATE_STORE.items() if now - t > _OAUTH_STATE_TTL]
+    for s in expired:
+        del _OAUTH_STATE_STORE[s]
+    _OAUTH_STATE_STORE[state] = now
+
+
+def _consume_state(state: str) -> bool:
+    """Verifica state si il sterge. True daca e valid si neexpirat."""
+    if state not in _OAUTH_STATE_STORE:
+        return False
+    ts = _OAUTH_STATE_STORE.pop(state)
+    return (time.time() - ts) <= _OAUTH_STATE_TTL
 
 
 # ── Helperi scan-job ──────────────────────────────────────────────────────────
@@ -146,7 +178,12 @@ def login(request: Request, response: Response, payload: LoginIn, db: Session = 
 
 @router.get("/auth/me", response_model=MeOut)
 def me(user: User = Depends(require_user)):
-    return MeOut(id=user.id, email=user.email)
+    return MeOut(
+        id=user.id,
+        email=user.email,
+        google_picture_url=user.google_picture_url,
+        auth_provider=user.auth_provider,
+    )
 
 
 @router.delete("/auth/logout")
@@ -676,3 +713,100 @@ def download_agent_info(_user: User = Depends(require_user)):
         "platform": "windows",
         "size_bytes": artifact.stat().st_size if artifact else None,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Google OAuth — web flow
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Frontend: GET /auth/google/url → redirect user catre `auth_url`.
+# Google: redirect inapoi la GET /auth/google/callback?code=...&state=...
+# Backend: schimba code → id_token, creeaza User (sau il lipeste de email
+# existent), seteaza cookie sesiune, redirect catre frontend /dashboard.
+
+
+@router.get("/auth/google/url", response_model=GoogleAuthUrlOut)
+def google_auth_url():
+    """Frontend ia URL-ul si redirect-uieste user-ul catre Google."""
+    if not config.GOOGLE_CLIENT_ID_WEB:
+        raise HTTPException(status_code=503, detail="Google OAuth nu este configurat")
+    state = secrets.token_urlsafe(32)
+    _store_state(state)
+    url = google_auth.build_authorization_url(
+        client_id=config.GOOGLE_CLIENT_ID_WEB,
+        redirect_uri=config.GOOGLE_REDIRECT_URI_WEB,
+        state=state,
+    )
+    return GoogleAuthUrlOut(auth_url=url, state=state)
+
+
+@router.get("/auth/google/callback")
+async def google_auth_callback(
+    code: str,
+    state: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """Google a redirectionat user-ul aici. Schimbam code -> id_token,
+    creem User (sau il gasim), setam cookie, redirect spre frontend."""
+    if not _consume_state(state):
+        raise HTTPException(status_code=400, detail="State invalid sau expirat")
+
+    try:
+        tokens = await google_auth.exchange_code_for_token(
+            code=code,
+            client_id=config.GOOGLE_CLIENT_ID_WEB,
+            client_secret=config.GOOGLE_CLIENT_SECRET_WEB,
+            redirect_uri=config.GOOGLE_REDIRECT_URI_WEB,
+        )
+        payload = google_auth.verify_id_token(
+            tokens["id_token"], config.GOOGLE_CLIENT_ID_WEB
+        )
+    except google_auth.GoogleAuthError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    email = payload["email"].lower().strip()
+    google_sub = payload["sub"]
+    picture = payload.get("picture")
+
+    user = _upsert_google_user(db, email=email, google_sub=google_sub, picture=picture)
+
+    token = create_session(
+        db, user.id,
+        user_agent=request.headers.get("user-agent"),
+        ip=request.client.host if request.client else None,
+    )
+    redirect_url = f"{config.FRONTEND_BASE_URL}/dashboard"
+    resp = RedirectResponse(url=redirect_url, status_code=302)
+    set_session_cookie(resp, token)
+    return resp
+
+
+def _upsert_google_user(db: Session, email: str, google_sub: str, picture: str | None) -> User:
+    """User upsert pe baza email-ului. Daca exista, lipeste google_sub.
+
+    Reguli auth_provider:
+    - User nou: 'google'
+    - User existent cu parola: 'both'
+    - User existent fara parola dar cu google_sub: ramane 'google'"""
+    user = get_user_by_email(db, email)
+    if user is None:
+        user = User(
+            email=email,
+            google_sub=google_sub,
+            google_picture_url=picture,
+            auth_provider="google",
+        )
+        db.add(user)
+    else:
+        if user.google_sub is None:
+            user.google_sub = google_sub
+        user.google_picture_url = picture
+        if user.password_hash is None:
+            user.auth_provider = "google"
+        else:
+            user.auth_provider = "both"
+    db.commit()
+    db.refresh(user)
+    return user

@@ -10,7 +10,7 @@ Rulare: `python -m pytest server/tests` (din radacina repo-ului).
 
 | Fisier                          | Teste | Rol                                                            |
 | ------------------------------- | ----- | -------------------------------------------------------------- |
-| `conftest.py`                   | —     | Configurare pytest. Seteaza `DATABASE_URL=sqlite:///<tmp>` inainte de import-ul aplicatiei (esential — altfel se ataseaza la postgres dev). Fixtures: `client` (sesiune-scope, TestClient persistent), `auth_client` (creeaza user unic + login + headers). |
+| `conftest.py`                   | —     | Configurare pytest. Seteaza `DATABASE_URL=sqlite:///<tmp>` + env vars Google OAuth (`GOOGLE_CLIENT_ID_WEB`, `GOOGLE_CLIENT_SECRET_WEB`, `GOOGLE_CLIENT_ID_DESKTOP`, `FRONTEND_BASE_URL` via `setdefault`) inainte de import-ul aplicatiei. Fixtures: `client` (sesiune-scope, TestClient persistent), `auth_client` (creeaza user unic + login + headers). |
 | `test_auth.py`                  | 6     | Register + login + logout flow happy path; login cu credentiale invalide; validare email format (`EmailStr`); validare lungime parola; logout idempotent (200 cu sau fara token); verifica setarea cookie-ului HttpOnly `vw_session`. |
 | `test_devices_and_scans.py`     | 11    | Device enrollment + listare; constraint unique (owner_id, device_uid); auth required pe `/devices`; cascade delete; scan submission happy path; respingere token lipsa/invalid/mismatch UID; **3 teste izolare multi-tenant** (un user nu vede device-urile altuia, nu acceseaza scan-urile altuia, nu sterge device-urile altuia). |
 | `test_rules.py`                 | 9     | Fiecare regula in parte: clean system fara findings, porturi riscante, multe porturi, sesiune admin, procese suspecte, PowerShell informativ, software vulnerabil, OS EOL. Scor saturare la 100 chiar cu multe findings critice. |
@@ -22,8 +22,9 @@ Rulare: `python -m pytest server/tests` (din radacina repo-ului).
 | `test_new_rules.py`             | 25    | Cele 16 reguli noi: cazuri pozitive + cazuri negative (skip pe LH/Microsoft/private IP/etc.). 2 standard (FW/USER), 6 advanced (STARTUP/TASK/SVC/SHARE/PS/CONN), 8 deep (REG/WMI/CERT/AV/BF/PRIV/HOSTS/BITLOCKER). |
 | `test_progress.py`              | 4     | End-to-end scan_type: propagat in `AgentJobOut`; progress update flow + polling; rejected pe job done (409); deep scan declanseaza reguli min_level=deep, `ScanDetailOut.scan_type` propagat. |
 | `test_google_auth.py`           | 3     | Mock pentru modulul `server/app/google_auth.py`: `verify_id_token` returneaza payload-ul cand `id_token.verify_oauth2_token` da OK; arunca `GoogleAuthError` cand subjacent da `ValueError`; `exchange_code_for_token` (async) POST-eaza la token endpoint si returneaza dict cu `id_token`. Foloseste `pytest-asyncio` (auto-mode via `pytest.ini`). |
+| `test_google_web_oauth.py`      | 4     | Flow web OAuth end-to-end cu mock pe `google_auth.exchange_code_for_token` + `verify_id_token`: `GET /auth/google/url` returneaza `auth_url` + `state`; `GET /auth/google/callback` cu state valid creeaza User nou (auth_provider=google), seteaza cookie `vw_session`, redirect 302 catre `/dashboard`; state invalid -> 400; user existent cu parola devine `auth_provider="both"` dupa login Google la acelasi email. |
 
-## Total: 94 teste end-to-end + 17 unit tests in `agent/tests/` = **111 teste**.
+## Total: 98 teste end-to-end + 17 unit tests in `agent/tests/` = **115 teste**.
 
 ## Pattern important
 

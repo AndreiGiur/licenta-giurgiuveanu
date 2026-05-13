@@ -9,6 +9,13 @@ from fastapi.testclient import TestClient
 _db_file = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
 os.environ["DATABASE_URL"] = f"sqlite:///{_db_file.name}"
 
+# Env vars pentru testele Google OAuth. `setdefault` ca sa nu suprascriem
+# valorile reale daca cumva sunt setate in environment.
+os.environ.setdefault("GOOGLE_CLIENT_ID_WEB", "test-client-id-web")
+os.environ.setdefault("GOOGLE_CLIENT_SECRET_WEB", "test-secret-web")
+os.environ.setdefault("GOOGLE_CLIENT_ID_DESKTOP", "test-client-id-desktop")
+os.environ.setdefault("FRONTEND_BASE_URL", "http://localhost:5173")
+
 # 2) Asiguram ca radacina repo-ului e in sys.path (pentru `from server.app...`).
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _REPO_ROOT not in sys.path:
