@@ -12,6 +12,7 @@ Componente reutilizabile, folosite de mai multe pagini.
 | `ThemeToggle.tsx`    | **Buton sun/moon** pentru toggle light/dark. Foloseste `useTheme()` + `motion.svg` (Framer Motion) cu animatie `rotate` la schimbare temei. Icon SVG inline: soare (light mode = afiseaza luna ca click target) / luna (dark mode = afiseaza soare). Stil prin `.theme-toggle` in `index.css` cu hover lift. |
 | `GoogleButton.tsx`   | **Buton "Continua cu Google"** cu logo oficial G colorat (4 path-uri SVG). La click apeleaza `getGoogleAuthUrl()` (din `api/auth.ts`) si redirecteaza browserul la URL-ul Google OAuth. State loading = "Se redirecționează...". Prop-uri: `label`, `fullWidth`, `onError`. Folosit pe pagini Login si Register. |
 | `UserAvatar.tsx`     | Mic avatar circular folosit in Navbar. Daca `pictureUrl` e setat (cont Google) afiseaza poza cu `referrerPolicy="no-referrer"`. Altfel afiseaza initiala emailului pe fundal `--accent`. Size configurabil (default 32px). |
+| `ScoreGauge.tsx`     | **Inel SVG animat + numar tween** pentru afisarea exposure score. Foloseste Framer Motion (`useMotionValue` + `animate` + `useTransform`) — numarul cresc de la 0 la valoarea reala in 1.2s ease-out, inelul circular se umple sincronizat. Culoarea inelului = severitatea (`score-high` plum, `score-medium` honey, `score-low` lavanda, `score-none` sage). Size + strokeWidth + label configurabile. Stiluri prin `.score-gauge` in `index.css`. |
 
 ## Pattern de folosire
 
