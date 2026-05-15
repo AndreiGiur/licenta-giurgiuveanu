@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import Base, engine
-from .routes import router
+from .routes import router  # importa config -> incarca .env automat
 
 # In dev este ok sa cream tabelele la pornire. In productie ar trebui Alembic.
 Base.metadata.create_all(bind=engine)

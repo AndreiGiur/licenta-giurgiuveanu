@@ -23,7 +23,8 @@ docker compose up -d
 cd server
 python -m venv .venv && .\.venv\Scripts\activate   # Windows
 pip install -r requirements.txt
-fastapi dev app/main.py
+# Pe Windows: forțează UTF-8 pentru a evita UnicodeEncodeError din Rich (emoji-uri)
+$env:PYTHONUTF8=1; python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 # 3. Frontend — UI at http://localhost:5173
 cd web

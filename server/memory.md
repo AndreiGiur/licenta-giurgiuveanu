@@ -18,7 +18,7 @@ job queue pentru scan-on-demand, motor de reguli pentru calculul scorului.
 | --------------------- | -------------------------------------------------------------------- |
 | `app/`                | Cod aplicatie (FastAPI app). Vezi `app/memory.md`.                   |
 | `tests/`              | Pytest end-to-end (TestClient). Vezi `tests/memory.md`.              |
-| `requirements.txt`    | Dependencies de runtime + dev: `fastapi`, `uvicorn[standard]`, `sqlalchemy`, `psycopg[binary]`, `pydantic[email]`, `google-auth`, `httpx`, `pytest`. |
+| `requirements.txt`    | Dependencies de runtime + dev: `fastapi`, `uvicorn[standard]`, `sqlalchemy`, `psycopg[binary]`, `pydantic[email]`, `google-auth`, `requests` (transport HTTP pentru google-auth), `httpx`, `pytest`. |
 | `.env.example`        | Template pentru `.env`. Variabile: `DATABASE_URL`, `SESSION_EXPIRE_HOURS`, `CORS_ORIGINS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `GOOGLE_CLIENT_ID_WEB`, `GOOGLE_CLIENT_SECRET_WEB`, `GOOGLE_REDIRECT_URI_WEB`, `GOOGLE_CLIENT_ID_DESKTOP`, `FRONTEND_BASE_URL`. |
 
 ## Rulare
