@@ -214,21 +214,21 @@ def create_device(payload: DeviceCreateIn, db: Session = Depends(get_db), user: 
     if existing:
         raise HTTPException(status_code=400, detail="device_uid already exists for this user")
 
-    # Generam tokenul, dar stocam doar hash-ul. Plain-ul este returnat o singura data.
-    plain_token = Device.generate_token()
+    # Client (agent) genereaza tokenul local si trimite doar hash-ul.
+    # Backend stocheaza hash-ul ca atare. Tokenul plain nu apare niciodata aici.
+    # Prefix-ul (12 chars) este derivat din primele caractere ale hash-ului pentru UI.
     device = Device(
         owner_id=user.id,
         device_uid=device_uid,
         name=name,
-        device_token_hash=hash_token(plain_token),
-        device_token_prefix=plain_token[:8],
+        device_token_hash=payload.token_hash,
+        device_token_prefix=payload.token_hash[:8],
     )
     db.add(device)
     db.commit()
     db.refresh(device)
 
-    out = _device_to_out(device)
-    return DeviceCreateOut(**out.model_dump(), device_token=plain_token)
+    return _device_to_out(device)
 
 
 @router.get("/devices", response_model=list[DeviceOut])

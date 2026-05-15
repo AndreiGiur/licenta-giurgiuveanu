@@ -26,6 +26,7 @@ class MeOut(BaseModel):
 class DeviceCreateIn(BaseModel):
     device_uid: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=128)
+    token_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class DeviceOut(BaseModel):
@@ -39,8 +40,9 @@ class DeviceOut(BaseModel):
     capabilities: List[str] = []
 
 
-class DeviceCreateOut(DeviceOut):
-    device_token: str
+# DeviceCreateOut: identic cu DeviceOut — backend nu mai returneaza tokenul plain.
+# Pastram alias-ul pentru compatibilitate signature in routes.py.
+DeviceCreateOut = DeviceOut
 
 
 class ScanIn(BaseModel):

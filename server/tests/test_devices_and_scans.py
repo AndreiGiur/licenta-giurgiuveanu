@@ -184,3 +184,11 @@ def test_user_cannot_delete_other_users_device():
 
     r = cb.delete("/api/v1/devices/victim")
     assert r.status_code == 404
+
+
+def test_create_device_requires_token_hash(auth_client):
+    c, headers = auth_client["client"], auth_client["headers"]
+    # Lipsa token_hash → 422 Unprocessable Entity
+    r = c.post("/api/v1/devices",
+               json={"device_uid": "missing-hash", "name": "X"}, headers=headers)
+    assert r.status_code == 422, r.text
