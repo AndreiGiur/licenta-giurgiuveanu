@@ -55,3 +55,15 @@ def auth_client(client):
         "token": token,
         "headers": headers,
     }
+
+
+def make_token_pair() -> tuple[str, str]:
+    """Genereaza un (token_plain, token_hash_hex) pentru fixture-uri de test.
+
+    Echivalent functional cu `agent/core.generate_device_token()` — il duplicam
+    aici ca testele backend sa nu importe codul agentului."""
+    import hashlib
+    import secrets
+    token = secrets.token_urlsafe(48)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return token, token_hash
