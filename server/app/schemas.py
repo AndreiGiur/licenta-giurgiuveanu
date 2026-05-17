@@ -163,15 +163,18 @@ class GoogleAuthUrlOut(BaseModel):
 
 
 class GoogleAgentEnrollIn(BaseModel):
-    """Agent trimite id_token + device info la /agent/google-enroll."""
+    """Agent trimite id_token + device info + token_hash la /agent/google-enroll.
+
+    Tokenul plain este generat local de agent si pastrat in config.ini.
+    Backend nu vede niciodata tokenul plain."""
     id_token: str = Field(min_length=1, max_length=4096)
     device_uid: str = Field(min_length=1, max_length=128)
     device_name: str = Field(min_length=1, max_length=128)
+    token_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class GoogleAgentEnrollOut(BaseModel):
-    """Raspuns la /agent/google-enroll."""
-    device_token: str
+    """Raspuns la /agent/google-enroll — fara device_token (clientul il are deja)."""
     device_uid: str
     device_name: str
     user_email: str

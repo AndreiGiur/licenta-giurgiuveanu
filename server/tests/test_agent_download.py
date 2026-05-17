@@ -66,3 +66,32 @@ def test_download_requires_auth():
     assert r.status_code == 401
     r = c.get("/api/v1/agent/download/windows")
     assert r.status_code == 401
+
+
+def test_google_enroll_requires_token_hash(monkeypatch):
+    """Endpoint-ul /agent/google-enroll cere token_hash in body, NU returneaza device_token."""
+    from server.app import google_auth
+    from conftest import make_token_pair
+
+    fake_payload = {"email": "newgoogle@example.com", "sub": "google-sub-123", "picture": None}
+    monkeypatch.setattr(google_auth, "verify_id_token", lambda *a, **kw: fake_payload)
+
+    c = TestClient(app)
+    _, hash1 = make_token_pair()
+
+    # Lipsa token_hash → 422
+    r = c.post("/api/v1/agent/google-enroll", json={
+        "id_token": "fake", "device_uid": "g-pc", "device_name": "G PC",
+    })
+    assert r.status_code == 422, r.text
+
+    # Cu token_hash → 200, NU contine device_token in raspuns
+    r = c.post("/api/v1/agent/google-enroll", json={
+        "id_token": "fake", "device_uid": "g-pc", "device_name": "G PC",
+        "token_hash": hash1,
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "device_token" not in body
+    assert body["device_uid"] == "g-pc"
+    assert body["user_email"] == "newgoogle@example.com"

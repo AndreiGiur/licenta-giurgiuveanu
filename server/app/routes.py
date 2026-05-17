@@ -830,10 +830,10 @@ def agent_google_enroll(payload: GoogleAgentEnrollIn, db: Session = Depends(get_
 
     user = _upsert_google_user(db, email=email, google_sub=google_sub, picture=picture)
 
-    # Device upsert by (owner, uid). Daca exista, re-emite token (echivalent relink).
+    # Device upsert by (owner, uid). Clientul trimite token_hash; backend stocheaza
+    # hash-ul ca atare (nu mai genereaza tokenul). Tokenul plain ramane pe client.
     device_uid = payload.device_uid.strip()
     device_name = payload.device_name.strip()
-    plain_token = Device.generate_token()
 
     device = db.execute(
         select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
@@ -843,20 +843,19 @@ def agent_google_enroll(payload: GoogleAgentEnrollIn, db: Session = Depends(get_
             owner_id=user.id,
             device_uid=device_uid,
             name=device_name,
-            device_token_hash=hash_token(plain_token),
-            device_token_prefix=plain_token[:8],
+            device_token_hash=payload.token_hash,
+            device_token_prefix=payload.token_hash[:8],
         )
         db.add(device)
     else:
-        device.device_token_hash = hash_token(plain_token)
-        device.device_token_prefix = plain_token[:8]
+        device.device_token_hash = payload.token_hash
+        device.device_token_prefix = payload.token_hash[:8]
         device.name = device_name  # update name daca s-a schimbat
 
     db.commit()
     db.refresh(device)
 
     return GoogleAgentEnrollOut(
-        device_token=plain_token,
         device_uid=device.device_uid,
         device_name=device.name,
         user_email=user.email,
