@@ -248,11 +248,11 @@ Refresh automat la 2s (Tk `after`). Sursa: timestamp ultim heartbeat OK din daem
 
 | Card | Sursă date | Format |
 |---|---|---|
-| SCANĂRI | counter intern session (incremented la fiecare submit_job_result OK) | număr întreg, font Cambria 22px honey |
+| SCANĂRI | counter lifetime din cache (incremented la fiecare submit_job_result OK) | număr întreg, font Cambria 22px honey |
 | ULTIMA EXPUNERE | ultima valoare `exposure_score` din response submit_job_result | `XX/100` |
-| ULTIMA SCANARE | timestamp ultima scanare finalizată | `HH:MM` (sau „—" dacă niciuna) |
+| ULTIMA SCANARE | timestamp ultima scanare finalizată | `HH:MM` (azi) / `DD MMM HH:MM` (alt zi) / „—" (niciuna) |
 
-Counterele sunt în-memoria (nu persistate între restart-uri). În viitor pot persista în config.
+**Metricile persistă între restart-uri** prin cache local — vezi secțiunea „Cache metrici" de mai jos.
 
 **Buton „Deschide dashboard"** (primary, honey):
 
@@ -354,6 +354,107 @@ log_expanded = false      # nou: state colapsare detalii
 
 Configul existent rămâne neschimbat ca structură.
 
+## Cache metrici
+
+Fișier separat: `~/.vulnwatch/metrics.json` (gitignored, permisiuni 0600 pe POSIX, ca și `config.ini`).
+
+```json
+{
+  "version": 1,
+  "scans_total": 42,
+  "last_exposure_score": 37,
+  "last_scan_at": "2026-05-18T14:32:11+00:00",
+  "history": [
+    {"timestamp": "2026-05-18T14:32:11+00:00", "score": 37, "scan_type": "standard", "job_id": 128},
+    {"timestamp": "2026-05-17T09:14:03+00:00", "score": 41, "scan_type": "deep", "job_id": 127}
+  ]
+}
+```
+
+**Reguli:**
+
+- **Format JSON** simplu (`json.dumps(..., indent=2)`), human-readable pentru debug.
+- **History limitat la ultimele 20 scanări** — la inserare nouă, dacă lungimea depășește 20, se taie cele mai vechi. Nu persistăm istorie infinită — nu e necesar (istoria reală e pe backend; cache-ul local doar pentru UI rapid).
+- **Atomicitate scriere**: write-to-temp-then-rename pattern. Adică: scrie în `metrics.json.tmp` → `os.replace(..., "metrics.json")`. Previne corupere dacă procesul e killat în mijlocul scrierii.
+- **Citire defensivă**: la pornire, dacă fișierul lipsește → state gol (`scans_total=0`). Dacă fișierul e corupt (JSON invalid sau schemă diferită) → log warn + state gol + suprascriere la prima scanare nouă. Nu blocăm pornirea.
+- **Versioning**: cheia `version: 1` permite evoluție schemă viitoare fără break.
+
+**Clasă `MetricsTracker`** (în `agent/core.py` sau `agent/gui.py` — decizie la implementare):
+
+```python
+class MetricsTracker:
+    """Persistă counters de scanări local pentru afișare rapidă în GUI.
+    Sursa de adevăr rămâne backend-ul; cache-ul e doar pentru UX."""
+
+    def __init__(self, cache_path: Path):
+        self.cache_path = cache_path
+        self.state = self._load()
+
+    def _load(self) -> dict:
+        try:
+            return json.loads(self.cache_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return {"version": 1, "scans_total": 0,
+                    "last_exposure_score": None, "last_scan_at": None,
+                    "history": []}
+
+    def record_scan(self, score: int, scan_type: str, job_id: int) -> None:
+        """Apelat din daemon thread după submit_job_result OK."""
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.state["scans_total"] += 1
+        self.state["last_exposure_score"] = score
+        self.state["last_scan_at"] = now
+        entry = {"timestamp": now, "score": score, "scan_type": scan_type, "job_id": job_id}
+        self.state["history"].insert(0, entry)
+        self.state["history"] = self.state["history"][:20]
+        self._save_atomic()
+
+    def reset(self) -> None:
+        """Apelat la 'Deconectează acest PC' — șterge cache-ul."""
+        self.state = {"version": 1, "scans_total": 0,
+                      "last_exposure_score": None, "last_scan_at": None,
+                      "history": []}
+        try:
+            self.cache_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _save_atomic(self) -> None:
+        tmp = self.cache_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+        os.replace(tmp, self.cache_path)
+```
+
+**Integrare cu DaemonRunner**:
+
+- `MetricsTracker` e instanțiat de `AgentApp` la pornire (cu `cache_path = CONFIG_DIR / "metrics.json"`).
+- `DaemonRunner` primește o referință la `MetricsTracker` în constructor.
+- `core.run_one_job` returnează `{"exposure_score": ..., "scan_id": ..., "scan_type": ...}` din response → propagat înapoi prin queue / callback la `MetricsTracker.record_scan(...)`.
+- Update UI metrici prin polling sau prin pattern callback (similar cu log queue).
+
+**Lifecycle**:
+
+- Inserare nouă la fiecare scanare finalizată cu succes (din daemon thread).
+- Citire la pornire GUI + la fiecare update (UI refresh metrici cards).
+- Resetare la „Deconectează acest PC" (din meniu setări).
+- **NU** se resetează la „Schimbă cont" — istoricul scanărilor aparține device-ului, nu user-ului; dacă același device e relinked, metricile sunt încă relevante.
+
+**Detalii UI suplimentare:**
+
+În secțiunea „▾ Detalii și log activitate" (când e expandată), apare și un mini-tabel cu ultimele 5 scanări din `history`:
+
+```
+ULTIMELE SCANĂRI
+─────────────────────────────────────────────
+14:32  STANDARD   37/100   ✓ done
+09:14  DEEP       41/100   ✓ done
+17 mai 14:20  STANDARD   28/100   ✓ done
+17 mai 09:05  STANDARD   33/100   ✓ done
+16 mai 22:14  ADVANCED   45/100   ✓ done
+```
+
+Click pe un rând → deschide `webbrowser.open(f"{frontend}/scans/{scan_id}")` (dacă history-ul are `scan_id`-uri — în prima iterație nu, doar `job_id`. Click rămâne dezactivat ca o îmbunătățire viitoare. Pentru această iterație, e doar read-only display.)
+
 ## Testing
 
 **Manual tests** (nu există framework de unit test pentru Tkinter în acest repo; smoke tests sunt suficiente):
@@ -392,3 +493,6 @@ Nicio migrare necesară. Configul vechi (fără cheia `[ui]`) e citit OK (defaul
 | Theme toggle live cere reconstruirea tuturor widget-urilor | Acceptat — re-render pagina curentă la toggle. Singura latență vizibilă: ~50ms. |
 | User vechi cu config existent fără `[ui]` | `configparser` returnează default-uri la cheie lipsă — niciun crash. |
 | Dot status depinde de heartbeat — dacă daemon e oprit, nu mai e heartbeat → dot rămâne în stare ultimă | Acceptat: când daemon e oprit (pauză), dot devine gri „În pauză" — comportament corect. |
+| `metrics.json` corupt (JSON invalid, schemă diferită după upgrade) | Citire defensivă cu fallback la state gol. Log warn în debug. Suprascriere la prima scanare nouă. |
+| `metrics.json` scriere concurentă din 2 instanțe agent paralel | În realitate user-ul rulează o singură instanță. Pattern write-to-temp-then-rename oricum previne corupere. |
+| Cache devine inconsistent față de backend (ex: device șters din UI, dar metricile locale rămân) | Acceptat: la 401 auto-recovery + clear_config, NU resetăm metricile (history e legată de device, nu de cont). Doar la „Deconectează acest PC" explicit. |
