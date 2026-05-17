@@ -449,35 +449,19 @@ def api_logout(api_base: str, session_token: str) -> None:
 
 
 def api_send_scan(api_base: str, device_token: str, payload: dict) -> dict:
-    return _request(
+    return _request_with_device_token(
         "POST", f"{api_base}/scans",
-        json=payload,
-        headers={"X-Device-Token": device_token},
+        device_token=device_token, json=payload,
     )
 
 
 def api_get_next_job(api_base: str, device_token: str) -> dict | None:
     """Returneaza dict-ul jobului sau None daca nu sunt joburi pending."""
-    try:
-        r = requests.get(
-            f"{api_base}/agent/jobs/next",
-            headers={"X-Device-Token": device_token, "Content-Type": "application/json"},
-            timeout=15,
-        )
-    except requests.exceptions.ConnectionError:
-        raise ApiError(f"Nu ma pot conecta la {api_base}")
-    except requests.exceptions.RequestException as e:
-        raise ApiError(str(e))
-
-    if r.status_code == 204:
-        return None
-    if not r.ok:
-        try:
-            detail = r.json().get("detail", r.text)
-        except ValueError:
-            detail = r.text
-        raise ApiError(f"HTTP {r.status_code}: {detail}")
-    return r.json()
+    result = _request_with_device_token(
+        "GET", f"{api_base}/agent/jobs/next", device_token=device_token,
+    )
+    # 204 No Content → dict gol → tratam ca None
+    return result if result else None
 
 
 def api_submit_job_result(api_base: str, device_token: str, job_id: int, payload: dict) -> dict:
@@ -492,18 +476,16 @@ def api_submit_job_result(api_base: str, device_token: str, job_id: int, payload
         "persistence": payload.get("persistence"),
         "forensics": payload.get("forensics"),
     }
-    return _request(
+    return _request_with_device_token(
         "POST", f"{api_base}/agent/jobs/{job_id}/result",
-        json=body,
-        headers={"X-Device-Token": device_token},
+        device_token=device_token, json=body,
     )
 
 
 def api_submit_job_failure(api_base: str, device_token: str, job_id: int, error_message: str) -> dict:
-    return _request(
+    return _request_with_device_token(
         "POST", f"{api_base}/agent/jobs/{job_id}/fail",
-        json={"error_message": error_message[:512]},
-        headers={"X-Device-Token": device_token},
+        device_token=device_token, json={"error_message": error_message[:512]},
     )
 
 
@@ -525,16 +507,17 @@ def api_heartbeat(api_base: str, device_token: str, agent_version: str,
                   capabilities: list[str], os_version: str) -> None:
     """Trimite heartbeat la backend (la fiecare ~10s). Best-effort: nu arunca
     daca esueaza — daemon-ul continua sa polleze pentru joburi."""
+    # ApiError (network down, 5xx) → best-effort, inghite.
+    # DeviceTokenInvalidError NU e prins aici — daemon_loop il prinde si reactioneaza.
     try:
-        _request(
+        _request_with_device_token(
             "POST", f"{api_base}/agent/heartbeat",
+            device_token=device_token,
             json={
                 "agent_version": agent_version,
                 "capabilities": capabilities,
                 "os_version": os_version,
-            },
-            headers={"X-Device-Token": device_token},
-            timeout=10,
+            }, timeout=10,
         )
     except ApiError:
         pass
@@ -542,12 +525,13 @@ def api_heartbeat(api_base: str, device_token: str, agent_version: str,
 
 def api_send_progress(api_base: str, device_token: str, job_id: int,
                        progress: int, phase: str) -> None:
-    """Trimite progres pentru un job activ (intre colectori). Best-effort."""
+    """Trimite progres pentru un job activ. Best-effort pentru ApiError;
+    DeviceTokenInvalidError propaga."""
     try:
-        _request(
+        _request_with_device_token(
             "POST", f"{api_base}/agent/jobs/{job_id}/progress",
+            device_token=device_token,
             json={"progress": int(progress), "phase": phase[:128]},
-            headers={"X-Device-Token": device_token},
             timeout=5,
         )
     except ApiError:
