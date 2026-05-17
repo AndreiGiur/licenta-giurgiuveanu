@@ -294,6 +294,21 @@ def collect_system_data(device_uid: str, scan_type: str = "standard",
     }
 
 
+# ── Token generation ──────────────────────────────────────────────────────────
+
+
+def generate_device_token() -> tuple[str, str]:
+    """Genereaza un device_token random local + hash-ul SHA-256 hex.
+
+    Returneaza (token_plain, token_hash_hex). Tokenul plain trebuie salvat
+    in config-ul local IMEDIAT — nu va putea fi recuperat ulterior."""
+    import hashlib
+    import secrets
+    token = secrets.token_urlsafe(48)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return token, token_hash
+
+
 # ── HTTP catre backend ────────────────────────────────────────────────────────
 
 class ApiError(Exception):

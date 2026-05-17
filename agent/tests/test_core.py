@@ -78,3 +78,22 @@ def test_perform_enrollment_propagates_api_error(tmp_config_dir):
         with pytest.raises(core.ApiError):
             core.perform_enrollment("http://api/v1", "u@e.com", "pw12345678",
                                     "uid", "name")
+
+
+def test_generate_device_token_returns_plain_and_hash():
+    import hashlib
+    plain, h = core.generate_device_token()
+    assert isinstance(plain, str)
+    assert len(plain) > 40  # token_urlsafe(48) ≈ 64 chars
+    assert len(h) == 64
+    assert all(c in "0123456789abcdef" for c in h)
+    # Hash-ul corespunde token-ului
+    assert hashlib.sha256(plain.encode("utf-8")).hexdigest() == h
+
+
+def test_generate_device_token_is_random():
+    pairs = [core.generate_device_token() for _ in range(5)]
+    plains = {p for p, _ in pairs}
+    hashes = {h for _, h in pairs}
+    assert len(plains) == 5
+    assert len(hashes) == 5
