@@ -40,9 +40,19 @@ si Secure). Browser-ul il trimite automat. JS nu poate citi → safe la XSS.
 **Clienti non-browser** (agent, curl, teste): foloseste headerul
 `X-Session-Token`. Backend-ul accepta amandoua, cookie are prioritate.
 
-**Agent → backend**: header `X-Device-Token`. Tokenul plain este stocat doar
-in `~/.vulnwatch/config.ini` pe masina agentului. Backend-ul stocheaza
-SHA-256(token) — daca DB e compromis, tokenul nu poate fi recuperat.
+**Agent → backend**: header `X-Device-Token`. Tokenul plain este **generat
+client-side** in executabil (`secrets.token_urlsafe(48)`); clientul trimite
+doar `token_hash` (SHA-256 hex) in body la `POST /devices`,
+`POST /devices/{uid}/relink`, `POST /agent/google-enroll`. Backend stocheaza
+hash-ul ca atare — tokenul plain nu trece niciodata prin retea ca raspuns
+HTTP si nu apare in log-uri/heap backend. Daca DB e compromis, tokenul nu
+poate fi recuperat. Pentru request-uri ulterioare, verificare prin
+`sha256(plain_din_header) == row.device_token_hash`.
+
+**Auto-recovery 401 (agent)**: cand backend respinge `X-Device-Token` cu 401
+(device sters din UI, DB reset, etc.), daemon-ul agent iese imediat din loop
+si UI-ul executabilului sare la pagina Login cu mesaj clar — fara stergere
+manuala de config.
 
 ## Multi-tenant izolare
 

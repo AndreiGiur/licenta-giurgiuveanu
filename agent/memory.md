@@ -54,10 +54,16 @@ Stocat la `~/.vulnwatch/config.ini` (creat automat dupa enrollment, permisiuni
 e compromis, user-ul trebuie sa faca **re-link** din UI (POST /devices/{uid}/relink)
 care invalideaza tokenul vechi si emite unul nou — istoricul scan-urilor ramane.
 
-## Auth flow
+## Auth flow (client-generated tokens)
 
-1. **Enrollment**: GUI cere email + parola → `POST /auth/login` (sau register-then-login) → primim `session_token` → cautam device cu `GET /devices/by-uid/{hostname}`:
-   - **Found**: oferim "Refoloseste device existent" → `POST /devices/{uid}/relink`
-   - **Not found**: form pentru enrollment nou → `POST /devices` cu `{device_uid, name}`
-2. **Salveaza `device_token` in config local** + `DELETE /auth/logout` (renuntam la session_token).
-3. **Operare**: doar `device_token` in headerele `X-Device-Token`. Tokenul nu expira (decat daca user-ul face re-link sau sterge device-ul din UI).
+1. **Login local in executabil**: GUI cere email/parola sau buton Google. POST `/auth/login` sau OAuth loopback → primim `session_token` (temporar).
+2. **Generare token local**: `core.generate_device_token()` returneaza `(token_plain, token_hash_hex)`. Tokenul plain ramane in RAM-ul executabilului; backend-ul nu-l vede niciodata.
+3. **Enrollment**: agent cauta device existent cu `GET /devices/by-uid/{hostname}`.
+   - **Found**: POST `/devices/{uid}/relink` cu body `{token_hash}` → backend inlocuieste hash-ul vechi cu cel nou.
+   - **Not found**: POST `/devices` cu body `{device_uid, name, token_hash}` → backend stocheaza hash-ul ca atare.
+4. **Salveaza `device_token` plain in `~/.vulnwatch/config.ini`** + `DELETE /auth/logout` (renuntam la session_token).
+5. **Operare**: doar `device_token` plain in headerele `X-Device-Token`. Backend verifica `sha256(plain) == row.device_token_hash`.
+
+## Auto-recovery la 401
+
+`daemon_loop` ridica `DeviceTokenInvalidError` din toate apelurile care folosesc `X-Device-Token` (heartbeat, get_next_job, submit_result, etc.). La prima eroare 401, daemon iese din loop si apeleaza `on_token_invalid` callback. `gui.DaemonRunner` propaga eventul printr-un marker `__TOKEN_INVALID__` pe `queue.Queue`; `AgentApp._poll_log_queue` il intercepteaza si re-renders pagina Login cu mesaj clar.

@@ -43,10 +43,10 @@ OpenAPI/Swagger la `http://127.0.0.1:8000/docs`.
 | `GET    /api/v1/auth/me`                              | cookie / X-Session  | Profil curent                        |
 | `DELETE /api/v1/auth/logout`                          | cookie / X-Session  | Logout idempotent                    |
 | `GET    /api/v1/devices`                              | cookie / X-Session  | Listeaza device-urile user-ului      |
-| `POST   /api/v1/devices`                              | cookie / X-Session  | Inrolare device nou (returneaza token plain o data) |
+| `POST   /api/v1/devices`                              | cookie / X-Session  | Inrolare device nou — body include `token_hash` (SHA-256 hex generat de client). Returneaza metadata FARA token plain. |
 | `DELETE /api/v1/devices/{uid}`                        | cookie / X-Session  | Sterge device + cascade scan-uri     |
 | `GET    /api/v1/devices/by-uid/{uid}`                 | cookie / X-Session  | Smart re-link lookup                 |
-| `POST   /api/v1/devices/{uid}/relink`                 | cookie / X-Session  | Re-emite token (invalideaza vechiul) |
+| `POST   /api/v1/devices/{uid}/relink`                 | cookie / X-Session  | Re-emite token — body include `token_hash` nou. Tokenul vechi devine invalid. |
 | `GET    /api/v1/devices/{uid}/scans`                  | cookie / X-Session  | Istoric scanari                      |
 | `POST   /api/v1/devices/{uid}/scan-jobs`              | cookie / X-Session  | UI cere scan on-demand               |
 | `GET    /api/v1/devices/{uid}/scan-jobs`              | cookie / X-Session  | Istoric job-uri pe device            |
@@ -62,6 +62,6 @@ OpenAPI/Swagger la `http://127.0.0.1:8000/docs`.
 | `GET    /api/v1/agent/download/windows`               | cookie / X-Session  | Descarca `VulnWatchAgent.exe`        |
 | `GET    /api/v1/auth/google/url`                      | —                   | Returneaza URL Google OAuth + state CSRF |
 | `GET    /api/v1/auth/google/callback`                 | —                   | Callback Google dupa login: schimba code -> id_token, creeaza/lipeste User, seteaza cookie, redirect spre frontend `/dashboard` |
-| `POST   /api/v1/agent/google-enroll`                  | —                   | Agent enrollment cu Google id_token (creeaza User+Device intr-un singur request, re-emite token pe relink) |
+| `POST   /api/v1/agent/google-enroll`                  | —                   | Agent enrollment cu Google id_token — body include `token_hash`. Upsert User+Device intr-un singur request, returneaza metadata FARA `device_token`. |
 
 Total endpoint-uri: ~24.

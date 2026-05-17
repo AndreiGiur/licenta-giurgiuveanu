@@ -70,14 +70,17 @@ python scan.py logout      # delete local config
 - Non-browser clients (agent enrollment, tests) pass token via `X-Session-Token` header
 - Sessions expire in 24h (`SESSION_EXPIRE_HOURS` env var)
 
-**Agent auth (agent → backend):**
-- Each enrolled device has a `device_token` — only the SHA-256 hash is stored in the DB
-- Plain token is shown once at enrollment and cannot be recovered
-- Agent sends `X-Device-Token` header; `_device_for_token_or_401()` in `routes.py` validates it
+**Agent auth (agent → backend) — client-generated tokens:**
+- Fiecare device are un `device_token` — **generat local** de executabil cu `secrets.token_urlsafe(48)`
+- Executabilul trimite la backend doar `token_hash` (SHA-256 hex) în body la `POST /devices`, `POST /devices/{uid}/relink`, `POST /agent/google-enroll`
+- Backend stochează hash-ul ca atare; tokenul plain nu apare niciodată în răspunsuri HTTP, log-uri sau heap backend
+- Plain token e salvat în `~/.vulnwatch/config.ini` la enrollment și folosit pentru fiecare request ulterior în header `X-Device-Token`
+- `_device_for_token_or_401()` în `routes.py` validează prin `sha256(plain_from_header) == row.device_token_hash`
+- **Auto-recovery la 401**: daemon-ul detectează HTTP 401 din orice apel device-token, oprește loop-ul și forțează UI executabil să revină la pagina Login (fără crash, fără workaround manual)
 
 **Google OAuth (hybrid):**
 - **Web**: `GET /api/v1/auth/google/url` returnează URL Google; callback la `GET /api/v1/auth/google/callback` schimbă code → id_token, upsert User by email, setează cookie sesiune, redirect spre `FRONTEND_BASE_URL/dashboard`
-- **Desktop (agent)**: `google-auth-oauthlib.InstalledAppFlow.run_local_server(port=0)` face Loopback Redirect + PKCE; agent trimite `id_token` la `POST /api/v1/agent/google-enroll` → primește `device_token`
+- **Desktop (agent)**: `google-auth-oauthlib.InstalledAppFlow.run_local_server(port=0)` face Loopback Redirect + PKCE; agent generează local `(token_plain, token_hash)`, trimite `id_token` + `token_hash` la `POST /api/v1/agent/google-enroll`, primește metadata user/device fără token plain (îl are deja local)
 - Cont existent cu email/parolă + login Google la același email → `auth_provider="both"` (account linking automat by email)
 - Env vars: `GOOGLE_CLIENT_ID_WEB`, `GOOGLE_CLIENT_SECRET_WEB`, `GOOGLE_REDIRECT_URI_WEB`, `GOOGLE_CLIENT_ID_DESKTOP`, `FRONTEND_BASE_URL` în `server/.env`
 - Agent: `agent/google_config.py` (gitignored) conține `GOOGLE_CLIENT_ID` (desktop)
