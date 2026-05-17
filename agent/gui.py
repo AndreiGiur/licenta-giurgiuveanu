@@ -119,30 +119,94 @@ class DaemonRunner:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Tema vizuala
+# Sistem de teme — Honey & Plum (dark + light)
 # ──────────────────────────────────────────────────────────────────────────────
 
-THEME = {
-    "bg":          "#060d1a",
-    "surface":     "#0d1526",
-    "elevated":    "#111f35",
-    "border":      "#1a2a44",
-    "accent":      "#38bdf8",
-    "accent_dim":  "#0d2438",
-    "text":        "#e2e8f0",
-    "text_dim":    "#94a3b8",
-    "text_muted":  "#475569",
-    "green":       "#4ade80",
-    "amber":       "#fbbf24",
-    "red":         "#f87171",
+THEME_DARK = {
+    "bg":            "#1a0e22",  # plum profund — fundal principal
+    "surface":       "#2d1b3d",  # plum elevat — card-uri, input-uri
+    "elevated":      "#3a2450",  # plum mai deschis — hover
+    "border":        "#4a2d5f",
+    "accent":        "#f4c95d",  # honey — primary
+    "accent_hover":  "#f7d572",
+    "text":          "#fff8e6",  # cream — text principal
+    "text_dim":      "#b8a8b8",
+    "text_muted":    "#6b5b6e",
+    "green":         "#6fb96a",
+    "amber":         "#f4c95d",
+    "red":           "#e07090",  # rose in loc de rosu strident
 }
 
-SEVERITY_COLOR = {
-    "info":  THEME["text_dim"],
-    "ok":    THEME["green"],
-    "warn":  THEME["amber"],
-    "error": THEME["red"],
+THEME_LIGHT = {
+    "bg":            "#fefaf2",  # cream — fundal principal
+    "surface":       "#fff8e6",
+    "elevated":      "#f4e8c8",
+    "border":        "#e8dccd",
+    "accent":        "#f4c95d",  # honey (constant cross-mode)
+    "accent_hover":  "#e8b840",
+    "text":          "#2d1b3d",  # plum text
+    "text_dim":      "#6b5b6e",
+    "text_muted":    "#b8a8b8",
+    "green":         "#3d8a3a",
+    "amber":         "#c18a30",
+    "red":           "#8a3a52",
 }
+
+
+class ThemeManager:
+    """Gestioneaza tema curenta + persistenta in config.ini sub [ui] theme."""
+
+    def __init__(self):
+        self._name = self._load_from_config()
+        self._palette = THEME_DARK if self._name == "dark" else THEME_LIGHT
+
+    @property
+    def palette(self) -> dict:
+        return self._palette
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def is_dark(self) -> bool:
+        return self._name == "dark"
+
+    def toggle(self) -> None:
+        self._name = "light" if self._name == "dark" else "dark"
+        self._palette = THEME_DARK if self._name == "dark" else THEME_LIGHT
+        self._save_to_config()
+
+    @staticmethod
+    def _load_from_config() -> str:
+        cfg = core.read_config()
+        if not cfg.has_section("ui"):
+            return "dark"
+        val = cfg.get("ui", "theme", fallback="dark").strip().lower()
+        return "light" if val == "light" else "dark"
+
+    def _save_to_config(self) -> None:
+        cfg = core.read_config()
+        if not cfg.has_section("ui"):
+            cfg.add_section("ui")
+        cfg.set("ui", "theme", self._name)
+        try:
+            core.write_config(cfg)
+        except OSError:
+            pass
+
+
+SEVERITY_COLOR_KEYS = {
+    "info":  "text_dim",
+    "ok":    "green",
+    "warn":  "amber",
+    "error": "red",
+}
+
+
+def severity_color(theme: ThemeManager, severity: str) -> str:
+    """Returneaza culoarea de log pentru severity in tema curenta."""
+    return theme.palette[SEVERITY_COLOR_KEYS.get(severity, "text_dim")]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -152,11 +216,13 @@ SEVERITY_COLOR = {
 
 class AgentApp:
     def __init__(self) -> None:
+        self.theme = ThemeManager()
+
         self.root = tk.Tk()
         self.root.title("VulnWatch Agent")
         self.root.geometry("680x560")
         self.root.minsize(560, 460)
-        self.root.configure(bg=THEME["bg"])
+        self.root.configure(bg=self.theme.palette["bg"])
 
         self.log_queue: "queue.Queue[tuple[str, str]]" = queue.Queue(maxsize=1000)
         self.daemon = DaemonRunner(self.log_queue)
@@ -178,54 +244,69 @@ class AgentApp:
     # ── Stiluri ttk ──────────────────────────────────────────────────────────
 
     def _configure_styles(self) -> None:
+        p = self.theme.palette
         style = ttk.Style(self.root)
         try:
             style.theme_use("clam")
         except tk.TclError:
             pass
 
-        style.configure(".", background=THEME["bg"], foreground=THEME["text"],
-                        fieldbackground=THEME["elevated"], borderwidth=0)
-        style.configure("TFrame", background=THEME["bg"])
-        style.configure("TLabel", background=THEME["bg"], foreground=THEME["text"])
-        style.configure("Dim.TLabel", background=THEME["bg"],
-                        foreground=THEME["text_dim"], font=("Segoe UI", 9))
-        style.configure("Title.TLabel", background=THEME["bg"],
-                        foreground=THEME["text"], font=("Segoe UI", 16, "bold"))
-        style.configure("Subtitle.TLabel", background=THEME["bg"],
-                        foreground=THEME["text_dim"], font=("Segoe UI", 10))
-        style.configure("Brand.TLabel", background=THEME["bg"],
-                        foreground=THEME["accent"], font=("Segoe UI", 11, "bold"))
+        style.configure(".", background=p["bg"], foreground=p["text"],
+                        fieldbackground=p["surface"], borderwidth=0)
+        style.configure("TFrame", background=p["bg"])
+        style.configure("TLabel", background=p["bg"], foreground=p["text"])
+        style.configure("Dim.TLabel", background=p["bg"],
+                        foreground=p["text_dim"], font=("Segoe UI", 10))
+        style.configure("Title.TLabel", background=p["bg"],
+                        foreground=p["text"], font=("Cambria", 22, "bold"))
+        style.configure("Subtitle.TLabel", background=p["bg"],
+                        foreground=p["text_dim"], font=("Segoe UI", 11))
+        style.configure("Brand.TLabel", background=p["bg"],
+                        foreground=p["accent"], font=("Cambria", 11, "bold"))
+        style.configure("Footer.TLabel", background=p["bg"],
+                        foreground=p["text_muted"], font=("Segoe UI", 9))
+        style.configure("Metric.TLabel", background=p["surface"],
+                        foreground=p["accent"], font=("Cambria", 22, "bold"))
+        style.configure("MetricLabel.TLabel", background=p["surface"],
+                        foreground=p["text_dim"], font=("Segoe UI", 9))
 
-        style.configure("TEntry", fieldbackground=THEME["elevated"],
-                        foreground=THEME["text"], bordercolor=THEME["border"],
-                        lightcolor=THEME["border"], darkcolor=THEME["border"],
-                        padding=8)
-        style.map("TEntry", bordercolor=[("focus", THEME["accent"])])
+        style.configure("TEntry", fieldbackground=p["surface"],
+                        foreground=p["text"], bordercolor=p["border"],
+                        lightcolor=p["border"], darkcolor=p["border"],
+                        padding=10)
+        style.map("TEntry", bordercolor=[("focus", p["accent"])])
 
-        style.configure("Accent.TButton", background=THEME["accent"],
-                        foreground=THEME["bg"], font=("Segoe UI", 10, "bold"),
-                        padding=(14, 8), borderwidth=0)
+        style.configure("Accent.TButton", background=p["accent"],
+                        foreground=p["surface"] if self.theme.is_dark else "#2d1b3d",
+                        font=("Segoe UI", 11, "bold"),
+                        padding=(14, 10), borderwidth=0)
         style.map("Accent.TButton",
-                  background=[("active", "#7dd3fc"), ("disabled", THEME["accent_dim"])])
+                  background=[("active", p["accent_hover"]),
+                              ("disabled", p["elevated"])])
 
-        style.configure("Secondary.TButton", background=THEME["elevated"],
-                        foreground=THEME["text"], padding=(12, 6), borderwidth=0)
+        style.configure("Secondary.TButton", background=p["surface"],
+                        foreground=p["text"], padding=(12, 8), borderwidth=0)
         style.map("Secondary.TButton",
-                  background=[("active", THEME["surface"])])
+                  background=[("active", p["elevated"])])
 
-        style.configure("Danger.TButton", background=THEME["surface"],
-                        foreground=THEME["red"], padding=(12, 6), borderwidth=0)
+        style.configure("Outlined.TButton", background=p["surface"],
+                        foreground=p["text"], padding=(12, 10), borderwidth=1,
+                        font=("Segoe UI", 11, "bold"))
+        style.map("Outlined.TButton",
+                  background=[("active", p["elevated"])])
 
-        style.configure("Link.TButton", background=THEME["bg"],
-                        foreground=THEME["accent"], padding=0, borderwidth=0,
-                        font=("Segoe UI", 9, "underline"))
+        style.configure("Danger.TButton", background=p["surface"],
+                        foreground=p["red"], padding=(12, 8), borderwidth=0)
+
+        style.configure("Link.TButton", background=p["bg"],
+                        foreground=p["accent"], padding=0, borderwidth=0,
+                        font=("Segoe UI", 10, "underline"))
         style.map("Link.TButton",
-                  background=[("active", THEME["bg"])],
-                  foreground=[("active", "#7dd3fc")])
+                  background=[("active", p["bg"])],
+                  foreground=[("active", p["accent_hover"])])
 
-        style.configure("TCheckbutton", background=THEME["bg"],
-                        foreground=THEME["text"])
+        style.configure("TCheckbutton", background=p["bg"],
+                        foreground=p["text"])
 
     # ── Routing ──────────────────────────────────────────────────────────────
 
@@ -240,6 +321,28 @@ class AgentApp:
             self.root.after(50, self._auto_start_daemon)
         else:
             self._render_login_page()
+
+    def _on_theme_toggle(self) -> None:
+        """Comuta intre dark si light, persista in config, re-render pagina curenta."""
+        self.theme.toggle()
+        self._configure_styles()
+        self.root.configure(bg=self.theme.palette["bg"])
+        self._render_root()
+
+    def _make_theme_toggle_button(self, parent) -> tk.Label:
+        """Creeaza widget-ul circular toggle ☾/☀ (top-right pe fiecare pagina)."""
+        p = self.theme.palette
+        icon = "☀" if self.theme.is_dark else "☾"
+        lbl = tk.Label(
+            parent, text=icon,
+            bg=p["surface"], fg=p["accent"],
+            font=("Segoe UI", 14), width=2, cursor="hand2",
+            relief="flat", bd=0, padx=4, pady=2,
+        )
+        lbl.bind("<Button-1>", lambda e: self._on_theme_toggle())
+        lbl.bind("<Enter>", lambda e: lbl.configure(bg=p["elevated"]))
+        lbl.bind("<Leave>", lambda e: lbl.configure(bg=p["surface"]))
+        return lbl
 
     # ── Pagina LOGIN ─────────────────────────────────────────────────────────
 
@@ -294,7 +397,7 @@ class AgentApp:
 
         self._login_msg = tk.StringVar()
         ttk.Label(wrap, textvariable=self._login_msg,
-                  foreground=THEME["amber"], background=THEME["bg"],
+                  foreground=self.theme.palette["amber"], background=self.theme.palette["bg"],
                   wraplength=560).pack(anchor="w", pady=(8, 4))
 
         actions = ttk.Frame(wrap, style="TFrame")
@@ -471,20 +574,20 @@ class AgentApp:
             style="Subtitle.TLabel", wraplength=580,
         ).pack(anchor="w", pady=(0, 20))
 
-        card = tk.Frame(wrap, bg=THEME["surface"], bd=0,
-                        highlightthickness=1, highlightbackground=THEME["border"])
+        card = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
+                        highlightthickness=1, highlightbackground=self.theme.palette["border"])
         card.pack(fill="x", pady=(0, 16))
         for k, label in [("name", "Nume"), ("device_uid", "UID"), ("created_at", "Inregistrat")]:
-            row = tk.Frame(card, bg=THEME["surface"])
+            row = tk.Frame(card, bg=self.theme.palette["surface"])
             row.pack(fill="x", padx=12, pady=4)
-            tk.Label(row, text=label, bg=THEME["surface"], fg=THEME["text_muted"],
+            tk.Label(row, text=label, bg=self.theme.palette["surface"], fg=self.theme.palette["text_muted"],
                      font=("Segoe UI", 9), width=14, anchor="w").pack(side="left")
-            tk.Label(row, text=str(existing.get(k, "?"))[:60], bg=THEME["surface"],
-                     fg=THEME["text"], font=("Consolas", 10)).pack(side="left")
+            tk.Label(row, text=str(existing.get(k, "?"))[:60], bg=self.theme.palette["surface"],
+                     fg=self.theme.palette["text"], font=("Consolas", 10)).pack(side="left")
 
         self._enroll_msg = tk.StringVar()
-        ttk.Label(wrap, textvariable=self._enroll_msg, foreground=THEME["amber"],
-                  background=THEME["bg"], wraplength=580).pack(anchor="w", pady=(0, 8))
+        ttk.Label(wrap, textvariable=self._enroll_msg, foreground=self.theme.palette["amber"],
+                  background=self.theme.palette["bg"], wraplength=580).pack(anchor="w", pady=(0, 8))
 
         self._var_autostart = tk.BooleanVar(value=True)
         ttk.Checkbutton(wrap, text="Porneste automat la logon (recomandat)",
@@ -515,18 +618,18 @@ class AgentApp:
             style="Subtitle.TLabel", wraplength=580,
         ).pack(anchor="w", pady=(0, 20))
 
-        sysinfo = tk.Frame(wrap, bg=THEME["surface"], bd=0,
-                           highlightthickness=1, highlightbackground=THEME["border"])
+        sysinfo = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
+                           highlightthickness=1, highlightbackground=self.theme.palette["border"])
         sysinfo.pack(fill="x", pady=(0, 16))
         for label, value in [
             ("Sistem", f"{platform.system()} {platform.release()}"),
             ("Hostname", socket.gethostname()),
         ]:
-            row = tk.Frame(sysinfo, bg=THEME["surface"])
+            row = tk.Frame(sysinfo, bg=self.theme.palette["surface"])
             row.pack(fill="x", padx=12, pady=4)
-            tk.Label(row, text=label, bg=THEME["surface"], fg=THEME["text_muted"],
+            tk.Label(row, text=label, bg=self.theme.palette["surface"], fg=self.theme.palette["text_muted"],
                      font=("Segoe UI", 9), width=14, anchor="w").pack(side="left")
-            tk.Label(row, text=value, bg=THEME["surface"], fg=THEME["text"],
+            tk.Label(row, text=value, bg=self.theme.palette["surface"], fg=self.theme.palette["text"],
                      font=("Consolas", 10)).pack(side="left")
 
         form = ttk.Frame(wrap, style="TFrame")
@@ -544,8 +647,8 @@ class AgentApp:
         ttk.Entry(form, textvariable=self._var_name).pack(fill="x", pady=(0, 12))
 
         self._enroll_msg = tk.StringVar()
-        ttk.Label(wrap, textvariable=self._enroll_msg, foreground=THEME["amber"],
-                  background=THEME["bg"], wraplength=580).pack(anchor="w", pady=(8, 4))
+        ttk.Label(wrap, textvariable=self._enroll_msg, foreground=self.theme.palette["amber"],
+                  background=self.theme.palette["bg"], wraplength=580).pack(anchor="w", pady=(8, 4))
 
         self._var_autostart = tk.BooleanVar(value=True)
         ttk.Checkbutton(wrap, text="Porneste automat la logon (recomandat)",
@@ -678,41 +781,41 @@ class AgentApp:
         header.pack(fill="x")
         ttk.Label(header, text="VULNWATCH AGENT", style="Brand.TLabel").pack(anchor="w")
 
-        info = tk.Frame(wrap, bg=THEME["surface"], bd=0,
-                        highlightthickness=1, highlightbackground=THEME["border"])
+        info = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
+                        highlightthickness=1, highlightbackground=self.theme.palette["border"])
         info.pack(fill="x", pady=(12, 12))
         for label, value in [
             ("Cont", user_email),
             ("Device", f"{device_name}  ({device_uid})"),
             ("API", api_base),
         ]:
-            row = tk.Frame(info, bg=THEME["surface"])
+            row = tk.Frame(info, bg=self.theme.palette["surface"])
             row.pack(fill="x", padx=12, pady=4)
-            tk.Label(row, text=label, bg=THEME["surface"], fg=THEME["text_muted"],
+            tk.Label(row, text=label, bg=self.theme.palette["surface"], fg=self.theme.palette["text_muted"],
                      font=("Segoe UI", 9), width=8, anchor="w").pack(side="left")
-            tk.Label(row, text=value, bg=THEME["surface"], fg=THEME["text"],
+            tk.Label(row, text=value, bg=self.theme.palette["surface"], fg=self.theme.palette["text"],
                      font=("Segoe UI", 10)).pack(side="left")
 
         status_bar = ttk.Frame(wrap, style="TFrame")
         status_bar.pack(fill="x", pady=(0, 12))
         self._status_dot = tk.Canvas(status_bar, width=12, height=12,
-                                     bg=THEME["bg"], highlightthickness=0)
+                                     bg=self.theme.palette["bg"], highlightthickness=0)
         self._status_dot.pack(side="left", padx=(0, 8))
         self._status_var = tk.StringVar(value="Pornesc daemon-ul...")
         ttk.Label(status_bar, textvariable=self._status_var,
-                  background=THEME["bg"], foreground=THEME["text"]).pack(side="left")
+                  background=self.theme.palette["bg"], foreground=self.theme.palette["text"]).pack(side="left")
 
         # Info despre niveluri suportate + hint platforma-centric
-        levels_info = tk.Frame(wrap, bg=THEME["surface"], bd=0,
-                               highlightthickness=1, highlightbackground=THEME["border"])
+        levels_info = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
+                               highlightthickness=1, highlightbackground=self.theme.palette["border"])
         levels_info.pack(fill="x", pady=(0, 12))
         tk.Label(levels_info,
                  text=f"Niveluri suportate: {' / '.join(s.title() for s in core.SCAN_PROFILES)}",
-                 bg=THEME["surface"], fg=THEME["accent"],
+                 bg=self.theme.palette["surface"], fg=self.theme.palette["accent"],
                  font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=12, pady=(8, 0))
         tk.Label(levels_info,
                  text="ℹ Scanarea se initiaza din platforma web — agentul ruleaza in fundal.",
-                 bg=THEME["surface"], fg=THEME["text_dim"],
+                 bg=self.theme.palette["surface"], fg=self.theme.palette["text_dim"],
                  font=("Segoe UI", 9)).pack(anchor="w", padx=12, pady=(2, 8))
 
         actions = ttk.Frame(wrap, style="TFrame")
@@ -733,11 +836,11 @@ class AgentApp:
 
         ttk.Label(wrap, text="Activitate", style="Dim.TLabel").pack(anchor="w", pady=(4, 4))
 
-        log_frame = tk.Frame(wrap, bg=THEME["surface"], bd=0,
-                             highlightthickness=1, highlightbackground=THEME["border"])
+        log_frame = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
+                             highlightthickness=1, highlightbackground=self.theme.palette["border"])
         log_frame.pack(fill="both", expand=True)
-        self._log_text = tk.Text(log_frame, bg=THEME["surface"], fg=THEME["text"],
-                                 insertbackground=THEME["text"],
+        self._log_text = tk.Text(log_frame, bg=self.theme.palette["surface"], fg=self.theme.palette["text"],
+                                 insertbackground=self.theme.palette["text"],
                                  font=("Consolas", 9), bd=0, padx=10, pady=8,
                                  wrap="word", state="disabled")
         self._log_text.pack(side="left", fill="both", expand=True)
@@ -745,8 +848,8 @@ class AgentApp:
                                command=self._log_text.yview)
         scroll.pack(side="right", fill="y")
         self._log_text.configure(yscrollcommand=scroll.set)
-        for sev, color in SEVERITY_COLOR.items():
-            self._log_text.tag_configure(sev, foreground=color)
+        for sev in SEVERITY_COLOR_KEYS:
+            self._log_text.tag_configure(sev, foreground=severity_color(self.theme, sev))
 
         autostart_state = autostart.is_enabled()
         self._autostart_var = tk.BooleanVar(value=autostart_state)
@@ -885,7 +988,7 @@ class AgentApp:
     def _append_log(self, msg: str, severity: str = "info") -> None:
         if not hasattr(self, "_log_text"):
             return
-        if severity not in SEVERITY_COLOR:
+        if severity not in SEVERITY_COLOR_KEYS:
             severity = "info"
         self._log_text.configure(state="normal")
         self._log_text.insert("end", msg + "\n", severity)
@@ -899,11 +1002,11 @@ class AgentApp:
         if not hasattr(self, "_status_dot"):
             return
         color = {
-            "starting": THEME["amber"],
-            "running":  THEME["green"],
-            "paused":   THEME["text_muted"],
-            "error":    THEME["red"],
-        }.get(state, THEME["text_muted"])
+            "starting": self.theme.palette["amber"],
+            "running":  self.theme.palette["green"],
+            "paused":   self.theme.palette["text_muted"],
+            "error":    self.theme.palette["red"],
+        }.get(state, self.theme.palette["text_muted"])
         self._status_dot.delete("all")
         self._status_dot.create_oval(2, 2, 10, 10, fill=color, outline="")
         self._status_var.set({
