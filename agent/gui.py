@@ -90,9 +90,19 @@ class DaemonRunner:
                 log=self._emit,
                 should_stop=self._stop.is_set,
                 should_pause=self._pause.is_set,
+                on_token_invalid=self._signal_token_invalid,
             )
         finally:
             self._emit("Daemon oprit.", "info")
+
+    def _signal_token_invalid(self) -> None:
+        """Apelat de daemon_loop pe thread-ul daemon cand backend a respins
+        tokenul cu 401. Trimite un marker special pe queue ca UI-ul (pe Tk
+        thread) sa reactioneze."""
+        try:
+            self.log_queue.put_nowait(("__TOKEN_INVALID__", "error"))
+        except queue.Full:
+            pass
 
     def stop(self) -> None:
         self._stop.set()
