@@ -129,3 +129,16 @@ def test_request_with_device_token_raises_api_error_on_500(monkeypatch):
 
     with pytest.raises(core.ApiError):
         core._request_with_device_token("GET", "http://x/foo", device_token="any")
+
+
+def test_api_create_device_sends_token_hash(monkeypatch):
+    captured = {}
+    def fake_request(method, url, json=None, headers=None, timeout=15):
+        captured["json"] = json
+        captured["url"] = url
+        return {"id": 1, "device_uid": "uid-1", "name": "N", "created_at": "2026-01-01"}
+    monkeypatch.setattr(core, "_request", fake_request)
+
+    result = core.api_create_device("http://api", "sess", "uid-1", "Test", token_hash="a"*64)
+    assert captured["json"]["token_hash"] == "a"*64
+    assert captured["json"]["device_uid"] == "uid-1"

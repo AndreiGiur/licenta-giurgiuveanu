@@ -400,10 +400,12 @@ def api_register(api_base: str, email: str, password: str) -> None:
              json={"email": email, "password": password})
 
 
-def api_create_device(api_base: str, session_token: str, device_uid: str, name: str) -> dict:
+def api_create_device(api_base: str, session_token: str, device_uid: str, name: str,
+                       *, token_hash: str) -> dict:
+    """Inrolare device noua. Clientul trimite token_hash; tokenul plain ramane local."""
     return _request(
         "POST", f"{api_base}/devices",
-        json={"device_uid": device_uid, "name": name},
+        json={"device_uid": device_uid, "name": name, "token_hash": token_hash},
         headers={"X-Session-Token": session_token},
     )
 
@@ -423,11 +425,13 @@ def api_get_device_by_uid(api_base: str, session_token: str, device_uid: str) ->
         raise
 
 
-def api_relink_device(api_base: str, session_token: str, device_uid: str) -> dict:
+def api_relink_device(api_base: str, session_token: str, device_uid: str,
+                       *, token_hash: str) -> dict:
     """Re-emite tokenul pentru un device existent (smart re-link).
-    Returneaza dict-ul cu noul device_token plain (afisat o singura data)."""
+    Clientul trimite noul token_hash; backend doar inlocuieste."""
     return _request(
         "POST", f"{api_base}/devices/{device_uid}/relink",
+        json={"token_hash": token_hash},
         headers={"X-Session-Token": session_token},
     )
 
@@ -489,15 +493,18 @@ def api_submit_job_failure(api_base: str, device_token: str, job_id: int, error_
     )
 
 
-def api_google_enroll(api_base: str, id_token: str, device_uid: str, device_name: str) -> dict:
-    """Trimite id_token Google la backend pentru a crea/relink Device.
-    Returneaza dict cu device_token (plain), device_uid, device_name, user_email."""
+def api_google_enroll(api_base: str, id_token: str, device_uid: str,
+                       device_name: str, *, token_hash: str) -> dict:
+    """Trimite id_token Google + token_hash la backend pentru a crea/relink Device.
+    Returneaza dict cu device_uid, device_name, user_email (FARA device_token —
+    clientul are deja tokenul plain corespunzator hash-ului trimis)."""
     return _request(
         "POST", f"{api_base}/agent/google-enroll",
         json={
             "id_token": id_token,
             "device_uid": device_uid,
             "device_name": device_name,
+            "token_hash": token_hash,
         },
         timeout=15,
     )
