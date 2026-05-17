@@ -24,9 +24,14 @@ def _new_user_client(suffix: str) -> TestClient:
 
 
 def _enroll(c: TestClient, uid: str = "host-1", name: str = "Host 1") -> dict:
-    r = c.post("/api/v1/devices", json={"device_uid": uid, "name": name})
+    from conftest import make_token_pair
+    plain, h = make_token_pair()
+    r = c.post("/api/v1/devices",
+               json={"device_uid": uid, "name": name, "token_hash": h})
     assert r.status_code == 200, r.text
-    return r.json()
+    body = r.json()
+    body["device_token"] = plain  # backend nu mai returneaza tokenul; il avem local
+    return body
 
 
 def _agent_client(token: str) -> TestClient:

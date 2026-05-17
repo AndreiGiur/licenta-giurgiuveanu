@@ -73,7 +73,7 @@ def test_google_enroll_requires_token_hash(monkeypatch):
     from server.app import google_auth
     from conftest import make_token_pair
 
-    fake_payload = {"email": "newgoogle@example.com", "sub": "google-sub-123", "picture": None}
+    fake_payload = {"email": "newgoogle@example.com", "sub": "google-sub-newgoogle-001", "picture": None}
     monkeypatch.setattr(google_auth, "verify_id_token", lambda *a, **kw: fake_payload)
 
     c = TestClient(app)

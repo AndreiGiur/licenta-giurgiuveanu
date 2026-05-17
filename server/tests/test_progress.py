@@ -3,14 +3,16 @@ import uuid
 
 
 def _enroll(auth_client) -> tuple[str, str]:
+    from conftest import make_token_pair
     uid = f"dev-{uuid.uuid4().hex[:8]}"
+    plain, h = make_token_pair()
     r = auth_client["client"].post(
         "/api/v1/devices",
-        json={"device_uid": uid, "name": "Test"},
+        json={"device_uid": uid, "name": "Test", "token_hash": h},
         headers=auth_client["headers"],
     )
     assert r.status_code == 200
-    return uid, r.json()["device_token"]
+    return uid, plain
 
 
 def test_scan_type_propagated_to_agent(auth_client):

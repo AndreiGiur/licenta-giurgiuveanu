@@ -15,9 +15,14 @@ def _new_user_client(suffix: str) -> TestClient:
 
 
 def _enroll(c: TestClient, uid: str = "host-1", name: str = "My Host") -> dict:
-    r = c.post("/api/v1/devices", json={"device_uid": uid, "name": name})
+    from conftest import make_token_pair
+    plain, h = make_token_pair()
+    r = c.post("/api/v1/devices",
+               json={"device_uid": uid, "name": name, "token_hash": h})
     assert r.status_code == 200, r.text
-    return r.json()
+    body = r.json()
+    body["device_token"] = plain
+    return body
 
 
 def _agent_client(token: str) -> TestClient:
@@ -69,6 +74,7 @@ def test_get_device_by_uid_isolates_users():
 # ── POST /devices/{uid}/relink ─────────────────────────────────────────────────
 
 def test_relink_issues_new_token_and_invalidates_old():
+    from conftest import make_token_pair
     c = _new_user_client("relink")
     enrolled = _enroll(c, "relink-host")
     old_token = enrolled["device_token"]
@@ -78,25 +84,26 @@ def test_relink_issues_new_token_and_invalidates_old():
     r = agent_old.post("/api/v1/scans", json=_sample_scan("relink-host"))
     assert r.status_code == 200
 
-    # Re-link
-    r = c.post("/api/v1/devices/relink-host/relink")
+    # Re-link cu un nou token generat local
+    new_plain, new_hash = make_token_pair()
+    r = c.post("/api/v1/devices/relink-host/relink", json={"token_hash": new_hash})
     assert r.status_code == 200
-    body = r.json()
-    new_token = body["device_token"]
-    assert new_token and new_token != old_token
+    assert "device_token" not in r.json()
+    assert new_plain != old_token
 
     # Vechiul token NU mai functioneaza
     r = agent_old.post("/api/v1/scans", json=_sample_scan("relink-host"))
     assert r.status_code == 401
 
     # Noul token functioneaza
-    agent_new = _agent_client(new_token)
+    agent_new = _agent_client(new_plain)
     r = agent_new.post("/api/v1/scans", json=_sample_scan("relink-host"))
     assert r.status_code == 200
 
 
 def test_relink_preserves_historical_scans():
     """Scan-urile facute inainte de re-link raman atasate de device."""
+    from conftest import make_token_pair
     c = _new_user_client("relink-history")
     enrolled = _enroll(c, "history-host")
     old_agent = _agent_client(enrolled["device_token"])
@@ -104,7 +111,8 @@ def test_relink_preserves_historical_scans():
     r1 = old_agent.post("/api/v1/scans", json=_sample_scan("history-host"))
     scan_id_before = r1.json()["scan_id"]
 
-    c.post("/api/v1/devices/history-host/relink")
+    _, new_hash = make_token_pair()
+    c.post("/api/v1/devices/history-host/relink", json={"token_hash": new_hash})
 
     r = c.get(f"/api/v1/devices/history-host/scans")
     assert r.status_code == 200
@@ -113,18 +121,22 @@ def test_relink_preserves_historical_scans():
 
 
 def test_relink_404_for_missing_device():
+    from conftest import make_token_pair
     c = _new_user_client("relink-missing")
-    r = c.post("/api/v1/devices/never-enrolled/relink")
+    _, h = make_token_pair()
+    r = c.post("/api/v1/devices/never-enrolled/relink", json={"token_hash": h})
     assert r.status_code == 404
 
 
 def test_relink_isolates_users():
     """User-ul B nu poate face relink pe device-ul lui A."""
+    from conftest import make_token_pair
     a = _new_user_client("relink-iso-a")
     b = _new_user_client("relink-iso-b")
     _enroll(a, "victim-host")
 
-    r = b.post("/api/v1/devices/victim-host/relink")
+    _, h = make_token_pair()
+    r = b.post("/api/v1/devices/victim-host/relink", json={"token_hash": h})
     assert r.status_code == 404
 
 

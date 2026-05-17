@@ -4,14 +4,16 @@ import uuid
 
 def _enroll(auth_client) -> tuple[str, str]:
     """Creeaza un device si returneaza (device_uid, plain_token)."""
+    from conftest import make_token_pair
     uid = f"dev-{uuid.uuid4().hex[:8]}"
+    plain, h = make_token_pair()
     r = auth_client["client"].post(
         "/api/v1/devices",
-        json={"device_uid": uid, "name": "Test PC"},
+        json={"device_uid": uid, "name": "Test PC", "token_hash": h},
         headers=auth_client["headers"],
     )
     assert r.status_code == 200, r.text
-    return uid, r.json()["device_token"]
+    return uid, plain
 
 
 def test_heartbeat_marks_device_online(auth_client):

@@ -5,11 +5,15 @@ from server.app.main import app
 
 
 def _enroll_device(client, headers, device_uid="my-laptop", name="My Laptop"):
+    from conftest import make_token_pair
+    plain, h = make_token_pair()
     r = client.post("/api/v1/devices",
                     headers=headers,
-                    json={"device_uid": device_uid, "name": name})
+                    json={"device_uid": device_uid, "name": name, "token_hash": h})
     assert r.status_code == 200, r.text
-    return r.json()
+    body = r.json()
+    body["device_token"] = plain  # backend nu mai returneaza tokenul; il avem local
+    return body
 
 
 def _sample_scan_payload(device_uid: str) -> dict:
@@ -41,11 +45,13 @@ def test_create_device_returns_token_only_once(auth_client):
 
 
 def test_cannot_create_duplicate_device_uid_for_same_user(auth_client):
+    from conftest import make_token_pair
     client, headers = auth_client["client"], auth_client["headers"]
     _enroll_device(client, headers, device_uid="dup")
+    _, h = make_token_pair()
     r = client.post("/api/v1/devices",
                     headers=headers,
-                    json={"device_uid": "dup", "name": "Other"})
+                    json={"device_uid": "dup", "name": "Other", "token_hash": h})
     assert r.status_code == 400
 
 
@@ -139,10 +145,13 @@ def _new_client_for_user(suffix: str) -> TestClient:
 
 
 def test_user_cannot_see_other_users_devices():
+    from conftest import make_token_pair
     ca = _new_client_for_user("a")
     cb = _new_client_for_user("b")
 
-    ca.post("/api/v1/devices", json={"device_uid": "alice-laptop", "name": "Alice"})
+    _, h = make_token_pair()
+    ca.post("/api/v1/devices",
+            json={"device_uid": "alice-laptop", "name": "Alice", "token_hash": h})
 
     r = cb.get("/api/v1/devices")
     assert r.status_code == 200
@@ -151,12 +160,14 @@ def test_user_cannot_see_other_users_devices():
 
 
 def test_user_cannot_access_other_users_scan():
+    from conftest import make_token_pair
     ca = _new_client_for_user("iso-a")
     cb = _new_client_for_user("iso-b")
 
-    created = ca.post("/api/v1/devices",
-                      json={"device_uid": "iso-dev", "name": "Iso"}).json()
-    token = created["device_token"]
+    plain, h = make_token_pair()
+    ca.post("/api/v1/devices",
+            json={"device_uid": "iso-dev", "name": "Iso", "token_hash": h})
+    token = plain
 
     # Scan submission foloseste X-Device-Token, nu cookie. Folosim un client curat
     # ca sa fie clar ca nu se bazeaza pe sesiune.
@@ -177,10 +188,13 @@ def test_user_cannot_access_other_users_scan():
 
 
 def test_user_cannot_delete_other_users_device():
+    from conftest import make_token_pair
     ca = _new_client_for_user("del-a")
     cb = _new_client_for_user("del-b")
 
-    ca.post("/api/v1/devices", json={"device_uid": "victim", "name": "Victim"})
+    _, h = make_token_pair()
+    ca.post("/api/v1/devices",
+            json={"device_uid": "victim", "name": "Victim", "token_hash": h})
 
     r = cb.delete("/api/v1/devices/victim")
     assert r.status_code == 404
