@@ -228,3 +228,52 @@ def test_relink_requires_token_hash(auth_client):
                json={"token_hash": hash2}, headers=headers)
     assert r.status_code == 200, r.text
     assert "device_token" not in r.json()
+
+
+def test_token_lifecycle_full_flow(auth_client):
+    """Verifica ca tokenul plain generat client functioneaza la apeluri agent,
+    iar dupa relink, tokenul vechi e respins."""
+    from conftest import make_token_pair
+    c, headers = auth_client["client"], auth_client["headers"]
+
+    plain1, hash1 = make_token_pair()
+
+    # 1. Creeaza device cu hash1
+    r = c.post("/api/v1/devices",
+               json={"device_uid": "lifecycle-dev", "name": "L",
+                     "token_hash": hash1},
+               headers=headers)
+    assert r.status_code == 200, r.text
+
+    # 2. Tokenul plain functioneaza la heartbeat (raspuns 204)
+    r = c.post("/api/v1/agent/heartbeat",
+               json={"agent_version": "1.0", "capabilities": ["standard"],
+                     "os_version": "test"},
+               headers={"X-Device-Token": plain1})
+    assert r.status_code == 204, r.text
+
+    # 3. Un token gresit → 401
+    r = c.post("/api/v1/agent/heartbeat",
+               json={"agent_version": "1.0", "capabilities": ["standard"],
+                     "os_version": "test"},
+               headers={"X-Device-Token": "wrong-token"})
+    assert r.status_code == 401, r.text
+
+    # 4. Relink cu hash2 nou — tokenul plain1 vechi NU mai functioneaza
+    plain2, hash2 = make_token_pair()
+    r = c.post("/api/v1/devices/lifecycle-dev/relink",
+               json={"token_hash": hash2}, headers=headers)
+    assert r.status_code == 200, r.text
+
+    r = c.post("/api/v1/agent/heartbeat",
+               json={"agent_version": "1.0", "capabilities": ["standard"],
+                     "os_version": "test"},
+               headers={"X-Device-Token": plain1})
+    assert r.status_code == 401, "tokenul vechi trebuie sa fie invalidat"
+
+    # 5. Tokenul plain2 nou functioneaza
+    r = c.post("/api/v1/agent/heartbeat",
+               json={"agent_version": "1.0", "capabilities": ["standard"],
+                     "os_version": "test"},
+               headers={"X-Device-Token": plain2})
+    assert r.status_code == 204, r.text
