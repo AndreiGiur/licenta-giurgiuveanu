@@ -684,22 +684,32 @@ def enroll_device_with_session(api_base: str, session_token: str,
                                 relink_if_exists: bool = False,
                                 log: LogFn = _noop_log) -> dict:
     """
-    Creeaza un device pe contul autentificat. Returneaza dict-ul cu plain
-    `device_token`. NU salveaza configul local — apelantul decide cand.
+    Creeaza un device pe contul autentificat. Genereaza local (token_plain,
+    token_hash) si trimite doar hash-ul la backend. Returneaza dict-ul cu
+    `device_token` plain injectat local. NU salveaza configul local —
+    apelantul decide cand.
 
     `relink_if_exists`: daca True si device-ul cu acest UID exista deja, face
     POST /devices/{uid}/relink (re-emitere token, fara duplicare).
     """
     api_base = api_base.rstrip("/")
 
+    token_plain, token_hash = generate_device_token()
+
     if relink_if_exists:
         existing = api_get_device_by_uid(api_base, session_token, device_uid)
         if existing:
             log(f"Device existent ({existing.get('name', '?')}) — re-emit tokenul.", "info")
-            return api_relink_device(api_base, session_token, device_uid)
+            result = api_relink_device(api_base, session_token, device_uid,
+                                       token_hash=token_hash)
+            result["device_token"] = token_plain
+            return result
 
     log("Inregistrez dispozitivul...", "info")
-    return api_create_device(api_base, session_token, device_uid, device_name)
+    result = api_create_device(api_base, session_token, device_uid, device_name,
+                               token_hash=token_hash)
+    result["device_token"] = token_plain
+    return result
 
 
 def perform_enrollment(api_base: str, email: str, password: str,
@@ -731,7 +741,7 @@ def perform_enrollment(api_base: str, email: str, password: str,
     device_token = created.get("device_token")
     if not device_token:
         api_logout(api_base, session_token)
-        raise ApiError("Backend-ul nu a returnat device_token")
+        raise ApiError("Eroare interna: enroll_device_with_session nu a returnat device_token")
 
     save_enrollment(api_base, device_uid, device_token,
                     device_name=created.get("name", device_name),

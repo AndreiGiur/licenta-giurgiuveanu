@@ -396,11 +396,18 @@ class AgentApp:
                 device_uid = socket.gethostname().lower()
                 device_name = socket.gethostname()
                 api_base = self._var_api.get().strip().rstrip("/") or core.DEFAULT_API_BASE
-                result = core.api_google_enroll(api_base, id_tok, device_uid, device_name)
+
+                # Generam tokenul local; backend primeste doar hash-ul.
+                token_plain, token_hash = core.generate_device_token()
+                result = core.api_google_enroll(
+                    api_base, id_tok, device_uid, device_name,
+                    token_hash=token_hash,
+                )
+
                 core.save_enrollment(
                     api_base=api_base,
                     device_uid=result["device_uid"],
-                    device_token=result["device_token"],
+                    device_token=token_plain,
                     device_name=result["device_name"],
                     user_email=result["user_email"],
                 )

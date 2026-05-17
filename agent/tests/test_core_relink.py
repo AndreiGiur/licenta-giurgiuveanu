@@ -73,32 +73,40 @@ def test_api_get_device_by_uid_propagates_other_errors():
 
 
 def test_enroll_device_with_session_relink_path():
-    """Daca relink_if_exists si exista device, sare la api_relink_device."""
-    with mock.patch.object(core, "api_get_device_by_uid",
+    """Daca relink_if_exists si exista device, sare la api_relink_device.
+
+    Tokenul plain e generat local (mock-uim pentru determinism). Backend nu
+    mai returneaza device_token — clientul il injecteaza in dict-ul return."""
+    with mock.patch.object(core, "generate_device_token",
+                           return_value=("plain-relink", "h" * 64)), \
+         mock.patch.object(core, "api_get_device_by_uid",
                            return_value={"device_uid": "h", "name": "Existing"}), \
          mock.patch.object(core, "api_relink_device",
-                           return_value={"device_token": "new-tok",
-                                         "device_uid": "h", "name": "Existing"}) as mrelink, \
+                           return_value={"device_uid": "h", "name": "Existing"}) as mrelink, \
          mock.patch.object(core, "api_create_device") as mcreate:
         result = core.enroll_device_with_session(
             "http://api", "sess", "h", "Existing", relink_if_exists=True,
         )
-        assert result["device_token"] == "new-tok"
-        mrelink.assert_called_once()
+        assert result["device_token"] == "plain-relink"
+        # api_relink_device a primit token_hash-ul generat local
+        _, kwargs = mrelink.call_args
+        assert kwargs["token_hash"] == "h" * 64
         mcreate.assert_not_called()
 
 
 def test_enroll_device_with_session_create_path():
     """Daca relink_if_exists=False, mergem direct la create."""
-    with mock.patch.object(core, "api_create_device",
-                           return_value={"device_token": "tok",
-                                         "device_uid": "h", "name": "New"}) as mcreate, \
+    with mock.patch.object(core, "generate_device_token",
+                           return_value=("plain-create", "c" * 64)), \
+         mock.patch.object(core, "api_create_device",
+                           return_value={"device_uid": "h", "name": "New"}) as mcreate, \
          mock.patch.object(core, "api_get_device_by_uid") as mlookup, \
          mock.patch.object(core, "api_relink_device") as mrelink:
         result = core.enroll_device_with_session(
             "http://api", "sess", "h", "New", relink_if_exists=False,
         )
-        assert result["device_token"] == "tok"
-        mcreate.assert_called_once()
+        assert result["device_token"] == "plain-create"
+        _, kwargs = mcreate.call_args
+        assert kwargs["token_hash"] == "c" * 64
         mlookup.assert_not_called()
         mrelink.assert_not_called()
