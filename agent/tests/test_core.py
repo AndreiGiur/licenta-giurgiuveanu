@@ -142,3 +142,48 @@ def test_api_create_device_sends_token_hash(monkeypatch):
     result = core.api_create_device("http://api", "sess", "uid-1", "Test", token_hash="a"*64)
     assert captured["json"]["token_hash"] == "a"*64
     assert captured["json"]["device_uid"] == "uid-1"
+
+
+def test_daemon_loop_calls_on_token_invalid_and_exits(monkeypatch):
+    invalid_called = []
+    def fake_heartbeat(*a, **kw):
+        raise core.DeviceTokenInvalidError("HTTP 401: invalid")
+
+    monkeypatch.setattr(core, "api_heartbeat", fake_heartbeat)
+    monkeypatch.setattr(core, "api_get_next_job", lambda *a, **kw: None)
+
+    core.daemon_loop(
+        "http://api", "uid-1", "token-1",
+        poll_interval=0,
+        auto_interval=0,
+        log=lambda m, s="info": None,
+        should_stop=lambda: False,
+        should_pause=lambda: False,
+        on_token_invalid=lambda: invalid_called.append(True),
+    )
+
+    assert invalid_called == [True]
+
+
+def test_daemon_loop_continues_on_api_error(monkeypatch):
+    call_count = [0]
+    def fake_heartbeat(*a, **kw):
+        call_count[0] += 1
+        raise core.ApiError("connection refused")
+
+    monkeypatch.setattr(core, "api_heartbeat", fake_heartbeat)
+    monkeypatch.setattr(core, "api_get_next_job", lambda *a, **kw: None)
+
+    invalid_called = []
+    core.daemon_loop(
+        "http://api", "uid", "tok",
+        poll_interval=0, auto_interval=0,
+        log=lambda m, s="info": None,
+        should_stop=lambda: call_count[0] >= 3,
+        should_pause=lambda: False,
+        on_token_invalid=lambda: invalid_called.append(True),
+    )
+
+    # ApiError nu trebuie sa declanseze on_token_invalid
+    assert invalid_called == []
+    assert call_count[0] >= 3

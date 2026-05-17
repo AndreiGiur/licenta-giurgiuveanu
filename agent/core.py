@@ -570,17 +570,19 @@ def run_one_job(api_base: str, device_uid: str, device_token: str,
         score = result.get("exposure_score")
         scan_id = result.get("scan_id")
         log(f"[{_ts()}] Job #{job_id} done ({scan_type}). Scan #{scan_id}, score {score}/100.", "ok")
+    except DeviceTokenInvalidError:
+        raise  # propaga catre daemon_loop pentru recovery
     except ApiError as e:
         log(f"[{_ts()}] Job #{job_id} failed: {e}", "error")
         try:
             api_submit_job_failure(api_base, device_token, job_id, str(e))
-        except ApiError:
+        except (ApiError, DeviceTokenInvalidError):
             pass
     except Exception as e:  # ultim resort
         log(f"[{_ts()}] Job #{job_id} eroare interna: {e}", "error")
         try:
             api_submit_job_failure(api_base, device_token, job_id, f"agent error: {e}")
-        except ApiError:
+        except (ApiError, DeviceTokenInvalidError):
             pass
 
 
@@ -593,15 +595,19 @@ def daemon_loop(
     log: LogFn = _noop_log,
     should_stop: Callable[[], bool] = lambda: False,
     should_pause: Callable[[], bool] = lambda: False,
+    on_token_invalid: Callable[[], None] | None = None,
 ) -> None:
     """
     Bucla principala a daemon-ului. Trimite heartbeat la fiecare 10s,
     polleaza coada de joburi si executa scanarile.
 
-    `should_stop`  → callback ce returneaza True cand bucla trebuie sa iasa
-                     (folosit de GUI cand user-ul apasa Quit).
-    `should_pause` → callback ce returneaza True cand bucla doar asteapta
-                     (folosit de tray pentru optiunea "Pauza").
+    Iese imediat la primul HTTP 401 (token invalid) din orice apel device-token.
+    Semnalizeaza `on_token_invalid` (daca e setat) inainte de a iesi. Erorile
+    tranzitorii (network down, 5xx) → retry, nu trigger.
+
+    `should_stop`  → callback ce returneaza True cand bucla trebuie sa iasa.
+    `should_pause` → callback ce returneaza True cand bucla doar asteapta.
+    `on_token_invalid` → callback apelat la HTTP 401, inainte de a iesi din loop.
     """
     last_auto_scan = time.monotonic()
     last_heartbeat = 0.0  # forteaza heartbeat la primul tick
@@ -609,27 +615,48 @@ def daemon_loop(
     capabilities = list(SCAN_PROFILES.keys())
     os_version = f"{platform.system()} {platform.release()} {platform.version()}"
 
+    def _handle_token_invalid(e: DeviceTokenInvalidError) -> None:
+        log(f"[{_ts()}] Device token respins de backend: {e}", "error")
+        if on_token_invalid:
+            try:
+                on_token_invalid()
+            except Exception as cb_err:
+                log(f"[{_ts()}] on_token_invalid callback err: {cb_err}", "warn")
+
     while not should_stop():
         if should_pause():
             time.sleep(min(poll_interval, 1))
             continue
 
-        # 0) Heartbeat (best-effort, nu blocheaza polling-ul)
+        # 0) Heartbeat (best-effort pentru ApiError, fatal pentru token invalid)
         now = time.monotonic()
         if now - last_heartbeat >= heartbeat_interval:
-            api_heartbeat(api_base, device_token, AGENT_VERSION, capabilities, os_version)
+            try:
+                api_heartbeat(api_base, device_token, AGENT_VERSION, capabilities, os_version)
+            except DeviceTokenInvalidError as e:
+                _handle_token_invalid(e)
+                return
+            except ApiError as e:
+                log(f"[{_ts()}] Heartbeat esuat (continui): {e}", "warn")
             last_heartbeat = now
 
         # 1) Polleaza pentru un job
         try:
             job = api_get_next_job(api_base, device_token)
+        except DeviceTokenInvalidError as e:
+            _handle_token_invalid(e)
+            return
         except ApiError as e:
             log(f"[{_ts()}] Eroare polling: {e}", "warn")
             _interruptible_sleep(poll_interval, should_stop)
             continue
 
         if job is not None:
-            run_one_job(api_base, device_uid, device_token, job, log=log)
+            try:
+                run_one_job(api_base, device_uid, device_token, job, log=log)
+            except DeviceTokenInvalidError as e:
+                _handle_token_invalid(e)
+                return
             continue  # poate exista alt job pending
 
         # 2) Auto-scan periodic (optional)
@@ -640,6 +667,9 @@ def daemon_loop(
                 result = api_send_scan(api_base, device_token, data)
                 log(f"[{_ts()}] Auto-scan done. Scan #{result.get('scan_id')}, "
                     f"score {result.get('exposure_score')}/100.", "ok")
+            except DeviceTokenInvalidError as e:
+                _handle_token_invalid(e)
+                return
             except ApiError as e:
                 log(f"[{_ts()}] Auto-scan failed: {e}", "warn")
             last_auto_scan = time.monotonic()
