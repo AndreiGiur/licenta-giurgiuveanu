@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import configparser
 import ctypes
+import json
 import os
 import platform
 import socket
@@ -234,6 +235,84 @@ def is_admin() -> bool:
         return os.geteuid() == 0  # type: ignore[attr-defined]
     except Exception:
         return False
+
+
+# ── Metrics cache local (persistent intre restart-uri) ────────────────────────
+
+METRICS_FILE = CONFIG_DIR / "metrics.json"
+_METRICS_VERSION = 1
+_HISTORY_MAX = 20
+
+
+class MetricsTracker:
+    """Persista counters de scanari local pentru afisare rapida in GUI.
+
+    Sursa de adevar ramane backend-ul; cache-ul e doar pentru UX (responsivitate
+    GUI fara polling backend pentru fiecare deschidere). Scriere atomica prin
+    write-to-temp-then-rename. Citire defensiva: JSON corupt → state gol."""
+
+    def __init__(self, cache_path: Path):
+        self.cache_path = cache_path
+        self.state = self._load()
+
+    def _load(self) -> dict:
+        try:
+            data = json.loads(self.cache_path.read_text(encoding="utf-8"))
+            # Validare basic: cheile esentiale exista
+            if not isinstance(data, dict) or "scans_total" not in data:
+                raise ValueError("schema invalida")
+            # Backfill chei lipsa pentru forward-compat
+            data.setdefault("version", _METRICS_VERSION)
+            data.setdefault("last_exposure_score", None)
+            data.setdefault("last_scan_at", None)
+            data.setdefault("history", [])
+            return data
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return self._empty_state()
+
+    @staticmethod
+    def _empty_state() -> dict:
+        return {
+            "version": _METRICS_VERSION,
+            "scans_total": 0,
+            "last_exposure_score": None,
+            "last_scan_at": None,
+            "history": [],
+        }
+
+    def record_scan(self, score: int, scan_type: str, job_id: int) -> None:
+        """Apelat din daemon thread dupa submit_job_result OK."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.state["scans_total"] = self.state.get("scans_total", 0) + 1
+        self.state["last_exposure_score"] = int(score)
+        self.state["last_scan_at"] = now
+        entry = {
+            "timestamp": now,
+            "score": int(score),
+            "scan_type": scan_type,
+            "job_id": int(job_id),
+        }
+        self.state["history"].insert(0, entry)
+        self.state["history"] = self.state["history"][:_HISTORY_MAX]
+        self._save_atomic()
+
+    def reset(self) -> None:
+        """Apelat la 'Deconecteaza acest PC' — sterge cache-ul."""
+        self.state = self._empty_state()
+        try:
+            self.cache_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _save_atomic(self) -> None:
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.cache_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+            os.replace(tmp, self.cache_path)
+        except OSError:
+            pass  # best-effort; nu blocam daemon-ul daca disk-ul e plin
 
 
 def collect_system_data(device_uid: str, scan_type: str = "standard",
