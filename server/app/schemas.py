@@ -45,6 +45,11 @@ class DeviceOut(BaseModel):
 DeviceCreateOut = DeviceOut
 
 
+class DeviceRelinkIn(BaseModel):
+    """Body pentru POST /devices/{uid}/relink — token_hash generat de client."""
+    token_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class ScanIn(BaseModel):
     """
     Payload trimis de agent. `device_uid` identifica dispozitivul,

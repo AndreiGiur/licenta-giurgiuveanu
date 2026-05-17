@@ -37,6 +37,7 @@ from .schemas import (
     DeviceCreateIn,
     DeviceCreateOut,
     DeviceOut,
+    DeviceRelinkIn,
     DeviceScanListItem,
     GoogleAgentEnrollIn,
     GoogleAgentEnrollOut,
@@ -265,29 +266,27 @@ def get_device_by_uid(
     return _device_to_out(device)
 
 
-@router.post("/devices/{device_uid}/relink", response_model=DeviceCreateOut)
+@router.post("/devices/{device_uid}/relink", response_model=DeviceOut)
 def relink_device(
     device_uid: str,
+    payload: DeviceRelinkIn,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
-    """Re-emite tokenul pentru un device existent (acelasi UID, acelasi owner).
-    Tokenul vechi este invalidat. Scan-urile istorice raman atasate.
-    Util pentru: reinstalare OS, mutare agent, recuperare token pierdut."""
+    """Re-emite tokenul pentru un device existent. Clientul trimite noul
+    token_hash; backend doar inlocuieste. Scan-urile istorice raman atasate."""
     device = db.execute(
         select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
     ).scalar_one_or_none()
     if not device:
         raise HTTPException(status_code=404, detail="device not found")
 
-    plain_token = Device.generate_token()
-    device.device_token_hash = hash_token(plain_token)
-    device.device_token_prefix = plain_token[:8]
+    device.device_token_hash = payload.token_hash
+    device.device_token_prefix = payload.token_hash[:8]
     db.commit()
     db.refresh(device)
 
-    out = _device_to_out(device)
-    return DeviceCreateOut(**out.model_dump(), device_token=plain_token)
+    return _device_to_out(device)
 
 
 @router.post("/scans", response_model=ScanCreateOut)

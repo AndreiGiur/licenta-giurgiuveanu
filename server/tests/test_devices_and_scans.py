@@ -192,3 +192,25 @@ def test_create_device_requires_token_hash(auth_client):
     r = c.post("/api/v1/devices",
                json={"device_uid": "missing-hash", "name": "X"}, headers=headers)
     assert r.status_code == 422, r.text
+
+
+def test_relink_requires_token_hash(auth_client):
+    from conftest import make_token_pair
+    c, headers = auth_client["client"], auth_client["headers"]
+
+    _, hash1 = make_token_pair()
+    r = c.post("/api/v1/devices",
+               json={"device_uid": "relink-target", "name": "R", "token_hash": hash1},
+               headers=headers)
+    assert r.status_code == 200, r.text
+
+    # Relink fara token_hash → 422
+    r = c.post("/api/v1/devices/relink-target/relink", headers=headers)
+    assert r.status_code == 422, r.text
+
+    # Relink cu token_hash valid → 200
+    _, hash2 = make_token_pair()
+    r = c.post("/api/v1/devices/relink-target/relink",
+               json={"token_hash": hash2}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert "device_token" not in r.json()
