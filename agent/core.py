@@ -315,6 +315,52 @@ class ApiError(Exception):
     """Eroare la nivelul API (HTTP non-2xx, network down, timeout, etc.)."""
 
 
+class DeviceTokenInvalidError(Exception):
+    """Backend a respins device_token-ul cu HTTP 401.
+
+    Daemon-ul trebuie sa se opreasca si UI-ul trebuie sa intoarca la Login.
+    Aceasta exceptie e ridicata DOAR de apelurile care folosesc X-Device-Token."""
+
+
+def _request_with_device_token(method: str, url: str, *, device_token: str,
+                                json=None, timeout=15) -> dict:
+    """Variant a `_request` care detecteaza 401 specific pentru X-Device-Token
+    si arunca `DeviceTokenInvalidError`. Toate celelalte erori → `ApiError`."""
+    headers = {"X-Device-Token": device_token, "Content-Type": "application/json"}
+    try:
+        r = requests.request(method, url, json=json, headers=headers, timeout=timeout)
+    except requests.exceptions.ConnectionError:
+        raise ApiError(f"Nu ma pot conecta la {url}")
+    except requests.exceptions.Timeout:
+        raise ApiError(f"Timeout la {url}")
+    except requests.exceptions.RequestException as e:
+        raise ApiError(str(e))
+
+    if r.status_code == 401:
+        try:
+            detail = r.json().get("detail", r.text)
+        except ValueError:
+            detail = r.text
+        raise DeviceTokenInvalidError(f"HTTP 401: {detail}")
+
+    if r.status_code == 204:
+        return {}
+
+    if not r.ok:
+        try:
+            detail = r.json().get("detail", r.text)
+        except ValueError:
+            detail = r.text
+        raise ApiError(f"HTTP {r.status_code}: {detail}")
+
+    if not r.text:
+        return {}
+    try:
+        return r.json()
+    except ValueError:
+        return {}
+
+
 def _request(method: str, url: str, *, json=None, headers=None, timeout=15) -> dict:
     try:
         r = requests.request(method, url, json=json, headers=headers, timeout=timeout)

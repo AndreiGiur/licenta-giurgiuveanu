@@ -97,3 +97,35 @@ def test_generate_device_token_is_random():
     hashes = {h for _, h in pairs}
     assert len(plains) == 5
     assert len(hashes) == 5
+
+
+def test_request_with_device_token_raises_invalid_on_401(monkeypatch):
+    import requests as _req
+
+    class FakeResponse:
+        status_code = 401
+        text = '{"detail":"invalid device token"}'
+        ok = False
+        def json(self):
+            return {"detail": "invalid device token"}
+
+    monkeypatch.setattr(_req, "request", lambda method, url, **kw: FakeResponse())
+
+    with pytest.raises(core.DeviceTokenInvalidError):
+        core._request_with_device_token("GET", "http://x/foo", device_token="bad")
+
+
+def test_request_with_device_token_raises_api_error_on_500(monkeypatch):
+    import requests as _req
+
+    class FakeResponse:
+        status_code = 500
+        text = "Internal Server Error"
+        ok = False
+        def json(self):
+            raise ValueError()
+
+    monkeypatch.setattr(_req, "request", lambda method, url, **kw: FakeResponse())
+
+    with pytest.raises(core.ApiError):
+        core._request_with_device_token("GET", "http://x/foo", device_token="any")
