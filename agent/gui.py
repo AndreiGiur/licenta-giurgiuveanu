@@ -347,35 +347,48 @@ class AgentApp:
     # ── Pagina LOGIN ─────────────────────────────────────────────────────────
 
     def _render_login_page(self) -> None:
-        wrap = ttk.Frame(self.root, style="TFrame", padding=32)
+        p = self.theme.palette
+
+        # Container principal cu padding mare
+        wrap = ttk.Frame(self.root, style="TFrame", padding=(48, 32))
         wrap.pack(fill="both", expand=True)
 
+        # Theme toggle dreapta-sus (suprapus pe wrap prin place)
+        toggle = self._make_theme_toggle_button(self.root)
+        toggle.place(relx=1.0, x=-20, y=14, anchor="ne")
+
+        # Brand
         ttk.Label(wrap, text="VULNWATCH AGENT", style="Brand.TLabel").pack(anchor="w")
 
-        self._login_title = tk.StringVar(value="Autentificare")
-        ttk.Label(wrap, textvariable=self._login_title, style="Title.TLabel").pack(anchor="w", pady=(8, 4))
+        # Titlu + subtitlu
+        self._login_title = tk.StringVar(value="Bun venit")
+        ttk.Label(wrap, textvariable=self._login_title,
+                  style="Title.TLabel").pack(anchor="w", pady=(8, 4))
 
         self._login_subtitle = tk.StringVar(
-            value="Logheaza-te cu acelasi cont folosit in dashboard."
+            value="Conectează acest PC la contul tău VulnWatch."
         )
-        ttk.Label(wrap, textvariable=self._login_subtitle, style="Subtitle.TLabel",
-                  wraplength=560).pack(anchor="w", pady=(0, 20))
+        ttk.Label(wrap, textvariable=self._login_subtitle,
+                  style="Subtitle.TLabel", wraplength=560).pack(anchor="w", pady=(0, 22))
 
-        # ── Buton Continua cu Google ────────────────────────────────────────
+        # Buton Google (outlined)
         self._google_btn = ttk.Button(
-            wrap, text="Continuă cu Google",
-            style="Accent.TButton",
+            wrap, text="G   Continuă cu Google",
+            style="Outlined.TButton",
             command=self._on_google_login,
         )
-        self._google_btn.pack(fill="x", pady=(0, 12))
+        self._google_btn.pack(fill="x", pady=(0, 14))
 
-        # Separator "sau"
+        # Separator "SAU"
         sep_frame = ttk.Frame(wrap, style="TFrame")
         sep_frame.pack(fill="x", pady=(0, 16))
-        ttk.Separator(sep_frame, orient="horizontal").pack(side="left", fill="x", expand=True, padx=(0, 8))
-        ttk.Label(sep_frame, text="sau", style="Dim.TLabel").pack(side="left")
-        ttk.Separator(sep_frame, orient="horizontal").pack(side="left", fill="x", expand=True, padx=(8, 0))
+        ttk.Separator(sep_frame, orient="horizontal").pack(
+            side="left", fill="x", expand=True, padx=(0, 12))
+        ttk.Label(sep_frame, text="SAU", style="Dim.TLabel").pack(side="left")
+        ttk.Separator(sep_frame, orient="horizontal").pack(
+            side="left", fill="x", expand=True, padx=(12, 0))
 
+        # Form
         form = ttk.Frame(wrap, style="TFrame")
         form.pack(fill="x")
 
@@ -384,60 +397,100 @@ class AgentApp:
         self._var_api      = tk.StringVar(value=core.DEFAULT_API_BASE)
         self._auth_mode    = tk.StringVar(value="login")
 
-        ttk.Label(form, text="Email", style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
-        e_email = ttk.Entry(form, textvariable=self._var_email)
+        ttk.Label(form, text="EMAIL", style="Dim.TLabel").pack(anchor="w", pady=(0, 3))
+        e_email = ttk.Entry(form, textvariable=self._var_email,
+                            font=("Segoe UI", 11))
         e_email.pack(fill="x", pady=(0, 12))
         e_email.focus_set()
 
-        ttk.Label(form, text="Parola", style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
-        ttk.Entry(form, textvariable=self._var_password, show="•").pack(fill="x", pady=(0, 12))
+        ttk.Label(form, text="PAROLĂ", style="Dim.TLabel").pack(anchor="w", pady=(0, 3))
+        e_pwd = ttk.Entry(form, textvariable=self._var_password, show="•",
+                          font=("Segoe UI", 11))
+        e_pwd.pack(fill="x", pady=(0, 16))
 
-        ttk.Label(form, text="API URL", style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
-        ttk.Entry(form, textvariable=self._var_api).pack(fill="x", pady=(0, 8))
-
+        # Mesaj eroare/info
         self._login_msg = tk.StringVar()
         ttk.Label(wrap, textvariable=self._login_msg,
-                  foreground=self.theme.palette["amber"], background=self.theme.palette["bg"],
-                  wraplength=560).pack(anchor="w", pady=(8, 4))
+                  foreground=p["amber"], background=p["bg"],
+                  wraplength=560, font=("Segoe UI", 10)).pack(anchor="w", pady=(0, 8))
 
-        actions = ttk.Frame(wrap, style="TFrame")
-        actions.pack(fill="x", pady=(8, 0))
-
+        # Buton submit principal (honey)
         self._login_submit_btn = ttk.Button(
-            actions, text="Autentificare", style="Accent.TButton",
+            wrap, text="Autentificare", style="Accent.TButton",
             command=self._submit_login,
         )
-        self._login_submit_btn.pack(side="left")
+        self._login_submit_btn.pack(fill="x", pady=(4, 14))
 
+        # Bind Enter pe Entry pwd → submit
+        e_pwd.bind("<Return>", lambda evt: self._submit_login())
+        e_email.bind("<Return>", lambda evt: e_pwd.focus_set())
+
+        # Toggle register inline
         toggle_frame = ttk.Frame(wrap, style="TFrame")
-        toggle_frame.pack(fill="x", pady=(20, 0))
+        toggle_frame.pack()
 
         self._toggle_label = tk.StringVar(value="Nu ai cont?")
         ttk.Label(toggle_frame, textvariable=self._toggle_label,
                   style="Dim.TLabel").pack(side="left")
 
-        self._toggle_btn_text = tk.StringVar(value="Inregistreaza-te")
-        self._toggle_btn = ttk.Button(
-            toggle_frame, textvariable=self._toggle_btn_text, style="Link.TButton",
-            command=self._toggle_auth_mode,
-        )
-        self._toggle_btn.pack(side="left", padx=(4, 0))
+        self._toggle_btn_text = tk.StringVar(value="Înregistrează-te")
+        ttk.Button(toggle_frame, textvariable=self._toggle_btn_text,
+                   style="Link.TButton",
+                   command=self._toggle_auth_mode).pack(side="left", padx=(6, 0))
+
+        # Footer cu API URL + iconita edit
+        footer = ttk.Frame(self.root, style="TFrame")
+        footer.place(relx=0.5, rely=1.0, y=-14, anchor="s")
+
+        ttk.Label(footer, text=f"VulnWatch Agent v{core.AGENT_VERSION}  ·  API: ",
+                  style="Footer.TLabel").pack(side="left")
+        api_short = self._var_api.get().replace("http://", "").replace("/api/v1", "")
+        self._api_short_var = tk.StringVar(value=api_short)
+        ttk.Label(footer, textvariable=self._api_short_var,
+                  style="Footer.TLabel").pack(side="left")
+        edit_btn = tk.Label(footer, text=" ✎ ",
+                            bg=p["bg"], fg=p["accent"],
+                            font=("Segoe UI", 10), cursor="hand2")
+        edit_btn.pack(side="left")
+        edit_btn.bind("<Button-1>", lambda e: self._open_api_url_modal())
 
     def _toggle_auth_mode(self) -> None:
         if self._auth_mode.get() == "login":
             self._auth_mode.set("register")
             self._login_title.set("Cont nou")
-            self._login_subtitle.set("Creeaza un cont VulnWatch (vei putea folosi acelasi cont si in dashboard).")
-            self._login_submit_btn.configure(text="Creeaza cont")
+            self._login_subtitle.set(
+                "Creează un cont VulnWatch (același cont funcționează și în dashboard)."
+            )
+            self._login_submit_btn.configure(text="Creează cont")
             self._toggle_label.set("Ai deja cont?")
-            self._toggle_btn_text.set("Autentifica-te")
+            self._toggle_btn_text.set("Autentifică-te")
         else:
             self._auth_mode.set("login")
-            self._login_title.set("Autentificare")
-            self._login_subtitle.set("Logheaza-te cu acelasi cont folosit in dashboard.")
+            self._login_title.set("Bun venit")
+            self._login_subtitle.set("Conectează acest PC la contul tău VulnWatch.")
             self._login_submit_btn.configure(text="Autentificare")
             self._toggle_label.set("Nu ai cont?")
-            self._toggle_btn_text.set("Inregistreaza-te")
+            self._toggle_btn_text.set("Înregistrează-te")
+
+    def _open_api_url_modal(self) -> None:
+        """Modal pentru editare API URL — folosit din footer Login.
+        Implementare completă in Task 6 (modale)."""
+        from tkinter import simpledialog
+        current = self._var_api.get()
+        new_url = simpledialog.askstring(
+            "Setări avansate API",
+            "URL backend VulnWatch (avansat — modifică doar dacă știi ce faci):",
+            initialvalue=current, parent=self.root,
+        )
+        if new_url and new_url.strip():
+            self._var_api.set(new_url.strip().rstrip("/"))
+            self._refresh_api_short()
+
+    def _refresh_api_short(self) -> None:
+        """Actualizeaza afisarea scurta a API URL in footer."""
+        if hasattr(self, "_api_short_var"):
+            api_short = self._var_api.get().replace("http://", "").replace("/api/v1", "")
+            self._api_short_var.set(api_short)
 
     def _submit_login(self) -> None:
         email = self._var_email.get().strip().lower()
