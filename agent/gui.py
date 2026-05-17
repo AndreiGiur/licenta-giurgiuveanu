@@ -815,6 +815,39 @@ class AgentApp:
         core.clear_config()
         self._render_login_page()
 
+    def _handle_token_invalid(self) -> None:
+        """Daemon a primit 401 — token-ul nu mai e valid. Force re-login fara
+        sa cracheze sau sa lase user-ul intr-o stare confuza."""
+        self.daemon.stop()
+        if self.tray:
+            try:
+                self.tray.stop()
+            except Exception:
+                pass
+            self.tray = None
+            self._tray_started = False
+        self.daemon.join(timeout=2.0)
+        self.daemon = DaemonRunner(self.log_queue)
+
+        # Salveaza api_base pentru convenience inainte de clear config
+        try:
+            saved_api, _, _ = core.get_enrollment()
+        except RuntimeError:
+            saved_api = core.DEFAULT_API_BASE
+        core.clear_config()
+
+        # Re-render Login + mesaj clar
+        self._render_login_page()
+        self._var_api.set(saved_api)
+        self._login_msg.set(
+            "Conexiunea cu platforma a expirat (device-ul a fost sters sau "
+            "tokenul invalidat). Reconecteaza-te pentru a continua sa primesti "
+            "scanari."
+        )
+
+        # Reia polling-ul ca sa prinda eventuale evenimente viitoare
+        self.root.after(100, self._poll_log_queue)
+
     def _on_close_window(self) -> None:
         if self._tray_started:
             self.root.withdraw()
@@ -841,6 +874,9 @@ class AgentApp:
         try:
             while True:
                 msg, sev = self.log_queue.get_nowait()
+                if msg == "__TOKEN_INVALID__":
+                    self._handle_token_invalid()
+                    return  # _handle_token_invalid reia polling-ul
                 self._append_log(msg, sev)
         except queue.Empty:
             pass
