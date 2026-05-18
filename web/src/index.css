@@ -674,16 +674,40 @@ body {
 }
 
 .scan-controls { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+.scan-controls .btn-primary {
+  width: auto;
+  flex-shrink: 0;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  height: 34px;
+}
 .scan-type-select {
-  background: var(--bg-elevated);
+  background-color: var(--bg-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  padding: 8px 12px;
+  padding: 9px 36px 9px 14px;
   border-radius: var(--radius-sm);
   font-family: var(--font-body);
   font-size: 13px;
-  flex: 1;
-  min-width: 0;
+  font-weight: 500;
+  flex: 1 1 auto;
+  min-width: 230px;
+  cursor: pointer;
+  /* Forteaza textul + dropdown panel sa urmeze tema (fix dark mode native select) */
+  color-scheme: light dark;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  /* Sageata custom — chevron honey */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23f4c95d' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.scan-type-select:hover:not(:disabled) {
+  border-color: var(--accent);
 }
 .scan-type-select:focus {
   outline: none;
@@ -691,6 +715,12 @@ body {
   box-shadow: 0 0 0 3px rgba(244,201,93,0.20);
 }
 .scan-type-select:disabled { opacity: 0.5; cursor: not-allowed; }
+.scan-type-select option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-weight: 500;
+  padding: 6px;
+}
 
 .job-progress { margin-top: 12px; }
 .job-progress-bar {
