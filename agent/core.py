@@ -19,8 +19,10 @@ import ctypes
 import json
 import os
 import platform
+import shutil
 import socket
 import stat
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -223,6 +225,85 @@ def save_enrollment(api_base: str, device_uid: str, device_token: str,
     if user_email:
         cfg["agent"]["user_email"] = user_email
     write_config(cfg)
+
+
+# ── nmap detection + NSE deploy ──────────────────────────────────────────────
+
+def _nmap_path() -> Path | None:
+    """Returnează path către nmap.exe instalat de user, sau None dacă lipsește.
+
+    Verifică în această ordine:
+    1. nmap în PATH
+    2. C:\\Program Files (x86)\\Nmap\\nmap.exe
+    3. C:\\Program Files\\Nmap\\nmap.exe
+    """
+    found = shutil.which("nmap")
+    if found:
+        return Path(found)
+    for candidate in [
+        Path(r"C:\Program Files (x86)\Nmap\nmap.exe"),
+        Path(r"C:\Program Files\Nmap\nmap.exe"),
+    ]:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _bundled_nse_path() -> Path | None:
+    """Returnează path către vulnwatch-audit.nse din bundle/dev tree."""
+    if getattr(sys, "frozen", False):
+        # PyInstaller bundle — script extras sub _MEIPASS/nse/
+        return Path(sys._MEIPASS) / "nse" / "vulnwatch-audit.nse"  # type: ignore[attr-defined]
+    # Dev mode — script trăiește în agent/nse/
+    repo_root = Path(__file__).resolve().parent.parent
+    candidate = repo_root / "agent" / "nse" / "vulnwatch-audit.nse"
+    return candidate if candidate.is_file() else None
+
+
+def deploy_nse_script(log: LogFn = _noop_log) -> bool:
+    """Copiază vulnwatch-audit.nse din bundle în NSE scripts dir al instalării
+    de nmap. Întoarce True dacă deploy a reușit, False dacă nmap lipsește.
+
+    Trebuie rulat la startup-ul service-ului (idempotent — overwrite ok)."""
+    nmap = _nmap_path()
+    if not nmap:
+        log("nmap lipsește — script vulnwatch-audit.nse nu poate fi deployed", "warn")
+        return False
+    bundled = _bundled_nse_path()
+    if not bundled:
+        log("vulnwatch-audit.nse lipsește din bundle/dev tree", "warn")
+        return False
+    # Scripts dir = `{nmap_dir}\scripts\`
+    scripts_dir = nmap.parent / "scripts"
+    if not scripts_dir.is_dir():
+        log(f"NSE scripts dir lipsește la {scripts_dir}", "warn")
+        return False
+    target = scripts_dir / "vulnwatch-audit.nse"
+    try:
+        shutil.copy2(bundled, target)
+        log(f"Deploy NSE script OK: {target}", "ok")
+    except OSError as e:
+        log(f"Deploy NSE script eșuat: {e}", "error")
+        return False
+    # Refresh script index
+    try:
+        subprocess.run([str(nmap), "--script-updatedb"],
+                       capture_output=True, timeout=30)
+    except subprocess.SubprocessError:
+        pass  # not fatal
+    return True
+
+
+def agent_capabilities() -> list[str]:
+    """Returnează lista de scan_type-uri suportate pe acest device.
+
+    `standard` și `advanced` sunt mereu suportate (psutil).
+    `deep` se adaugă DOAR dacă nmap e instalat.
+    """
+    caps = ["standard", "advanced"]
+    if _nmap_path() is not None:
+        caps.append("deep")
+    return caps
 
 
 # ── Colectare date sistem ─────────────────────────────────────────────────────
@@ -699,8 +780,9 @@ def daemon_loop(
     last_auto_scan = time.monotonic()
     last_heartbeat = 0.0  # forteaza heartbeat la primul tick
 
-    capabilities = list(SCAN_PROFILES.keys())
+    capabilities = agent_capabilities()  # dinamic: include "deep" doar dacă nmap e instalat
     os_version = f"{platform.system()} {platform.release()} {platform.version()}"
+    deploy_nse_script(log=log)  # idempotent — copiază scriptul în nmap scripts dir
 
     def _handle_token_invalid(e: DeviceTokenInvalidError) -> None:
         log(f"[{_ts()}] Device token respins de backend: {e}", "error")
