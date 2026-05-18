@@ -599,125 +599,167 @@ class AgentApp:
     # ── Pagina ENROLL DEVICE ─────────────────────────────────────────────────
 
     def _render_enroll_page(self) -> None:
+        """Pagina enroll consolidata: sub-stare 'new device' sau 'relink'
+        in functie de daca exista device cu acelasi UID pe cont."""
+        p = self.theme.palette
         self._clear_root()
-        wrap = ttk.Frame(self.root, style="TFrame", padding=32)
+
+        wrap = ttk.Frame(self.root, style="TFrame", padding=(40, 24))
         wrap.pack(fill="both", expand=True)
 
-        head = ttk.Frame(wrap, style="TFrame")
-        head.pack(fill="x")
-        ttk.Label(head, text="VULNWATCH AGENT", style="Brand.TLabel").pack(side="left")
-        ttk.Label(head, text=f"  •  {self._login_email}",
+        # Theme toggle
+        toggle = self._make_theme_toggle_button(self.root)
+        toggle.place(relx=1.0, x=-20, y=14, anchor="ne")
+
+        # Brand bar cu email
+        brand_bar = ttk.Frame(wrap, style="TFrame")
+        brand_bar.pack(fill="x", pady=(0, 4))
+        ttk.Label(brand_bar, text="VULNWATCH AGENT",
+                  style="Brand.TLabel").pack(side="left")
+        ttk.Label(brand_bar, text=f"  ·  {self._login_email}",
                   style="Dim.TLabel").pack(side="left")
 
-        if self._existing_device:
-            self._render_relink_section(wrap)
+        is_relink = self._existing_device is not None
+
+        # Titlu + subtitlu (variabile)
+        if is_relink:
+            title = "Reconectează acest PC"
+            subtitle = "Vom refolosi înregistrarea existentă — istoricul scanărilor rămâne."
         else:
-            self._render_new_enroll_section(wrap)
+            title = "Conectează acest PC"
+            subtitle = "Vom asocia acest calculator cu contul tău."
 
-    def _render_relink_section(self, wrap: ttk.Frame) -> None:
-        existing = self._existing_device or {}
-        ttk.Label(wrap, text="Refoloseste device existent",
-                  style="Title.TLabel").pack(anchor="w", pady=(12, 4))
-        ttk.Label(
-            wrap,
-            text=(f"Acest PC pare deja inrolat pe contul tau ca "
-                  f"\"{existing.get('name', '?')}\". Cel mai probabil "
-                  f"ai reinstalat sistemul sau ai sters configul local. "
-                  f"Vrei sa reactivezi device-ul existent?"),
-            style="Subtitle.TLabel", wraplength=580,
-        ).pack(anchor="w", pady=(0, 20))
+        ttk.Label(wrap, text=title,
+                  style="Title.TLabel").pack(anchor="w", pady=(8, 4))
+        ttk.Label(wrap, text=subtitle,
+                  style="Subtitle.TLabel", wraplength=560).pack(anchor="w", pady=(0, 18))
 
-        card = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
-                        highlightthickness=1, highlightbackground=self.theme.palette["border"])
-        card.pack(fill="x", pady=(0, 16))
-        for k, label in [("name", "Nume"), ("device_uid", "UID"), ("created_at", "Inregistrat")]:
-            row = tk.Frame(card, bg=self.theme.palette["surface"])
-            row.pack(fill="x", padx=12, pady=4)
-            tk.Label(row, text=label, bg=self.theme.palette["surface"], fg=self.theme.palette["text_muted"],
-                     font=("Segoe UI", 9), width=14, anchor="w").pack(side="left")
-            tk.Label(row, text=str(existing.get(k, "?"))[:60], bg=self.theme.palette["surface"],
-                     fg=self.theme.palette["text"], font=("Consolas", 10)).pack(side="left")
+        # Device info card
+        sys_name = platform.system()
+        hostname = socket.gethostname()
+        uid_default = hostname.lower()
 
-        self._enroll_msg = tk.StringVar()
-        ttk.Label(wrap, textvariable=self._enroll_msg, foreground=self.theme.palette["amber"],
-                  background=self.theme.palette["bg"], wraplength=580).pack(anchor="w", pady=(0, 8))
+        card = tk.Frame(wrap, bg=p["surface"], bd=0,
+                        highlightthickness=1, highlightbackground=p["border"])
+        card.pack(fill="x", pady=(0, 12))
 
+        card_inner = tk.Frame(card, bg=p["surface"])
+        card_inner.pack(fill="x", padx=14, pady=12)
+
+        tk.Label(card_inner, text="\U0001f5a5",
+                 bg=p["surface"], fg=p["accent"],
+                 font=("Segoe UI Emoji", 22)).pack(side="left", padx=(0, 12))
+
+        info_col = tk.Frame(card_inner, bg=p["surface"])
+        info_col.pack(side="left", fill="x", expand=True)
+        tk.Label(info_col, text=f"{sys_name} · {hostname}",
+                 bg=p["surface"], fg=p["text"],
+                 font=("Cambria", 13, "bold")).pack(anchor="w")
+
+        uid_row = tk.Frame(info_col, bg=p["surface"])
+        uid_row.pack(anchor="w", pady=(2, 0))
+        tk.Label(uid_row, text=f"UID tehnic: {uid_default}",
+                 bg=p["surface"], fg=p["text_dim"],
+                 font=("Consolas", 10)).pack(side="left")
+
+        if not is_relink:
+            # Doar la new enroll, link mic 'Schimbă'
+            change_btn = tk.Label(uid_row, text="  [Schimbă]",
+                                  bg=p["surface"], fg=p["accent"],
+                                  font=("Segoe UI", 9, "underline"),
+                                  cursor="hand2")
+            change_btn.pack(side="left")
+            change_btn.bind("<Button-1>", lambda e: self._prompt_change_uid())
+
+        # Banner re-link (doar in modul relink)
+        if is_relink:
+            existing_name = (self._existing_device or {}).get("name", "?")
+            banner = tk.Frame(wrap, bg=p["surface"], bd=0,
+                              highlightthickness=1, highlightbackground=p["accent"])
+            banner.pack(fill="x", pady=(0, 12))
+            tk.Label(banner,
+                     text=f'⚠  Acest PC e deja înregistrat ca „{existing_name}”.',
+                     bg=p["surface"], fg=p["accent"],
+                     font=("Segoe UI", 10, "bold"),
+                     wraplength=560, justify="left").pack(anchor="w", padx=12, pady=(10, 2))
+            tk.Label(banner,
+                     text="Probabil ai reinstalat OS-ul sau ai șters configul.",
+                     bg=p["surface"], fg=p["text_dim"],
+                     font=("Segoe UI", 9),
+                     wraplength=560, justify="left").pack(anchor="w", padx=12, pady=(0, 10))
+
+        # Câmp nume (editabil în ambele moduri)
+        ttk.Label(wrap, text="CUM SĂ APARĂ ÎN DASHBOARD",
+                  style="Dim.TLabel").pack(anchor="w", pady=(0, 3))
+
+        if is_relink:
+            default_name = (self._existing_device or {}).get("name", f"{sys_name} {hostname}")
+        else:
+            default_name = f"{sys_name} {hostname}"
+
+        self._var_uid  = tk.StringVar(value=uid_default)
+        self._var_name = tk.StringVar(value=default_name)
+
+        ttk.Entry(wrap, textvariable=self._var_name,
+                  font=("Segoe UI", 11)).pack(fill="x", pady=(0, 14))
+
+        # Autostart checkbox
         self._var_autostart = tk.BooleanVar(value=True)
-        ttk.Checkbutton(wrap, text="Porneste automat la logon (recomandat)",
-                        variable=self._var_autostart).pack(anchor="w", pady=(8, 16))
+        ttk.Checkbutton(wrap, text="Pornește automat la pornirea Windows (recomandat)",
+                        variable=self._var_autostart).pack(anchor="w", pady=(0, 18))
 
+        # Mesaj eroare
+        self._enroll_msg = tk.StringVar()
+        ttk.Label(wrap, textvariable=self._enroll_msg,
+                  foreground=p["amber"], background=p["bg"],
+                  wraplength=560, font=("Segoe UI", 10)).pack(anchor="w", pady=(0, 8))
+
+        # Butoane action
         actions = ttk.Frame(wrap, style="TFrame")
         actions.pack(fill="x")
-        self._enroll_btn = ttk.Button(
-            actions, text="Refoloseste device-ul",
-            style="Accent.TButton", command=self._submit_relink,
-        )
-        self._enroll_btn.pack(side="left", padx=(0, 8))
 
-        ttk.Button(actions, text="Inroleaza ca device nou",
-                   style="Secondary.TButton",
-                   command=self._switch_to_new_enroll).pack(side="left")
+        btn_label = "Refolosește înregistrarea" if is_relink else "Conectează"
+        self._enroll_btn = ttk.Button(
+            actions, text=btn_label, style="Accent.TButton",
+            command=self._submit_relink if is_relink else self._submit_enroll,
+        )
+        self._enroll_btn.pack(side="left", padx=(0, 10), fill="x", expand=True)
+
+        ttk.Button(actions, text="Anulează", style="Secondary.TButton",
+                   command=self._logout_from_enroll).pack(side="left")
+
+        # Footer: optiune 'Inregistreaza ca PC nou' doar in modul relink
+        if is_relink:
+            link_frame = ttk.Frame(wrap, style="TFrame")
+            link_frame.pack(fill="x", pady=(16, 0))
+            link = tk.Label(link_frame,
+                            text="Vrei să-l înregistrezi ca PC nou? →",
+                            bg=p["bg"], fg=p["accent"],
+                            font=("Segoe UI", 9, "underline"),
+                            cursor="hand2")
+            link.pack(side="right")
+            link.bind("<Button-1>", lambda e: self._switch_to_new_enroll())
+
+    def _prompt_change_uid(self) -> None:
+        """Permite editarea manuala a UID-ului tehnic (rar folosit)."""
+        from tkinter import simpledialog
+        new_uid = simpledialog.askstring(
+            "Schimbă UID tehnic",
+            "Modifică doar dacă știi ce faci.\nUID tehnic curent:",
+            initialvalue=self._var_uid.get(), parent=self.root,
+        )
+        if new_uid and new_uid.strip():
+            self._var_uid.set(new_uid.strip().lower())
+            # Refresh pagina pentru a reflecta noul UID
+            self._render_enroll_page()
 
     def _switch_to_new_enroll(self) -> None:
+        """Forteaza enrollment ca PC nou chiar daca exista device cu acelasi UID."""
         self._existing_device = None
+        # Sugereaza un UID diferit ca sa nu loveasca conflict
+        base_uid = socket.gethostname().lower()
+        self._var_uid = tk.StringVar(value=f"{base_uid}-2")
         self._render_enroll_page()
-
-    def _render_new_enroll_section(self, wrap: ttk.Frame) -> None:
-        ttk.Label(wrap, text="Inroleaza acest PC", style="Title.TLabel").pack(anchor="w", pady=(12, 4))
-        ttk.Label(
-            wrap,
-            text="Acest PC va trimite scanari de securitate catre contul tau. "
-                 "Poti vedea rezultatele in dashboard, la /devices.",
-            style="Subtitle.TLabel", wraplength=580,
-        ).pack(anchor="w", pady=(0, 20))
-
-        sysinfo = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
-                           highlightthickness=1, highlightbackground=self.theme.palette["border"])
-        sysinfo.pack(fill="x", pady=(0, 16))
-        for label, value in [
-            ("Sistem", f"{platform.system()} {platform.release()}"),
-            ("Hostname", socket.gethostname()),
-        ]:
-            row = tk.Frame(sysinfo, bg=self.theme.palette["surface"])
-            row.pack(fill="x", padx=12, pady=4)
-            tk.Label(row, text=label, bg=self.theme.palette["surface"], fg=self.theme.palette["text_muted"],
-                     font=("Segoe UI", 9), width=14, anchor="w").pack(side="left")
-            tk.Label(row, text=value, bg=self.theme.palette["surface"], fg=self.theme.palette["text"],
-                     font=("Consolas", 10)).pack(side="left")
-
-        form = ttk.Frame(wrap, style="TFrame")
-        form.pack(fill="x")
-
-        self._var_uid  = tk.StringVar(value=socket.gethostname().lower())
-        self._var_name = tk.StringVar(value=f"{platform.system()} {socket.gethostname()}")
-
-        ttk.Label(form, text="Device UID (identificator tehnic)",
-                  style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
-        ttk.Entry(form, textvariable=self._var_uid).pack(fill="x", pady=(0, 12))
-
-        ttk.Label(form, text="Nume afisat (cum apare in dashboard)",
-                  style="Dim.TLabel").pack(anchor="w", pady=(0, 2))
-        ttk.Entry(form, textvariable=self._var_name).pack(fill="x", pady=(0, 12))
-
-        self._enroll_msg = tk.StringVar()
-        ttk.Label(wrap, textvariable=self._enroll_msg, foreground=self.theme.palette["amber"],
-                  background=self.theme.palette["bg"], wraplength=580).pack(anchor="w", pady=(8, 4))
-
-        self._var_autostart = tk.BooleanVar(value=True)
-        ttk.Checkbutton(wrap, text="Porneste automat la logon (recomandat)",
-                        variable=self._var_autostart).pack(anchor="w", pady=(4, 16))
-
-        actions = ttk.Frame(wrap, style="TFrame")
-        actions.pack(fill="x")
-        self._enroll_btn = ttk.Button(
-            actions, text="Inroleaza acest PC",
-            style="Accent.TButton", command=self._submit_enroll,
-        )
-        self._enroll_btn.pack(side="left", padx=(0, 8))
-
-        ttk.Button(actions, text="Logout",
-                   style="Secondary.TButton",
-                   command=self._logout_from_enroll).pack(side="right")
 
     def _logout_from_enroll(self) -> None:
         if self._session_token:
