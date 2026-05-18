@@ -27,7 +27,7 @@ Profilul `deep` capătă o etapă nouă:
 ### Constrângeri non-negociabile (din alegerile user-ului)
 
 - **LAN target:** auto-detect subnet, opt-in **explicit per scan** (checkbox în UI, confirm modal)
-- **Distribuție nmap:** **bundle în executabil** (~110 MB total, de la 26 MB)
+- **Distribuție nmap:** **prerequisit instalat separat** — agent detectează `nmap` în PATH la startup; dacă lipsește, GUI afișează guide de install (link nmap.org). Executabil rămâne ~26 MB. Doar scriptul `vulnwatch-audit.nse` e bundle-uit în executabil și copiat la runtime în directorul NSE scripts al instalării existente.
 - **NSE Lua:** **3 sub-module într-un singur `.nse`** (agregator + CVE mapper + topology)
 - **Privilegii:** **Windows Service ca LocalSystem** — UAC o singură dată la install
 - **Integrare flow:** **nmap doar pe `deep`**, localhost obligatoriu, LAN opt-in
@@ -109,40 +109,61 @@ Modal: „Pentru scan-uri complete e nevoie de install ca serviciu. Ai refuzat. 
 - User confirm → agent rulează în-process în GUI ca acum (single-process), deep e disabled în UI
 - User refuză → revine la pagina Login
 
-## 3. Bundling nmap + flow scan deep
+## 3. Distribuție nmap + flow scan deep
 
-### Distribuția nmap
+### Strategie de distribuție
 
-**nmap portable Windows** (~80 MB unpacked):
-- `nmap.exe`, `*.dll` (OpenSSL, pcap)
-- `scripts/` cu ~600 scripts NSE built-in + scriptul nostru `vulnwatch-audit.nse`
-- `nselib/` (biblioteci Lua)
+nmap **NU** este bundle-uit în executabil. User-ul îl instalează separat din [nmap.org](https://nmap.org/download.html) (installer Windows oficial, ~30 MB). Avantaje:
+- Executabil VulnWatch rămâne ~26 MB
+- nmap se actualizează independent (security patches, NSE scripts noi)
+- Nicio problemă de licență NPSL la redistribuție (nu redistribuim nmap)
+- Build mai simplu (zero fetch nmap-portable, zero arborescență încărcată în PyInstaller spec)
 
-**Modificări build:**
-- `agent/VulnWatchAgent.spec`: adaug în `datas` întreaga arborescență `nmap-portable/`
-- `agent/build.ps1`: pre-build hook care:
-  1. Verifică `agent/.build-cache/nmap/nmap.exe` — dacă lipsește, descarcă **nmap-portable** de la nmap.org (versiune pinned, ex: `7.94`)
-  2. Despachetează în cache
-  3. Copiază `vulnwatch-audit.nse` din `agent/nse/` în `cache/nmap/scripts/`
-  4. Rulează `nmap --script-updatedb` pentru a regenera script index
-  5. PyInstaller include întreg directorul
+### Ce e bundle-uit
 
-**Mărime finală .exe:** ~110 MB (de la 26 MB). Acceptabil pentru distribuție internă/thesis.
+Doar scriptul nostru `vulnwatch-audit.nse` (~10-15 KB) e inclus în executabil prin PyInstaller `datas`. La runtime, agent-ul îl copiază în directorul NSE scripts al instalării de nmap.
 
-**Licență:** nmap e sub NPSL (Nmap Public Source License) — GPL-derived cu restricții pe redistribuție comercială. Pentru lucrare de licență (educational, non-commercial) e ok. Menționăm în README + about dialog: „Include nmap, licensed under Nmap Public Source License — see https://nmap.org/npsl/".
-
-**Resolution path la runtime:**
+**Resolution path nmap la runtime:**
 ```python
 # agent/core.py
-def _nmap_path() -> Path:
-    if getattr(sys, "frozen", False):  # rulează din PyInstaller bundle
-        return Path(sys._MEIPASS) / "nmap" / "nmap.exe"
-    # dev mode: caută în PATH
+def _nmap_path() -> Path | None:
+    """Returnează path către nmap.exe instalat de user, sau None dacă lipsește."""
+    # 1) Caută în PATH
     found = shutil.which("nmap")
-    if not found:
-        raise RuntimeError("nmap not in PATH (dev mode requires nmap installed)")
-    return Path(found)
+    if found:
+        return Path(found)
+    # 2) Locații Windows standard
+    for candidate in [
+        Path(r"C:\Program Files (x86)\Nmap\nmap.exe"),
+        Path(r"C:\Program Files\Nmap\nmap.exe"),
+    ]:
+        if candidate.is_file():
+            return candidate
+    return None
 ```
+
+### Detecția la startup + UX install
+
+La startup-ul service-ului:
+1. Service apelează `_nmap_path()`. Dacă returnează `None`:
+2. Loghează stare degraded; raportează în heartbeat `capabilities = ["standard", "advanced"]` (fără `deep`)
+3. Backend salvează `Device.nmap_installed = false`
+4. UI: butonul „Deep" în dropdown e dezactivat cu tooltip „nmap nu e instalat pe acest device. [Instrucțiuni de install]"
+5. Modal la click: „Pentru scan deep, instalează nmap de la https://nmap.org/download.html, apoi restart agentul" + buton „Deschide pagina download"
+
+Dacă `_nmap_path()` returnează un path valid:
+- Service copiază `vulnwatch-audit.nse` din `sys._MEIPASS / "nse" / "vulnwatch-audit.nse"` în `{nmap_dir}\scripts\vulnwatch-audit.nse` (overwrite la fiecare startup pentru a păstra scriptul up-to-date după upgrade de agent)
+- Rulează `nmap --script-updatedb` o singură dată pentru a regenera scripting index
+- Heartbeat raportează `capabilities = ["standard", "advanced", "deep"]`
+
+### Modificări build
+
+- `agent/VulnWatchAgent.spec`: adaug în `datas` doar fișierul `agent/nse/vulnwatch-audit.nse` (împachetat sub `nse/vulnwatch-audit.nse` în bundle)
+- `agent/build.ps1`: zero modificări față de procesul actual
+
+### Licență
+
+Nu redistribuim nmap → fără probleme NPSL. About dialog menționează doar: „Folosește nmap (instalat separat) — vezi https://nmap.org".
 
 ### Data flow pentru scan deep cu nmap
 
@@ -407,7 +428,8 @@ def collect_nmap_lua_findings(scan: dict) -> list[dict] | None:
 
 | Scenariu | Comportament |
 |---|---|
-| nmap.exe lipsește din bundle | Service log error; deep degradează la psutil-only; payload conține `nmap.error = "nmap_missing"`; UI afișează badge „⚠ nmap indisponibil — scan parțial" |
+| nmap.exe lipsește din sistem (neinstalat) | Service raportează `capabilities` fără `deep`; backend marchează `Device.nmap_installed = false`; UI dezactivează opțiunea Deep cu tooltip + modal cu link instalare. Standard/advanced funcționează normal |
+| nmap.exe a fost instalat după ce service-ul a pornit | User restart service din meniul ⚙ („Re-detectează nmap"); sau service re-checks `_nmap_path()` la fiecare heartbeat (overhead minim, doar `shutil.which`) și actualizează capabilities |
 | nmap timeout (>30 min global) | Subprocess killed; parsare parțială XML; finding sintetic `NMAP-TIMEOUT-1` severity `low` adăugat |
 | LAN target unreachable (subnet gol) | Lua returnează `findings: [], topology: {}`; nu e eroare; UI afișează „0 host-uri găsite în 192.168.1.0/24" |
 | Lua script crash (sintaxă, runtime) | Nmap loghează `--script-err`; service capturează stderr → atașează la `nmap.lua_errors`; restul scan-ului continuă |
@@ -435,6 +457,7 @@ def collect_nmap_lua_findings(scan: dict) -> list[dict] | None:
 - `Scan.nmap_data` JSON column (nullable; populated doar pentru deep scans cu nmap)
 - `ScanJob.nmap_target` String column (CIDR sau null)
 - `Device.local_subnet` String column (raportat în heartbeat)
+- `Device.nmap_installed` Boolean column (default false; setat de heartbeat dacă agent raportează `deep` în capabilities)
 
 ### `server/app/schemas.py`
 - `ScanIn` schema extinsă cu optional `nmap: dict | None`
@@ -462,19 +485,19 @@ def collect_nmap_lua_findings(scan: dict) -> list[dict] | None:
 | Componenta | LOC nou |
 |---|---|
 | Agent refactor → Service mode + IPC | ~600 |
-| Bundling nmap + integration glue | ~300 |
+| nmap detection + script deploy + integration glue | ~200 |
 | NSE Lua custom (3 sub-module) | ~400-500 |
-| Backend changes | ~150 |
-| Frontend changes | ~250 |
+| Backend changes (inclusiv `Device.nmap_installed`) | ~170 |
+| Frontend changes (inclusiv UI dezactivat când nmap lipsește) | ~280 |
 | Tests (Python + Lua) | ~400 |
-| **Total** | **~2200-2500 LOC** |
+| **Total** | **~2050-2150 LOC** |
 
 **Execuție recomandată:** `superpowers:writing-plans` produce un plan cu ~10-12 task-uri, executat sub `superpowers:subagent-driven-development` în **2-3 sesiuni**.
 
 ## 10. Faze opționale de decompoziție
 
 Dacă scope-ul e prea mare pentru un singur sprint, se poate sparge în:
-- **Faza A**: Service install + IPC + bundling nmap + scan localhost (fără LAN, fără NSE custom). Folosește `--script vuln` built-in. Demonstrabil la apărare ca prim milestone.
+- **Faza A**: Service install + IPC + detecție nmap + scan localhost (fără LAN, fără NSE custom). Folosește `--script vuln` built-in. Demonstrabil la apărare ca prim milestone.
 - **Faza B**: NSE custom `vulnwatch-audit.nse` cu 3 sub-module + integrare în payload + secțiune frontend
 - **Faza C**: LAN scanning + subnet detection + UI confirm flow
 
