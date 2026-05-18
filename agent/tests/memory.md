@@ -16,6 +16,7 @@ Rulare: `python -m pytest agent/tests` (din radacina repo-ului).
 | `test_collectors.py`    | 13 teste: `SCAN_PROFILES` are 3 nivele cu flag-uri corecte (standard minimal, advanced + persistence, deep + forensics); colectorii din `agent/collectors/` returneaza structurile asteptate (`open_ports`, `connections` pe advanced, `cmdline` pe advanced+, etc.); `collect_system_data(scan_type)` orchestreaza corect; `progress_cb` este apelat intre colectori cu progres in [0, 100]. |
 | `test_google_oauth.py`  | 2 teste mock pentru `api_google_enroll`: `test_api_google_enroll_sends_token_hash` (POST cu body care contine `id_token` + `token_hash`, raspuns FARA `device_token`) + propagare `ApiError`. |
 | `test_daemon_recovery.py` | 3 teste pentru `daemon_loop` auto-recovery la 401: `test_daemon_invalid_token_exits_after_first_401` (heartbeat 401 → `on_token_invalid` apelat, loop iese imediat), `test_daemon_network_error_keeps_running` (ApiError → continua retry, callback NU apelat), `test_daemon_get_job_401_also_triggers_recovery` (heartbeat OK dar `api_get_next_job` da 401 → recovery). |
+| `test_metrics_tracker.py` | 5 teste pentru `MetricsTracker`: state gol cand fisier lipseste, `record_scan` persista atomic + actualizeaza `scans_total`/`last_*`/history, history capped la 20, JSON corupt fallback la state gol (fara crash), `reset()` sterge fisierul. Logica pura — fara network sau UI. |
 
 ## Pattern
 
@@ -26,3 +27,5 @@ Toate testele sunt **fara network**:
   dar verifica doar **structura** raspunsului, nu valori specifice.
 
 Testele de end-to-end (cu HTTP real catre backend) sunt in `server/tests/`.
+
+**Total: 47 teste** (8 + 9 + 13 + 2 + 3 + 5 + alti smoke per agent collectors aliniati la SCAN_PROFILES).
