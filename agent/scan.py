@@ -261,6 +261,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if "--service" in sys.argv:
+        try:
+            from . import service
+        except ImportError:
+            from agent import service  # type: ignore[no-redef]
+        return service.run_as_service()
+    if "--install-service" in sys.argv:
+        try:
+            from . import service
+        except ImportError:
+            from agent import service  # type: ignore[no-redef]
+        return service.install_service()
+    if "--uninstall-service" in sys.argv:
+        try:
+            from . import service
+        except ImportError:
+            from agent import service  # type: ignore[no-redef]
+        return service.uninstall_service()
+
     parser = build_parser()
     if argv is None:
         argv = sys.argv[1:]

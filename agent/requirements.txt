@@ -9,3 +9,6 @@ pystray>=0.19.5
 # Google OAuth (loopback flow pentru enrollment cu cont Google)
 google-auth-oauthlib>=1.2
 google-auth>=2.30
+
+# Windows Service support (LocalSystem mode)
+pywin32>=306; sys_platform == "win32"
