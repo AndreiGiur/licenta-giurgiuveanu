@@ -14,8 +14,12 @@ import os
 try:
     from .google_config import GOOGLE_CLIENT_ID
 except ImportError:
-    # Fallback: env var pentru dev cand google_config.py lipseste
     GOOGLE_CLIENT_ID = os.environ.get("AGENT_GOOGLE_CLIENT_ID", "")
+
+try:
+    from .google_config import GOOGLE_CLIENT_SECRET
+except ImportError:
+    GOOGLE_CLIENT_SECRET = os.environ.get("AGENT_GOOGLE_CLIENT_SECRET", "")
 
 SCOPES = [
     "openid",
@@ -52,6 +56,7 @@ def login_with_google(success_message: str = "Te poti intoarce la VulnWatch Agen
         {
             "installed": {
                 "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "redirect_uris": ["http://127.0.0.1"],

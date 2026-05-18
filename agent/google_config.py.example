@@ -5,3 +5,8 @@ inainte de PyInstaller (sau sa-l includa explicit in package)."""
 
 # OAuth Client ID de tip "Desktop app" din Google Cloud Console.
 GOOGLE_CLIENT_ID = ""
+
+# Client Secret pentru acelasi Desktop OAuth Client. NU este real-secret (e
+# bundled in executabil), dar Google's InstalledAppFlow il cere prezent.
+# Il copiezi din Google Cloud Console -> Credentials -> Desktop OAuth Client.
+GOOGLE_CLIENT_SECRET = ""
