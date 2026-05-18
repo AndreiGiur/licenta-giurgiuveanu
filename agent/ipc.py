@@ -21,6 +21,7 @@ IpcMessage = dict[str, Any]
 
 PIPE_NAME = r"\\.\pipe\vulnwatch-status"
 DEFAULT_TCP_PORT = 47815  # fallback dev port
+MAX_BUFFER_SIZE = 65536  # DoS protection: max buffer before newline
 
 
 def handle_message_default(msg: IpcMessage) -> dict:
@@ -82,6 +83,9 @@ class IpcServer:
                 if not chunk:
                     break
                 buffer += chunk
+                # DoS protection: close if client sends too much without newline
+                if len(buffer) > MAX_BUFFER_SIZE:
+                    break
                 while b"\n" in buffer:
                     line, buffer = buffer.split(b"\n", 1)
                     if not line.strip():
@@ -98,8 +102,13 @@ class IpcServer:
                         # Subscribers rămân conectați pentru push events —
                         # continuăm loop-ul, nu return, ca finally să ruleze la final
                     else:
-                        response = self.handler(msg)
+                        try:
+                            response = self.handler(msg)
+                        except Exception:
+                            response = {"error": "handler exception"}
                         self._send(conn, response)
+        except Exception:
+            pass
         finally:
             try:
                 conn.close()
