@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nmaprun scanner="nmap" args="nmap -sV -O 127.0.0.1" version="7.94" start="1684512345">
+<host starttime="1684512345" endtime="1684512389">
+<status state="up" reason="syn-ack" />
+<address addr="127.0.0.1" addrtype="ipv4" />
+<hostnames><hostname name="localhost" type="user" /></hostnames>
+<ports>
+<port protocol="tcp" portid="445">
+<state state="open" reason="syn-ack" />
+<service name="microsoft-ds" product="Windows" version="10" />
+</port>
+<port protocol="tcp" portid="139">
+<state state="open" reason="syn-ack" />
+<service name="netbios-ssn" product="Microsoft Windows" />
+</port>
+</ports>
+<os>
+<osmatch name="Microsoft Windows 11" accuracy="95" />
+</os>
+<hostscript>
+<script id="vulnwatch-audit" output='{"host_ip":"127.0.0.1","findings":[{"rule_id":"NMAP-CVE-2017-0144","severity":"critical","title":"EternalBlue MS17-010","evidence":{"port":445,"cve":"CVE-2017-0144"}}],"topology":{"role":"workstation","risk_score":65,"reasons":["smb_open"]}}'/>
+</hostscript>
+</host>
+</nmaprun>
