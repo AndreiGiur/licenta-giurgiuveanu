@@ -52,6 +52,7 @@ class DaemonRunner:
         self._stop = threading.Event()
         self._pause = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self.last_heartbeat_ts: float = 0.0  # actualizat de daemon thread la fiecare hb OK
 
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -91,9 +92,21 @@ class DaemonRunner:
                 should_stop=self._stop.is_set,
                 should_pause=self._pause.is_set,
                 on_token_invalid=self._signal_token_invalid,
+                on_heartbeat_ok=self._on_heartbeat_ok,
+                on_scan_done=self._on_scan_done,
             )
         finally:
             self._emit("Daemon oprit.", "info")
+
+    def _on_heartbeat_ok(self) -> None:
+        import time as _t
+        self.last_heartbeat_ts = _t.time()
+
+    def _on_scan_done(self, score: int, scan_type: str, job_id: int) -> None:
+        try:
+            self.log_queue.put_nowait(("__SCAN_DONE__", f"{score}|{scan_type}|{job_id}"))
+        except queue.Full:
+            pass
 
     def _signal_token_invalid(self) -> None:
         """Apelat de daemon_loop pe thread-ul daemon cand backend a respins
@@ -229,6 +242,14 @@ class AgentApp:
         self.tray = None
         self._tray_started = False
 
+        # Metrics tracker (cache local pentru istoricul scanarilor)
+        self.metrics = core.MetricsTracker(core.METRICS_FILE)
+
+        # State Status page
+        self._last_heartbeat_ts: float = 0.0
+        self._status_state: str = "starting"  # online | degraded | offline | paused | starting
+        self._details_expanded: bool = self._load_details_expanded_pref()
+
         # State pentru flow-ul de login → enroll
         self._session_token: str | None = None
         self._login_email: str = ""
@@ -343,6 +364,22 @@ class AgentApp:
         lbl.bind("<Enter>", lambda e: lbl.configure(bg=p["elevated"]))
         lbl.bind("<Leave>", lambda e: lbl.configure(bg=p["surface"]))
         return lbl
+
+    def _load_details_expanded_pref(self) -> bool:
+        cfg = core.read_config()
+        if not cfg.has_section("ui"):
+            return False
+        return cfg.getboolean("ui", "log_expanded", fallback=False)
+
+    def _save_details_expanded_pref(self, expanded: bool) -> None:
+        cfg = core.read_config()
+        if not cfg.has_section("ui"):
+            cfg.add_section("ui")
+        cfg.set("ui", "log_expanded", "true" if expanded else "false")
+        try:
+            core.write_config(cfg)
+        except OSError:
+            pass
 
     # ── Pagina LOGIN ─────────────────────────────────────────────────────────
 
@@ -858,86 +895,184 @@ class AgentApp:
     # ── Pagina STATUS ─────────────────────────────────────────────────────────
 
     def _render_status_page(self) -> None:
+        p = self.theme.palette
         self._clear_root()
-        wrap = ttk.Frame(self.root, style="TFrame", padding=20)
+
+        wrap = ttk.Frame(self.root, style="TFrame", padding=(40, 20))
         wrap.pack(fill="both", expand=True)
+
+        # Top-right icons: ⚙ + ☾/☀
+        toggle = self._make_theme_toggle_button(self.root)
+        toggle.place(relx=1.0, x=-20, y=14, anchor="ne")
+
+        settings = tk.Label(
+            self.root, text="⚙",
+            bg=p["surface"], fg=p["text_dim"],
+            font=("Segoe UI", 13), width=2, cursor="hand2",
+        )
+        settings.place(relx=1.0, x=-56, y=14, anchor="ne")
+        settings.bind("<Button-1>", lambda e: self._open_settings_menu(settings))
+        settings.bind("<Enter>", lambda e: settings.configure(bg=p["elevated"]))
+        settings.bind("<Leave>", lambda e: settings.configure(bg=p["surface"]))
+
+        # Brand
+        ttk.Label(wrap, text="VULNWATCH AGENT", style="Brand.TLabel").pack(anchor="w")
 
         try:
             api_base, device_uid, _ = core.get_enrollment()
         except RuntimeError:
             self._render_login_page()
             return
-
         meta = core.get_enrollment_meta()
         device_name = meta.get("device_name") or device_uid
-        user_email = meta.get("user_email") or "(unknown account)"
+        user_email = meta.get("user_email") or "(unknown)"
 
-        header = ttk.Frame(wrap, style="TFrame")
-        header.pack(fill="x")
-        ttk.Label(header, text="VULNWATCH AGENT", style="Brand.TLabel").pack(anchor="w")
+        # Status hero (dot + titlu + info-bar)
+        hero = ttk.Frame(wrap, style="TFrame")
+        hero.pack(fill="x", pady=(10, 14))
 
-        info = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
-                        highlightthickness=1, highlightbackground=self.theme.palette["border"])
-        info.pack(fill="x", pady=(12, 12))
-        for label, value in [
-            ("Cont", user_email),
-            ("Device", f"{device_name}  ({device_uid})"),
-            ("API", api_base),
-        ]:
-            row = tk.Frame(info, bg=self.theme.palette["surface"])
-            row.pack(fill="x", padx=12, pady=4)
-            tk.Label(row, text=label, bg=self.theme.palette["surface"], fg=self.theme.palette["text_muted"],
-                     font=("Segoe UI", 9), width=8, anchor="w").pack(side="left")
-            tk.Label(row, text=value, bg=self.theme.palette["surface"], fg=self.theme.palette["text"],
-                     font=("Segoe UI", 10)).pack(side="left")
+        self._status_dot = tk.Canvas(hero, width=18, height=18,
+                                     bg=p["bg"], highlightthickness=0)
+        self._status_dot.pack(side="left", padx=(0, 14))
 
-        status_bar = ttk.Frame(wrap, style="TFrame")
-        status_bar.pack(fill="x", pady=(0, 12))
-        self._status_dot = tk.Canvas(status_bar, width=12, height=12,
-                                     bg=self.theme.palette["bg"], highlightthickness=0)
-        self._status_dot.pack(side="left", padx=(0, 8))
+        hero_text = ttk.Frame(hero, style="TFrame")
+        hero_text.pack(side="left", fill="x", expand=True)
+
         self._status_var = tk.StringVar(value="Pornesc daemon-ul...")
-        ttk.Label(status_bar, textvariable=self._status_var,
-                  background=self.theme.palette["bg"], foreground=self.theme.palette["text"]).pack(side="left")
+        ttk.Label(hero_text, textvariable=self._status_var,
+                  style="Title.TLabel").pack(anchor="w")
 
-        # Info despre niveluri suportate + hint platforma-centric
-        levels_info = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
-                               highlightthickness=1, highlightbackground=self.theme.palette["border"])
-        levels_info.pack(fill="x", pady=(0, 12))
-        tk.Label(levels_info,
-                 text=f"Niveluri suportate: {' / '.join(s.title() for s in core.SCAN_PROFILES)}",
-                 bg=self.theme.palette["surface"], fg=self.theme.palette["accent"],
-                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=12, pady=(8, 0))
-        tk.Label(levels_info,
-                 text="ℹ Scanarea se initiaza din platforma web — agentul ruleaza in fundal.",
-                 bg=self.theme.palette["surface"], fg=self.theme.palette["text_dim"],
-                 font=("Segoe UI", 9)).pack(anchor="w", padx=12, pady=(2, 8))
+        self._status_subline = tk.StringVar(
+            value=f"{device_name}  ·  {user_email}  ·  ultim heartbeat —"
+        )
+        ttk.Label(hero_text, textvariable=self._status_subline,
+                  style="Dim.TLabel", font=("Segoe UI", 10),
+                  wraplength=540).pack(anchor="w", pady=(2, 0))
 
+        # 3 metric cards
+        metrics_row = tk.Frame(wrap, bg=p["bg"])
+        metrics_row.pack(fill="x", pady=(0, 14))
+        for col in range(3):
+            metrics_row.columnconfigure(col, weight=1, uniform="metric")
+
+        def metric_card(parent, value: str, label: str, col: int):
+            card = tk.Frame(parent, bg=p["surface"], bd=0,
+                            highlightthickness=1, highlightbackground=p["border"])
+            card.grid(row=0, column=col, sticky="ew",
+                      padx=(0 if col == 0 else 6, 6 if col < 2 else 0))
+            tk.Label(card, text=value, bg=p["surface"], fg=p["accent"],
+                     font=("Cambria", 22, "bold")).pack(pady=(10, 0))
+            tk.Label(card, text=label, bg=p["surface"], fg=p["text_dim"],
+                     font=("Segoe UI", 9)).pack(pady=(2, 10))
+
+        m = self.metrics.state
+        scans_val = str(m.get("scans_total", 0))
+        score_val = (f"{m['last_exposure_score']}/100"
+                     if m.get("last_exposure_score") is not None else "—")
+        last_at_val = self._format_last_scan_time(m.get("last_scan_at"))
+
+        metric_card(metrics_row, scans_val, "SCANĂRI", 0)
+        metric_card(metrics_row, score_val, "ULTIMA EXPUNERE", 1)
+        metric_card(metrics_row, last_at_val, "ULTIMA SCANARE", 2)
+
+        # Action buttons
         actions = ttk.Frame(wrap, style="TFrame")
         actions.pack(fill="x", pady=(0, 12))
 
-        ttk.Button(actions, text="Deschide platforma",
+        ttk.Button(actions, text="Deschide dashboard",
                    style="Accent.TButton",
-                   command=self._open_dashboard).pack(side="left", padx=(0, 6))
+                   command=self._open_dashboard).pack(side="left", padx=(0, 8),
+                                                      fill="x", expand=True)
 
-        self._pause_btn = ttk.Button(actions, text="Pauza",
+        self._pause_btn = ttk.Button(actions,
+                                     text="▶ Reia" if self.daemon.is_paused() else "⏸ Pauză",
                                      style="Secondary.TButton",
                                      command=self._on_toggle_pause)
-        self._pause_btn.pack(side="left", padx=(0, 6))
+        self._pause_btn.pack(side="left")
 
-        ttk.Button(actions, text="Logout",
-                   style="Danger.TButton",
-                   command=self._on_logout).pack(side="right")
+        # Detalii expandabilă
+        details_header = ttk.Frame(wrap, style="TFrame")
+        details_header.pack(fill="x", pady=(8, 0))
 
-        ttk.Label(wrap, text="Activitate", style="Dim.TLabel").pack(anchor="w", pady=(4, 4))
+        self._details_arrow = tk.StringVar(
+            value="▾" if self._details_expanded else "▸"
+        )
+        arrow_lbl = tk.Label(details_header, textvariable=self._details_arrow,
+                             bg=p["bg"], fg=p["accent"],
+                             font=("Segoe UI", 10), cursor="hand2")
+        arrow_lbl.pack(side="left", padx=(0, 4))
+        det_lbl = tk.Label(details_header, text="Detalii și log activitate",
+                           bg=p["bg"], fg=p["text_dim"],
+                           font=("Segoe UI", 10), cursor="hand2")
+        det_lbl.pack(side="left")
 
-        log_frame = tk.Frame(wrap, bg=self.theme.palette["surface"], bd=0,
-                             highlightthickness=1, highlightbackground=self.theme.palette["border"])
+        arrow_lbl.bind("<Button-1>", lambda e: self._toggle_details_section())
+        det_lbl.bind("<Button-1>", lambda e: self._toggle_details_section())
+
+        # Container pentru detalii
+        self._details_container = ttk.Frame(wrap, style="TFrame")
+        if self._details_expanded:
+            self._build_details_section(self._details_container)
+        self._details_container.pack(fill="both", expand=self._details_expanded,
+                                     pady=(8, 0))
+
+        # Footer
+        footer = ttk.Frame(self.root, style="TFrame")
+        footer.place(relx=0.5, rely=1.0, y=-12, anchor="s")
+        autostart_state = autostart.is_enabled()
+        autostart_text = "activ ✓" if autostart_state else "dezactivat"
+        ttk.Label(footer,
+                  text=f"Pornește la logon: {autostart_text}  ·  v{core.AGENT_VERSION}",
+                  style="Footer.TLabel").pack()
+
+        # Dot pulse + status refresh tick
+        self._render_status_dot()
+        self.root.after(2000, self._tick_status_refresh)
+
+    def _format_last_scan_time(self, iso: str | None) -> str:
+        """Formateaza timestamp ISO la 'HH:MM' (azi) sau 'DD lun HH:MM'."""
+        if not iso:
+            return "—"
+        from datetime import datetime
+        try:
+            dt = datetime.fromisoformat(iso)
+            now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+            if dt.date() == now.date():
+                return dt.strftime("%H:%M")
+            return dt.strftime("%d %b %H:%M")
+        except (ValueError, TypeError):
+            return "—"
+
+    def _build_details_section(self, parent) -> None:
+        """Construieste continutul sectiunii Detalii (info tehnic + log)."""
+        p = self.theme.palette
+
+        try:
+            api_base, device_uid, _ = core.get_enrollment()
+        except RuntimeError:
+            return
+
+        info_box = tk.Frame(parent, bg=p["surface"], bd=0,
+                            highlightthickness=1, highlightbackground=p["border"])
+        info_box.pack(fill="x", pady=(0, 8))
+        tk.Label(info_box, text=f"UID tehnic: {device_uid}",
+                 bg=p["surface"], fg=p["text_dim"],
+                 font=("Consolas", 9)).pack(anchor="w", padx=10, pady=(8, 2))
+        tk.Label(info_box, text=f"API: {api_base}",
+                 bg=p["surface"], fg=p["text_dim"],
+                 font=("Consolas", 9)).pack(anchor="w", padx=10, pady=(0, 8))
+
+        ttk.Label(parent, text="ACTIVITATE", style="Dim.TLabel").pack(anchor="w",
+                                                                       pady=(4, 4))
+
+        log_frame = tk.Frame(parent, bg=p["surface"], bd=0,
+                             highlightthickness=1, highlightbackground=p["border"])
         log_frame.pack(fill="both", expand=True)
-        self._log_text = tk.Text(log_frame, bg=self.theme.palette["surface"], fg=self.theme.palette["text"],
-                                 insertbackground=self.theme.palette["text"],
+
+        self._log_text = tk.Text(log_frame, bg=p["surface"], fg=p["text"],
+                                 insertbackground=p["text"],
                                  font=("Consolas", 9), bd=0, padx=10, pady=8,
-                                 wrap="word", state="disabled")
+                                 wrap="word", state="disabled", height=8)
         self._log_text.pack(side="left", fill="both", expand=True)
         scroll = ttk.Scrollbar(log_frame, orient="vertical",
                                command=self._log_text.yview)
@@ -946,15 +1081,98 @@ class AgentApp:
         for sev in SEVERITY_COLOR_KEYS:
             self._log_text.tag_configure(sev, foreground=severity_color(self.theme, sev))
 
-        autostart_state = autostart.is_enabled()
-        self._autostart_var = tk.BooleanVar(value=autostart_state)
-        bottom = ttk.Frame(wrap, style="TFrame")
-        bottom.pack(fill="x", pady=(8, 0))
-        ttk.Checkbutton(bottom, text="Porneste automat la logon",
-                        variable=self._autostart_var,
-                        command=self._on_toggle_autostart).pack(side="left")
+    def _toggle_details_section(self) -> None:
+        self._details_expanded = not self._details_expanded
+        self._details_arrow.set("▾" if self._details_expanded else "▸")
+        self._save_details_expanded_pref(self._details_expanded)
+        self._render_status_page()
 
-        self._set_status_indicator("starting")
+    def _render_status_dot(self) -> None:
+        """Deseneaza dot-ul cu culoare + glow in functie de status_state."""
+        p = self.theme.palette
+        color_map = {
+            "online":    p["green"],
+            "degraded":  p["amber"],
+            "offline":   p["red"],
+            "paused":    p["text_muted"],
+            "starting":  p["amber"],
+        }
+        color = color_map.get(self._status_state, p["text_muted"])
+
+        if not hasattr(self, "_status_dot"):
+            return
+        try:
+            self._status_dot.delete("all")
+        except tk.TclError:
+            return
+        if self._status_state == "online":
+            self._status_dot.create_oval(0, 0, 18, 18, fill=color, outline="",
+                                         stipple="gray50")
+        self._status_dot.create_oval(4, 4, 14, 14, fill=color, outline="")
+
+    def _tick_status_refresh(self) -> None:
+        """Apelat la 2s: actualizeaza dot status + subline pe baza ultimului heartbeat."""
+        import time as _t
+        if not hasattr(self, "_status_dot"):
+            return
+        try:
+            self._status_dot.winfo_exists()
+        except tk.TclError:
+            return
+
+        # Sincronizeaza cu daemon thread
+        self._last_heartbeat_ts = self.daemon.last_heartbeat_ts
+
+        if self.daemon.is_paused():
+            new_state = "paused"
+            txt = "În pauză"
+        elif not self.daemon.is_running():
+            new_state = "starting"
+            txt = "Pornesc daemon-ul..."
+        elif self._last_heartbeat_ts == 0.0:
+            new_state = "starting"
+            txt = "Pornesc daemon-ul..."
+        else:
+            age = _t.time() - self._last_heartbeat_ts
+            if age <= 15:
+                new_state = "online"
+                txt = "Activ și conectat"
+            elif age <= 60:
+                new_state = "degraded"
+                txt = "Conexiune intermitentă"
+            else:
+                new_state = "offline"
+                txt = "Fără conexiune cu serverul"
+
+        self._status_state = new_state
+        self._status_var.set(txt)
+
+        # Subline
+        try:
+            _, device_uid, _ = core.get_enrollment()
+        except RuntimeError:
+            device_uid = "—"
+        meta = core.get_enrollment_meta()
+        device_name = meta.get("device_name") or device_uid
+        user_email = meta.get("user_email") or "(unknown)"
+
+        if self._last_heartbeat_ts == 0:
+            hb_txt = "—"
+        else:
+            age = int(_t.time() - self._last_heartbeat_ts)
+            if age < 60:
+                hb_txt = f"acum {age}s"
+            else:
+                hb_txt = f"acum {age // 60} min"
+
+        self._status_subline.set(
+            f"{device_name}  ·  {user_email}  ·  ultim heartbeat {hb_txt}"
+        )
+
+        self._render_status_dot()
+        if hasattr(self, "tray") and self.tray:
+            self.tray.update_tooltip(f"VulnWatch Agent — {txt}")
+        self.root.after(2000, self._tick_status_refresh)
 
     # ── Daemon control ────────────────────────────────────────────────────────
 
@@ -962,14 +1180,13 @@ class AgentApp:
         if self.daemon.is_running():
             return
         if self.daemon.start():
-            self._set_status_indicator("running")
             self._maybe_start_tray()
 
     def _on_toggle_pause(self) -> None:
         new_paused = not self.daemon.is_paused()
         self.daemon.pause(new_paused)
-        self._pause_btn.configure(text="Reia" if new_paused else "Pauza")
-        self._set_status_indicator("paused" if new_paused else "running")
+        if hasattr(self, "_pause_btn"):
+            self._pause_btn.configure(text="▶ Reia" if new_paused else "⏸ Pauză")
         self._append_log(
             "Daemon in pauza." if new_paused else "Daemon reluat.",
             "warn" if new_paused else "ok",
@@ -984,11 +1201,19 @@ class AgentApp:
         webbrowser.open(f"{frontend}/dashboard?device={device_uid}")
 
     def _on_toggle_autostart(self) -> None:
-        if self._autostart_var.get():
-            ok, msg = autostart.enable()
-        else:
+        """Toggle autostart — invocat din meniul ⚙."""
+        if autostart.is_enabled():
             ok, msg = autostart.disable()
+        else:
+            ok, msg = autostart.enable()
         self._append_log(msg, "ok" if ok else "error")
+        if core.is_enrolled():
+            self._render_status_page()
+
+    def _open_settings_menu(self, anchor_widget) -> None:
+        """Stub — implementare completa in Task 6."""
+        # Pana la T6, doar afisam un append_log pentru a confirma clic-ul.
+        self._append_log("Meniu setări (în curs de implementare).", "info")
 
     def _on_logout(self) -> None:
         if not messagebox.askyesno(
@@ -1075,6 +1300,16 @@ class AgentApp:
                 if msg == "__TOKEN_INVALID__":
                     self._handle_token_invalid()
                     return  # _handle_token_invalid reia polling-ul
+                if msg == "__SCAN_DONE__":
+                    # sev contine "score|scan_type|job_id"
+                    try:
+                        score_s, scan_type, job_id_s = sev.split("|")
+                        self.metrics.record_scan(int(score_s), scan_type, int(job_id_s))
+                        if core.is_enrolled():
+                            self._render_status_page()
+                    except (ValueError, AttributeError):
+                        pass
+                    continue
                 self._append_log(msg, sev)
         except queue.Empty:
             pass
@@ -1092,26 +1327,6 @@ class AgentApp:
             self._log_text.delete("1.0", f"{line_count-4000}.0")
         self._log_text.see("end")
         self._log_text.configure(state="disabled")
-
-    def _set_status_indicator(self, state: str) -> None:
-        if not hasattr(self, "_status_dot"):
-            return
-        color = {
-            "starting": self.theme.palette["amber"],
-            "running":  self.theme.palette["green"],
-            "paused":   self.theme.palette["text_muted"],
-            "error":    self.theme.palette["red"],
-        }.get(state, self.theme.palette["text_muted"])
-        self._status_dot.delete("all")
-        self._status_dot.create_oval(2, 2, 10, 10, fill=color, outline="")
-        self._status_var.set({
-            "starting": "Initializare...",
-            "running":  "Daemon activ",
-            "paused":   "In pauza",
-            "error":    "Eroare",
-        }.get(state, state))
-        if hasattr(self, "tray") and self.tray:
-            self.tray.update_tooltip(f"VulnWatch Agent — {self._status_var.get()}")
 
     # ── Tray ──────────────────────────────────────────────────────────────────
 

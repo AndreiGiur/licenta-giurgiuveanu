@@ -631,7 +631,8 @@ def _ts() -> str:
 
 
 def run_one_job(api_base: str, device_uid: str, device_token: str,
-                job: dict, log: LogFn = _noop_log) -> None:
+                job: dict, log: LogFn = _noop_log,
+                on_scan_done: Callable[[int, str, int], None] | None = None) -> None:
     """Executa un job primit de la coada. Foloseste `scan_type` din job
     pentru a alege profilul de colectare. Trimite progress updates intre
     colectori (util pentru Advanced/Deep care dureaza minute)."""
@@ -649,6 +650,11 @@ def run_one_job(api_base: str, device_uid: str, device_token: str,
         score = result.get("exposure_score")
         scan_id = result.get("scan_id")
         log(f"[{_ts()}] Job #{job_id} done ({scan_type}). Scan #{scan_id}, score {score}/100.", "ok")
+        if on_scan_done and score is not None:
+            try:
+                on_scan_done(int(score), scan_type, int(job_id))
+            except Exception:
+                pass
     except DeviceTokenInvalidError:
         raise  # propaga catre daemon_loop pentru recovery
     except ApiError as e:
@@ -675,6 +681,8 @@ def daemon_loop(
     should_stop: Callable[[], bool] = lambda: False,
     should_pause: Callable[[], bool] = lambda: False,
     on_token_invalid: Callable[[], None] | None = None,
+    on_heartbeat_ok: Callable[[], None] | None = None,
+    on_scan_done: Callable[[int, str, int], None] | None = None,
 ) -> None:
     """
     Bucla principala a daemon-ului. Trimite heartbeat la fiecare 10s,
@@ -712,6 +720,11 @@ def daemon_loop(
         if now - last_heartbeat >= heartbeat_interval:
             try:
                 api_heartbeat(api_base, device_token, AGENT_VERSION, capabilities, os_version)
+                if on_heartbeat_ok:
+                    try:
+                        on_heartbeat_ok()
+                    except Exception:
+                        pass
             except DeviceTokenInvalidError as e:
                 _handle_token_invalid(e)
                 return
@@ -732,7 +745,8 @@ def daemon_loop(
 
         if job is not None:
             try:
-                run_one_job(api_base, device_uid, device_token, job, log=log)
+                run_one_job(api_base, device_uid, device_token, job, log=log,
+                            on_scan_done=on_scan_done)
             except DeviceTokenInvalidError as e:
                 _handle_token_invalid(e)
                 return
