@@ -80,8 +80,12 @@ if _PYWIN32_AVAILABLE:
             self._daemon_thread.start()
 
             # Așteaptă stop event
-            win32event.WaitForSingleObject(self.stop_event, win32event.INFINITE)
-            self._daemon_thread.join(timeout=5.0)
+            try:
+                win32event.WaitForSingleObject(self.stop_event, win32event.INFINITE)
+                self._daemon_thread.join(timeout=5.0)
+            except Exception as e:
+                servicemanager.LogErrorMsg(f"VulnWatchSvc crash: {e}")
+                raise
 else:
     # Stub pentru dev pe non-Windows
     class VulnWatchService:
@@ -96,7 +100,7 @@ def install_service() -> int:
     exe_path = sys.executable
     # Construim args: când SCM pornește serviciul, va apela exe-ul cu acești args
     win32serviceutil.InstallService(
-        pythonClassString=None,  # folosim exe-ul direct, nu un .py
+        pythonClassString="agent.service.VulnWatchService",
         serviceName=SERVICE_NAME,
         displayName=SERVICE_DISPLAY_NAME,
         description=SERVICE_DESCRIPTION,
@@ -126,9 +130,13 @@ def is_service_installed() -> bool:
     if not _PYWIN32_AVAILABLE:
         return False
     try:
-        win32serviceutil.QueryServiceStatus(SERVICE_NAME)
-        return True
-    except Exception:
+        import pywintypes
+        try:
+            win32serviceutil.QueryServiceStatus(SERVICE_NAME)
+            return True
+        except pywintypes.error:
+            return False
+    except ImportError:
         return False
 
 
@@ -136,9 +144,13 @@ def is_service_running() -> bool:
     if not _PYWIN32_AVAILABLE:
         return False
     try:
-        status = win32serviceutil.QueryServiceStatus(SERVICE_NAME)
-        return status[1] == win32service.SERVICE_RUNNING
-    except Exception:
+        import pywintypes
+        try:
+            status = win32serviceutil.QueryServiceStatus(SERVICE_NAME)
+            return status[1] == win32service.SERVICE_RUNNING
+        except pywintypes.error:
+            return False
+    except ImportError:
         return False
 
 
