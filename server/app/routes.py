@@ -428,6 +428,34 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+@router.get("/devices/{device_uid}/scan-jobs/preview")
+def scan_jobs_preview(
+    device_uid: str,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Returnează detected_subnet + estimări pentru UI înainte de scan deep."""
+    device = db.execute(
+        select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="device not found")
+    import ipaddress
+    estimated_hosts = 0
+    if device.local_subnet:
+        try:
+            net = ipaddress.ip_network(device.local_subnet, strict=False)
+            estimated_hosts = min(net.num_addresses, 256)
+        except ValueError:
+            pass
+    return {
+        "detected_subnet": device.local_subnet,
+        "nmap_installed": bool(device.nmap_installed),
+        "estimated_hosts": estimated_hosts,
+        "estimated_duration_sec": 600 + estimated_hosts * 30,
+    }
+
+
 @router.post("/devices/{device_uid}/scan-jobs", response_model=ScanJobOut)
 def create_scan_job(
     device_uid: str,
@@ -456,11 +484,23 @@ def create_scan_job(
     if existing:
         return _scan_job_to_out(existing, device)
 
+    if payload.nmap_target:
+        import ipaddress
+        try:
+            net = ipaddress.ip_network(payload.nmap_target, strict=False)
+            if net.is_global:
+                raise HTTPException(400, "nmap_target nu poate fi IP public")
+            if net.num_addresses > 4096:
+                raise HTTPException(400, "nmap_target prea mare (max 4096 hosts)")
+        except ValueError as e:
+            raise HTTPException(400, f"nmap_target invalid: {e}")
+
     job = ScanJob(
         device_id=device.id,
         requested_by_user_id=user.id,
         status=ScanJobStatus.PENDING,
         scan_type=payload.scan_type,
+        nmap_target=payload.nmap_target,
     )
     db.add(job)
     db.commit()
@@ -604,6 +644,12 @@ def agent_heartbeat(
     device.last_heartbeat = _utcnow()
     device.agent_version = payload.agent_version[:32]
     device.capabilities = payload.capabilities
+    if payload.local_subnet:
+        device.local_subnet = payload.local_subnet
+    if payload.capabilities and "deep" in payload.capabilities:
+        device.nmap_installed = True
+    else:
+        device.nmap_installed = False
     db.commit()
 
 

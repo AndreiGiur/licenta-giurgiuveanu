@@ -88,6 +88,8 @@ class Device(Base):
     )
     agent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     capabilities: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    local_subnet: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    nmap_installed: Mapped[bool] = mapped_column(Integer, default=0)
 
     owner: Mapped["User"] = relationship(back_populates="devices")
     scans: Mapped[list["Scan"]] = relationship(back_populates="device", cascade="all, delete-orphan")
@@ -122,6 +124,7 @@ class Scan(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     exposure_score: Mapped[int] = mapped_column(Integer, default=0)
     payload: Mapped[dict] = mapped_column(JSON)
+    nmap_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     device: Mapped["Device"] = relationship(back_populates="scans")
     findings: Mapped[list["Finding"]] = relationship(back_populates="scan", cascade="all, delete-orphan")
@@ -197,6 +200,7 @@ class ScanJob(Base):
     # foloseste valoarea ca sa stie ce SCAN_PROFILE sa aplice. Backend-ul
     # o foloseste pentru evaluate() (filtrare reguli dupa min_level).
     scan_type: Mapped[str] = mapped_column(String(16), default="standard")
+    nmap_target: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Progres raportat de agent intre colectori (0-100) + faza curenta.
     # Util pentru UI in cazul scanarilor Advanced/Deep care dureaza minute.

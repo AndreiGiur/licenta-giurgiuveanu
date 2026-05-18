@@ -63,6 +63,7 @@ class ScanIn(BaseModel):
     system_info: Dict[str, Any] = {}
     persistence: Dict[str, Any] | None = None
     forensics: Dict[str, Any] | None = None
+    nmap: Dict[str, Any] | None = None
 
 
 class ScanCreateOut(BaseModel):
@@ -140,11 +141,13 @@ class HeartbeatIn(BaseModel):
     agent_version: str = Field(max_length=32)
     capabilities: List[str] = Field(default_factory=list)
     os_version: str = Field(max_length=128)
+    local_subnet: str | None = None
 
 
 class ScanJobCreateIn(BaseModel):
     """UI cere o scanare on-demand de un anumit tip."""
     scan_type: Literal["standard", "advanced", "deep"] = "standard"
+    nmap_target: str | None = None
 
 
 class JobProgressIn(BaseModel):
