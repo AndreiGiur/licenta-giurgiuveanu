@@ -510,18 +510,110 @@ class AgentApp:
             self._toggle_btn_text.set("Înregistrează-te")
 
     def _open_api_url_modal(self) -> None:
-        """Modal pentru editare API URL — folosit din footer Login.
-        Implementare completă in Task 6 (modale)."""
-        from tkinter import simpledialog
-        current = self._var_api.get()
-        new_url = simpledialog.askstring(
-            "Setări avansate API",
-            "URL backend VulnWatch (avansat — modifică doar dacă știi ce faci):",
-            initialvalue=current, parent=self.root,
-        )
-        if new_url and new_url.strip():
-            self._var_api.set(new_url.strip().rstrip("/"))
-            self._refresh_api_short()
+        """Modal pentru editare API URL — fereastra Toplevel cu input + butoane."""
+        p = self.theme.palette
+        modal = tk.Toplevel(self.root)
+        modal.title("Setări avansate")
+        modal.configure(bg=p["bg"])
+        modal.geometry("460x240")
+        modal.resizable(False, False)
+        modal.transient(self.root)
+        modal.grab_set()
+
+        modal.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - 460) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - 240) // 2
+        modal.geometry(f"+{x}+{y}")
+
+        wrap = ttk.Frame(modal, style="TFrame", padding=20)
+        wrap.pack(fill="both", expand=True)
+
+        ttk.Label(wrap, text="API URL backend VulnWatch",
+                  style="Title.TLabel",
+                  font=("Cambria", 14, "bold")).pack(anchor="w")
+        ttk.Label(wrap, text="Modifică doar dacă știi ce faci.",
+                  style="Subtitle.TLabel", font=("Segoe UI", 10),
+                  wraplength=400).pack(anchor="w", pady=(2, 12))
+
+        ttk.Label(wrap, text="URL", style="Dim.TLabel").pack(anchor="w")
+
+        # Default value: din _var_api daca exista (pagina Login), altfel din
+        # configul actual (pagina Status, unde _var_api nu e setata).
+        if hasattr(self, "_var_api"):
+            default_val = self._var_api.get()
+        else:
+            try:
+                api_base, _, _ = core.get_enrollment()
+                default_val = api_base
+            except RuntimeError:
+                default_val = core.DEFAULT_API_BASE
+
+        var = tk.StringVar(value=default_val)
+        entry = ttk.Entry(wrap, textvariable=var, font=("Segoe UI", 11))
+        entry.pack(fill="x", pady=(2, 14))
+        entry.focus_set()
+        entry.select_range(0, "end")
+
+        actions = ttk.Frame(wrap, style="TFrame")
+        actions.pack(fill="x")
+
+        def on_save():
+            new_url = var.get().strip().rstrip("/")
+            if new_url:
+                if hasattr(self, "_var_api"):
+                    self._var_api.set(new_url)
+                    if hasattr(self, "_refresh_api_short"):
+                        self._refresh_api_short()
+            modal.destroy()
+
+        def on_reset():
+            var.set(core.DEFAULT_API_BASE)
+
+        ttk.Button(actions, text="Salvează", style="Accent.TButton",
+                   command=on_save).pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="Anulează", style="Secondary.TButton",
+                   command=modal.destroy).pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="Revino la default", style="Link.TButton",
+                   command=on_reset).pack(side="right")
+
+        modal.bind("<Return>", lambda e: on_save())
+        modal.bind("<Escape>", lambda e: modal.destroy())
+
+    def _open_about_dialog(self) -> None:
+        """Modal Despre — versiune + descriere."""
+        p = self.theme.palette
+        modal = tk.Toplevel(self.root)
+        modal.title("Despre VulnWatch Agent")
+        modal.configure(bg=p["bg"])
+        modal.geometry("440x300")
+        modal.resizable(False, False)
+        modal.transient(self.root)
+        modal.grab_set()
+
+        modal.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - 440) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - 300) // 2
+        modal.geometry(f"+{x}+{y}")
+
+        wrap = ttk.Frame(modal, style="TFrame", padding=24)
+        wrap.pack(fill="both", expand=True)
+
+        ttk.Label(wrap, text="VULNWATCH AGENT",
+                  style="Brand.TLabel").pack(anchor="w")
+        ttk.Label(wrap, text=f"versiunea {core.AGENT_VERSION}",
+                  style="Title.TLabel",
+                  font=("Cambria", 18, "bold")).pack(anchor="w", pady=(4, 12))
+        ttk.Label(wrap, text=(
+            "VulnWatch monitorizează expunerea de securitate a acestui PC "
+            "și raportează rezultatele într-un dashboard web.\n\n"
+            "Scanările se inițiază din platforma web — acest agent rulează "
+            "în fundal și execută jobs."
+        ), style="Subtitle.TLabel", wraplength=390, justify="left",
+           font=("Segoe UI", 10)).pack(anchor="w")
+
+        ttk.Button(wrap, text="Închide", style="Secondary.TButton",
+                   command=modal.destroy).pack(side="right", pady=(16, 0))
+        modal.bind("<Escape>", lambda e: modal.destroy())
 
     def _refresh_api_short(self) -> None:
         """Actualizeaza afisarea scurta a API URL in footer."""
@@ -1211,20 +1303,65 @@ class AgentApp:
             self._render_status_page()
 
     def _open_settings_menu(self, anchor_widget) -> None:
-        """Stub — implementare completa in Task 6."""
-        # Pana la T6, doar afisam un append_log pentru a confirma clic-ul.
-        self._append_log("Meniu setări (în curs de implementare).", "info")
+        """Menu drop-down de la iconita ⚙ — actiuni rar folosite."""
+        p = self.theme.palette
+        m = tk.Menu(self.root, tearoff=0,
+                    bg=p["surface"], fg=p["text"],
+                    activebackground=p["elevated"], activeforeground=p["accent"],
+                    bd=1, font=("Segoe UI", 10))
 
-    def _on_logout(self) -> None:
+        autostart_on = autostart.is_enabled()
+        m.add_command(
+            label=("✓ Pornește la logon" if autostart_on else "  Pornește la logon"),
+            command=self._on_toggle_autostart,
+        )
+        m.add_separator()
+
+        m.add_command(label="Schimbă cont", command=self._on_change_account)
+        m.add_command(label="Deconectează acest PC", command=self._on_disconnect_pc)
+        m.add_separator()
+
+        m.add_command(label="Setări avansate API URL...",
+                      command=self._open_api_url_modal)
+        m.add_command(label="Despre VulnWatch Agent",
+                      command=self._open_about_dialog)
+
+        x = anchor_widget.winfo_rootx()
+        y = anchor_widget.winfo_rooty() + anchor_widget.winfo_height()
+        try:
+            m.tk_popup(x, y)
+        finally:
+            m.grab_release()
+
+    def _on_change_account(self) -> None:
+        """'Schimba cont' — sterge configul local, pastreaza device pe contul vechi
+        si pastreaza metricile locale."""
+        prev_email = core.get_enrollment_meta().get("user_email", "?")
         if not messagebox.askyesno(
-            "Logout din acest PC",
-            "Logout sterge configul local. Va trebui sa te logezi din nou ca "
-            "sa ruleze scanari pe acest PC.\n\n"
-            "Device-ul ramane pe contul tau in dashboard si poti sa-l "
-            "reactivezi oricand cu acelasi cont.\n\n"
+            "Schimbă cont",
+            f"Vei fi delogat de pe acest PC.\n\n"
+            f"Device-ul rămâne pe contul tău ({prev_email}) și-l poți reactiva "
+            f"oricând cu același cont.\n\n"
+            f"Continui?",
+        ):
+            return
+        self._terminate_session_and_return_to_login(reset_metrics=False)
+
+    def _on_disconnect_pc(self) -> None:
+        """'Deconecteaza acest PC' — sterge configul + reseteaza metricile."""
+        if not messagebox.askyesno(
+            "Deconectează acest PC",
+            "Acest PC nu va mai trimite scanări către contul tău.\n\n"
+            "Notă: device-ul va rămâne listat în dashboard web până când îl "
+            "ștergi manual de acolo. Pentru a-l elimina complet, mergi la "
+            "Dashboard → Devices → Șterge.\n\n"
             "Continui?",
         ):
             return
+        self._terminate_session_and_return_to_login(reset_metrics=True)
+
+    def _terminate_session_and_return_to_login(self, reset_metrics: bool) -> None:
+        """Helper comun: opreste daemon + tray, sterge config, revine la Login."""
         self.daemon.stop()
         if self.tray:
             try:
@@ -1235,6 +1372,10 @@ class AgentApp:
             self._tray_started = False
         self.daemon.join(timeout=2.0)
         self.daemon = DaemonRunner(self.log_queue)
+
+        if reset_metrics and hasattr(self, "metrics"):
+            self.metrics.reset()
+
         core.clear_config()
         self._render_login_page()
 
