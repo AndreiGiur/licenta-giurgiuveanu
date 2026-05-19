@@ -187,3 +187,22 @@ def test_daemon_loop_continues_on_api_error(monkeypatch):
     # ApiError nu trebuie sa declanseze on_token_invalid
     assert invalid_called == []
     assert call_count[0] >= 3
+
+
+def test_run_nmap_if_deep_returns_none_for_standard():
+    from agent import core
+    result = core._run_nmap_if_deep({"scan_type": "standard"})
+    assert result is None
+
+
+def test_run_nmap_if_deep_returns_none_for_advanced():
+    from agent import core
+    result = core._run_nmap_if_deep({"scan_type": "advanced"})
+    assert result is None
+
+
+def test_run_nmap_if_deep_no_nmap_installed(monkeypatch):
+    from agent import core
+    monkeypatch.setattr(core, "_nmap_path", lambda: None)
+    result = core._run_nmap_if_deep({"scan_type": "deep"})
+    assert result == {"error": "nmap_missing"}
