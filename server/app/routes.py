@@ -18,6 +18,7 @@ from .auth import (
     get_db,
     get_session_token_for_logout,
     get_user_by_email,
+    require_admin,
     require_user,
     set_session_cookie,
     verify_password,
@@ -33,6 +34,12 @@ from .models import (
     hash_token,
 )
 from .schemas import (
+    AdminDeviceOut,
+    AdminResetPasswordIn,
+    AdminRoleChangeIn,
+    AdminScanListItem,
+    AdminScansPage,
+    AdminUserOut,
     AgentJobOut,
     DeviceCreateIn,
     DeviceCreateOut,
@@ -913,3 +920,127 @@ def agent_google_enroll(payload: GoogleAgentEnrollIn, db: Session = Depends(get_
         device_name=device.name,
         user_email=user.email,
     )
+
+
+# ── Admin endpoints ──────────────────────────────────────────────────────────
+
+
+@router.get("/admin/users", response_model=list[AdminUserOut])
+def admin_list_users(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    out: list[AdminUserOut] = []
+    for u in db.query(User).order_by(User.created_at.desc()).all():
+        dc = db.query(Device).filter(Device.owner_id == u.id).count()
+        out.append(AdminUserOut(
+            id=u.id, email=u.email, role=u.role,
+            auth_provider=u.auth_provider, created_at=u.created_at,
+            device_count=dc,
+        ))
+    return out
+
+
+@router.delete("/admin/users/{user_id}", status_code=204)
+def admin_delete_user(
+    user_id: int,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if user_id == admin.id:
+        raise HTTPException(400, "Cannot delete your own admin account")
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(404, "User not found")
+    db.delete(u)
+    db.commit()
+
+
+@router.post("/admin/users/{user_id}/role", response_model=AdminUserOut)
+def admin_change_role(
+    user_id: int,
+    body: AdminRoleChangeIn,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if user_id == admin.id and body.role == "user":
+        raise HTTPException(400, "Cannot demote your own admin account")
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(404, "User not found")
+    u.role = body.role
+    db.commit()
+    db.refresh(u)
+    dc = db.query(Device).filter(Device.owner_id == u.id).count()
+    return AdminUserOut(
+        id=u.id, email=u.email, role=u.role,
+        auth_provider=u.auth_provider, created_at=u.created_at,
+        device_count=dc,
+    )
+
+
+@router.post("/admin/users/{user_id}/reset-password")
+def admin_reset_password(
+    user_id: int,
+    body: AdminResetPasswordIn,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(404, "User not found")
+    salt, hashed = create_password(body.new_password)
+    u.password_salt = salt
+    u.password_hash = hashed
+    # Invalideaza toate sesiunile user-ului tinta
+    db.query(DbSession).filter(DbSession.user_id == user_id).delete()
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/admin/devices", response_model=list[AdminDeviceOut])
+def admin_list_devices(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    out: list[AdminDeviceOut] = []
+    for d in db.query(Device).order_by(Device.created_at.desc()).all():
+        owner = db.query(User).filter(User.id == d.owner_id).first()
+        out.append(AdminDeviceOut(
+            id=d.id,
+            device_uid=d.device_uid,
+            name=d.name,
+            owner_id=d.owner_id,
+            owner_email=owner.email if owner else "unknown@x.com",
+            created_at=d.created_at,
+            is_online=d.is_online,
+        ))
+    return out
+
+
+@router.get("/admin/scans", response_model=AdminScansPage)
+def admin_list_scans(
+    limit: int = 50,
+    offset: int = 0,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    limit = min(max(limit, 1), 200)
+    offset = max(offset, 0)
+    q = db.query(Scan).order_by(Scan.created_at.desc())
+    total = q.count()
+    items: list[AdminScanListItem] = []
+    for s in q.offset(offset).limit(limit).all():
+        device = db.query(Device).filter(Device.id == s.device_id).first()
+        owner = db.query(User).filter(User.id == device.owner_id).first() if device else None
+        scan_type = (s.payload or {}).get("scan_type") if s.payload else None
+        items.append(AdminScanListItem(
+            scan_id=s.id,
+            device_uid=device.device_uid if device else "?",
+            device_name=device.name if device else "?",
+            owner_email=owner.email if owner else "unknown@x.com",
+            created_at=s.created_at,
+            exposure_score=s.exposure_score,
+            scan_type=scan_type,
+        ))
+    return AdminScansPage(items=items, total=total, limit=limit, offset=offset)

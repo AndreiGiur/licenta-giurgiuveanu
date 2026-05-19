@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 from typing import Any, Dict, List, Literal
 
@@ -182,3 +183,49 @@ class GoogleAgentEnrollOut(BaseModel):
     device_uid: str
     device_name: str
     user_email: str
+
+
+# ── Admin endpoints ──────────────────────────────────────────────────────────
+
+class AdminUserOut(BaseModel):
+    id: int
+    email: EmailStr
+    role: str
+    auth_provider: str
+    created_at: datetime
+    device_count: int
+
+
+class AdminDeviceOut(BaseModel):
+    id: int
+    device_uid: str
+    name: str
+    owner_id: int
+    owner_email: EmailStr
+    created_at: datetime
+    is_online: bool
+
+
+class AdminScanListItem(BaseModel):
+    scan_id: int
+    device_uid: str
+    device_name: str
+    owner_email: EmailStr
+    created_at: datetime
+    exposure_score: int
+    scan_type: str | None = None
+
+
+class AdminScansPage(BaseModel):
+    items: List[AdminScanListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminRoleChangeIn(BaseModel):
+    role: Literal["admin", "user"]
+
+
+class AdminResetPasswordIn(BaseModel):
+    new_password: str = Field(min_length=8, max_length=128)

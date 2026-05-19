@@ -149,6 +149,14 @@ def require_user(
     return user
 
 
+def require_admin(user: User = Depends(require_user)) -> User:
+    """Restricteaza accesul doar la userii cu role='admin'."""
+    if user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Admin role required")
+    return user
+
+
 def get_session_token_for_logout(
     x_session_token: str | None = Header(default=None),
     vw_session: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
