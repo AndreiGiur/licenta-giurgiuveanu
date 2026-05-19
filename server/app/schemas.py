@@ -21,6 +21,7 @@ class MeOut(BaseModel):
     email: str
     google_picture_url: str | None = None
     auth_provider: str = "password"
+    role: str = "user"
 
 
 class DeviceCreateIn(BaseModel):

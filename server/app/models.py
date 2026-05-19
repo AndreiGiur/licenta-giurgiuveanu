@@ -33,6 +33,10 @@ class User(Base):
     google_picture_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     auth_provider: Mapped[str] = mapped_column(String(16), default="password", nullable=False)
 
+    # Rol platforma: "user" (default) sau "admin". Primul user inregistrat
+    # devine admin automat (vezi register handler). Admin = vede tot + manage users.
+    role: Mapped[str] = mapped_column(String(16), default="user", nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     sessions: Mapped[list["Session"]] = relationship(

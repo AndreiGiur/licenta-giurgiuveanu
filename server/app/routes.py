@@ -148,13 +148,15 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="email already registered")
 
     salt, pwd_hash = create_password(payload.password)
-    user = User(email=email, password_salt=salt, password_hash=pwd_hash)
+    # Primul user inregistrat in platforma devine admin automat.
+    role = "admin" if db.query(User).count() == 0 else "user"
+    user = User(email=email, password_salt=salt, password_hash=pwd_hash, role=role)
 
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    return MeOut(id=user.id, email=user.email)
+    return MeOut(id=user.id, email=user.email, role=user.role)
 
 
 @router.post("/auth/login", response_model=TokenOut)
@@ -184,6 +186,7 @@ def me(user: User = Depends(require_user)):
         email=user.email,
         google_picture_url=user.google_picture_url,
         auth_provider=user.auth_provider,
+        role=user.role,
     )
 
 
@@ -837,11 +840,15 @@ def _upsert_google_user(db: Session, email: str, google_sub: str, picture: str |
     - User existent fara parola dar cu google_sub: ramane 'google'"""
     user = get_user_by_email(db, email)
     if user is None:
+        # Primul user inregistrat in platforma devine admin automat (acelasi
+        # tratament ca la POST /auth/register).
+        role = "admin" if db.query(User).count() == 0 else "user"
         user = User(
             email=email,
             google_sub=google_sub,
             google_picture_url=picture,
             auth_provider="google",
+            role=role,
         )
         db.add(user)
     else:

@@ -34,6 +34,17 @@ def client():
 
 
 @pytest.fixture()
+def fresh_db_client():
+    """Drop + recreate all tables si returneaza un TestClient nou. Folosit
+    pentru teste care depind de starea initiala a DB-ului (ex: first-user-admin)."""
+    from server.app.db import Base, engine
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture()
 def auth_client(client):
     """Creeaza un user nou unic si intoarce (client, email, session_token, headers)."""
     import uuid
