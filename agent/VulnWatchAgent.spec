@@ -24,13 +24,26 @@ a = Analysis(
     [str(agent_dir / "scan.py")],
     pathex=[str(repo_root)],
     binaries=[],
-    datas=[],
+    datas=[
+        # Scriptul NSE custom — deployed la startup in NSE scripts dir al nmap.
+        (str(agent_dir / "nse" / "vulnwatch-audit.nse"), "nse"),
+    ],
     hiddenimports=[
         "agent",
         "agent.core",
         "agent.gui",
         "agent.autostart",
         "agent.tray",
+        "agent.service",
+        "agent.ipc",
+        "agent.nmap_runner",
+        "agent.nmap_parser",
+        # pywin32 — necesar pentru Service framework
+        "win32serviceutil",
+        "win32service",
+        "win32event",
+        "servicemanager",
+        "pywintypes",
         # pystray are backend-uri specifice per platforma — le includem pe
         # cele uzuale ca PyInstaller sa le ridice.
         "pystray._win32",
