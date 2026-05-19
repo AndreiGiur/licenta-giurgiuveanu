@@ -37,12 +37,16 @@ from .models import (
 )
 from .schemas import (
     AdminDeviceOut,
+    AdminPlatformStatsOut,
     AdminResetPasswordIn,
     AdminRoleChangeIn,
     AdminScanListItem,
     AdminScansPage,
     AdminUserOut,
     AgentJobOut,
+    ChangePasswordIn,
+    SessionOut,
+    UserStatsOut,
     ScheduleIn,
     ScheduleOut,
     ScheduleUpdateIn,
@@ -1195,3 +1199,138 @@ def delete_schedule(
         raise HTTPException(status_code=404, detail="Schedule not found")
     db.delete(sched)
     db.commit()
+
+
+# ── Profile endpoints (/me/*) ────────────────────────────────────────────────
+
+
+@router.get("/me/stats", response_model=UserStatsOut)
+def me_stats(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Statistici personale: numar device-uri, numar scanari, avg score, ultima scanare."""
+    device_count = db.query(Device).filter(Device.owner_id == user.id).count()
+    device_ids = [d.id for d in db.query(Device.id).filter(
+        Device.owner_id == user.id).all()]
+    if not device_ids:
+        return UserStatsOut(
+            device_count=device_count,
+            scan_count=0,
+            avg_exposure_score=None,
+            last_scan_at=None,
+            last_scan_score=None,
+        )
+    scans = db.query(Scan).filter(Scan.device_id.in_(device_ids)).all()
+    if not scans:
+        return UserStatsOut(
+            device_count=device_count,
+            scan_count=0,
+            avg_exposure_score=None,
+            last_scan_at=None,
+            last_scan_score=None,
+        )
+    avg = sum(s.exposure_score for s in scans) / len(scans)
+    last = max(scans, key=lambda s: s.created_at)
+    return UserStatsOut(
+        device_count=device_count,
+        scan_count=len(scans),
+        avg_exposure_score=round(avg, 1),
+        last_scan_at=last.created_at,
+        last_scan_score=last.exposure_score,
+    )
+
+
+@router.get("/me/sessions", response_model=list[SessionOut])
+def me_sessions(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+    current_token: str | None = Depends(get_session_token_for_logout),
+):
+    """Lista sesiunilor active ale userului curent. `is_current` marcheaza
+    sesiunea care a facut request-ul curent (deductibil din token)."""
+    out: list[SessionOut] = []
+    for s in db.query(DbSession).filter(
+        DbSession.user_id == user.id
+    ).order_by(DbSession.created_at.desc()).all():
+        out.append(SessionOut(
+            id=s.id,
+            user_agent=s.user_agent,
+            ip=s.ip,
+            created_at=s.created_at,
+            expires_at=s.expires_at,
+            is_current=(s.token == current_token),
+        ))
+    return out
+
+
+@router.delete("/me/sessions/{session_id}", status_code=204)
+def me_revoke_session(
+    session_id: int,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Revoca o sesiune (alta decat cea curenta). Folosit din UI pentru logout
+    remote (ex: ai uitat sa te delogezi pe alt device)."""
+    sess = db.query(DbSession).filter(
+        DbSession.id == session_id,
+        DbSession.user_id == user.id,
+    ).first()
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    db.delete(sess)
+    db.commit()
+
+
+@router.post("/me/password")
+def me_change_password(
+    body: ChangePasswordIn,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Schimba parola pentru cont (necesita parola veche). Pentru conturi
+    Google-only (fara password_hash) -> 400."""
+    if not user.password_hash or not user.password_salt:
+        raise HTTPException(
+            status_code=400,
+            detail="Account has no password set (Google-only). Set one via password reset.",
+        )
+    if not verify_password(body.old_password, user.password_salt, user.password_hash):
+        raise HTTPException(status_code=401, detail="Old password incorrect")
+    salt, pwd_hash = create_password(body.new_password)
+    user.password_salt = salt
+    user.password_hash = pwd_hash
+    db.commit()
+    return {"ok": True}
+
+
+# ── Admin platform stats ─────────────────────────────────────────────────────
+
+@router.get("/admin/stats", response_model=AdminPlatformStatsOut)
+def admin_platform_stats(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Metrici platforma — pentru sectiunea Platforma din profilul admin."""
+    from datetime import timedelta
+    total_users = db.query(User).count()
+    total_devices = db.query(Device).count()
+    # devices_online = is_online property (last_heartbeat < 30s)
+    devices_online = sum(1 for d in db.query(Device).all() if d.is_online)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=24)
+    cutoff_naive = cutoff.replace(tzinfo=None)
+    scans_24h = db.query(Scan).filter(Scan.created_at >= cutoff_naive).count()
+    scans_total = db.query(Scan).count()
+    avg_score: float | None = None
+    if scans_total > 0:
+        total = sum(s.exposure_score for s in db.query(Scan).all())
+        avg_score = round(total / scans_total, 1)
+    return AdminPlatformStatsOut(
+        total_users=total_users,
+        total_devices=total_devices,
+        devices_online=devices_online,
+        scans_last_24h=scans_24h,
+        scans_total=scans_total,
+        avg_exposure_score=avg_score,
+    )

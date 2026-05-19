@@ -268,3 +268,38 @@ class ScheduleOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── Profile + user stats + sessions ──────────────────────────────────────────
+
+class UserStatsOut(BaseModel):
+    device_count: int
+    scan_count: int
+    avg_exposure_score: float | None  # None daca nu exista scan-uri
+    last_scan_at: datetime | None
+    last_scan_score: int | None
+
+
+class SessionOut(BaseModel):
+    id: int
+    user_agent: str | None
+    ip: str | None
+    created_at: datetime
+    expires_at: datetime | None
+    is_current: bool
+
+
+class ChangePasswordIn(BaseModel):
+    old_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+# ── Admin platform stats ─────────────────────────────────────────────────────
+
+class AdminPlatformStatsOut(BaseModel):
+    total_users: int
+    total_devices: int
+    devices_online: int
+    scans_last_24h: int
+    scans_total: int
+    avg_exposure_score: float | None
