@@ -3,8 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import Navbar from "../components/Navbar";
 import { apiDelete, apiGet, API_BASE_URL } from "../api/http";
-import { requestScan, getScanJob, getAgentDownloadInfo, getScanJobPreview } from "../api/exposure";
-import type { Device, ScanJobPreview, ScanJobResponse, ScanType } from "../api/types";
+import {
+  requestScan, getScanJob, getAgentDownloadInfo, getScanJobPreview,
+  listSchedules, deleteSchedule,
+} from "../api/exposure";
+import type {
+  Device, ScanJobPreview, ScanJobResponse, ScanType, Schedule,
+} from "../api/types";
+import ScheduleForm from "../components/ScheduleForm";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -51,6 +57,8 @@ export default function Devices() {
   const [previewByDevice, setPreviewByDevice] = useState<Record<string, ScanJobPreview | null>>({});
   // Map device_uid -> opt-in pentru scanarea LAN (doar pentru scan deep).
   const [lanOptInByDevice, setLanOptInByDevice] = useState<Record<string, boolean>>({});
+  // Map device_uid -> lista de scheduluri pentru device.
+  const [schedules, setSchedules] = useState<Record<string, Schedule[]>>({});
   // Tinem ref-uri ca sa anulam polling-urile la unmount.
   const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -71,6 +79,26 @@ export default function Devices() {
       clearInterval(refresh);
     };
   }, []);
+
+  async function reloadSchedules(uid: string) {
+    try {
+      const list = await listSchedules(uid);
+      setSchedules(p => ({ ...p, [uid]: list }));
+    } catch {
+      // silent — endpoint poate da 404 daca device a fost sters
+    }
+  }
+
+  async function handleDeleteSchedule(sid: number, uid: string) {
+    if (!window.confirm("Stergi acest schedule?")) return;
+    await deleteSchedule(sid);
+    reloadSchedules(uid);
+  }
+
+  // Load schedules pentru fiecare device la prima incarcare a listei
+  useEffect(() => {
+    devices.forEach(d => reloadSchedules(d.device_uid));
+  }, [devices.length]);
 
   // Fetch preview pentru orice device cu scan_type deep selectat (cache local).
   useEffect(() => {
@@ -403,6 +431,36 @@ export default function Devices() {
                     })()}
                   </div>
                 )}
+
+                <details className="schedule-section">
+                  <summary>
+                    📅 Planificare ({schedules[d.device_uid]?.length ?? 0})
+                  </summary>
+                  {(schedules[d.device_uid] ?? []).map(s => (
+                    <div key={s.id} className="schedule-row">
+                      <span className="schedule-tag">{s.scan_type}</span>
+                      <span>{s.frequency === "daily" ? "zilnic"
+                        : s.frequency === "weekly" ? "săptămânal"
+                        : "lunar"}</span>
+                      <span>{String(s.hour).padStart(2, "0")}:00 UTC</span>
+                      <span className="schedule-next">
+                        următorul: {new Date(s.next_run_at).toLocaleString("ro-RO", {
+                          dateStyle: "short", timeStyle: "short",
+                        })}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteSchedule(s.id, d.device_uid)}
+                        className="btn btn-ghost btn-sm"
+                        title="Sterge"
+                        style={{ marginLeft: "auto", padding: "0 8px" }}
+                      >×</button>
+                    </div>
+                  ))}
+                  <ScheduleForm
+                    deviceUid={d.device_uid}
+                    onCreated={() => reloadSchedules(d.device_uid)}
+                  />
+                </details>
 
                 {inFlight && (
                   <div className="job-progress">

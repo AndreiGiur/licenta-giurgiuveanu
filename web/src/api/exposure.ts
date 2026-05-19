@@ -1,6 +1,8 @@
-import { apiGet, apiPost, API_BASE_URL } from "./client";
+import { apiGet, apiPost, apiDelete, API_BASE_URL } from "./client";
 import type {
   DeviceScanListItem,
+  Schedule,
+  ScheduleFrequency,
   ScanDetailResponse,
   ScanJobPreview,
   ScanJobResponse,
@@ -57,6 +59,33 @@ export function listScanJobs(deviceUid: string) {
     `/devices/${encodeURIComponent(deviceUid)}/scan-jobs`,
   );
 }
+
+/** ── Schedule CRUD ──────────────────────────────────────────────────────── */
+
+export function listSchedules(deviceUid: string) {
+  return apiGet<Schedule[]>(
+    `/devices/${encodeURIComponent(deviceUid)}/schedules`,
+  );
+}
+
+export function createSchedule(deviceUid: string, body: {
+  scan_type: ScanType;
+  frequency: ScheduleFrequency;
+  hour: number;
+  day_of_week?: number;
+  day_of_month?: number;
+  nmap_target?: string | null;
+}) {
+  return apiPost<typeof body, Schedule>(
+    `/devices/${encodeURIComponent(deviceUid)}/schedules`,
+    body,
+  );
+}
+
+export function deleteSchedule(scheduleId: number) {
+  return apiDelete(`/schedules/${scheduleId}`);
+}
+
 
 /** Verifica daca un build de agent este disponibil pe server. */
 export function getAgentDownloadInfo() {

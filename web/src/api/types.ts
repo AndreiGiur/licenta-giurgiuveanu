@@ -71,6 +71,23 @@ export type ScanJobStatus =
   | "failed"
   | "cancelled";
 
+export type ScheduleFrequency = "daily" | "weekly" | "monthly";
+
+export type Schedule = {
+  id: number;
+  device_id: number;
+  scan_type: ScanType;
+  frequency: ScheduleFrequency;
+  hour: number;
+  day_of_week: number | null;
+  day_of_month: number | null;
+  nmap_target: string | null;
+  enabled: boolean;
+  next_run_at: string;
+  last_run_at: string | null;
+  created_at: string;
+};
+
 export type ScanJobPreview = {
   detected_subnet: string | null;
   nmap_installed: boolean;
