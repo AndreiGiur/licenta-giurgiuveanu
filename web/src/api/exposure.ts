@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from "./client";
+import { apiGet, apiPost, API_BASE_URL } from "./client";
 import type {
   DeviceScanListItem,
   ScanDetailResponse,
@@ -15,6 +15,11 @@ export function listDeviceScans(deviceId: string) {
 
 export function getScan(scanId: number) {
   return apiGet<ScanDetailResponse>(`/scans/${scanId}`);
+}
+
+/** URL absolut catre PDF report — folosit ca href pentru link download. */
+export function getScanPdfUrl(scanId: number): string {
+  return `${API_BASE_URL}/scans/${scanId}/report.pdf`;
 }
 
 // ── Scan-on-demand ──────────────────────────────────────────────────────────

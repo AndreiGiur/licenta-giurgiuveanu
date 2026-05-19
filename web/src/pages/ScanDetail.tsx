@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { getScan } from "../api/exposure";
+import { getScan, getScanPdfUrl } from "../api/exposure";
 import type { ScanDetailResponse, Finding } from "../api/types";
 import Navbar from "../components/Navbar";
 import { ScoreGauge } from "../components/ScoreGauge";
@@ -181,6 +181,18 @@ export default function ScanDetail() {
               <span className={`scan-type-badge ${scanType}`}>{scanType.toUpperCase()}</span>
               <span className="scan-date">{formatDate(data.created_at)}</span>
             </div>
+          )}
+          {data && (
+            <a
+              href={getScanPdfUrl(data.scan_id)}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-accent btn-sm"
+              style={{ textDecoration: "none", marginLeft: "auto" }}
+              title="Descarca raport PDF"
+            >
+              ↓ Export PDF
+            </a>
           )}
         </header>
 
