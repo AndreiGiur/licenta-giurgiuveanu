@@ -426,6 +426,34 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
     )
 
 
+@router.get("/scans/{scan_id}/report.pdf")
+def download_scan_report(scan_id: int, db: Session = Depends(get_db),
+                        user: User = Depends(require_user)):
+    """Genereaza si returneaza un PDF report pentru un scan. Owner-ul scan-ului
+    sau orice admin poate descarca. Pentru alti useri: 404 (nu leak existenta)."""
+    from .reports import generate_scan_pdf
+    scan = db.get(Scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="scan not found")
+    device = db.get(Device, scan.device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="scan not found")
+    # Admin bypass: poate descarca PDF pentru oricine
+    if user.role != "admin" and device.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="scan not found")
+    owner = db.get(User, device.owner_id)
+    pdf_bytes = generate_scan_pdf(
+        scan, device, scan.findings,
+        owner_email=owner.email if owner else "unknown@x.com",
+    )
+    filename = f"vulnwatch-scan-{scan_id}-{scan.created_at.strftime('%Y%m%d')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Scan-on-demand: job queue
 # ──────────────────────────────────────────────────────────────────────────────
