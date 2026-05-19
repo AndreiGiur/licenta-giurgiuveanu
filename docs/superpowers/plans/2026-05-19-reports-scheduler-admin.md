@@ -1509,7 +1509,7 @@ git commit -m "feat(web/admin): pagina Admin cu tabs Users/Devices/Scans + Navba
 **Files:**
 - Modify: `agent/memory.md`, `server/app/memory.md`, `server/tests/memory.md`, `web/src/pages/memory.md`, `web/src/components/memory.md`
 
-- [ ] **Step E1.1: Update memory.md per folder**
+- [x] **Step E1.1: Update memory.md per folder**
 
 - `server/app/memory.md`:
   - models.py: + `ScanSchedule` table, + `User.role` column, + `ScanJob.source` column
@@ -1537,7 +1537,7 @@ git commit -m "feat(web/admin): pagina Admin cu tabs Users/Devices/Scans + Navba
 
 Update total tests: 108 + 21 = 129 server tests.
 
-- [ ] **Step E1.2: Smoke checklist E2E**
+- [x] **Step E1.2: Smoke checklist E2E**
 
 În `docs/superpowers/plans/2026-05-19-reports-scheduler-admin.md` (acest fișier), la final:
 
@@ -1564,7 +1564,7 @@ Update total tests: 108 + 21 = 129 server tests.
 [ ] 15. Delete schedule → dispare din UI
 ```
 
-- [ ] **Step E1.3: Commit**
+- [x] **Step E1.3: Commit**
 
 ```bash
 git add agent/memory.md server/app/memory.md server/tests/memory.md web/src/pages/memory.md web/src/components/memory.md docs/superpowers/plans/2026-05-19-reports-scheduler-admin.md

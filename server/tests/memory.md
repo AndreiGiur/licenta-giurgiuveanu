@@ -25,8 +25,13 @@ Rulare: `python -m pytest server/tests` (din radacina repo-ului).
 | `test_google_web_oauth.py`      | 4     | Flow web OAuth end-to-end cu mock pe `google_auth.exchange_code_for_token` + `verify_id_token`: `GET /auth/google/url` returneaza `auth_url` + `state`; `GET /auth/google/callback` cu state valid creeaza User nou (auth_provider=google), seteaza cookie `vw_session`, redirect 302 catre `/dashboard`; state invalid -> 400; user existent cu parola devine `auth_provider="both"` dupa login Google la acelasi email. |
 | `test_google_agent_enroll.py`   | 3     | Endpoint `POST /api/v1/agent/google-enroll` cu mock pe `google_auth.verify_id_token`: creeaza User + Device la prima inrolare si returneaza `device_token` plain; re-emite token pentru acelasi `(owner, device_uid)` la a doua inrolare (relink, token1 != token2); 401 cand `verify_id_token` arunca `GoogleAuthError`. |
 | `test_nmap_findings.py`         | 3     | Rule `NMAP-LUA-1` pass-through: finding-uri din `scan.nmap.hosts[].vulnwatch_findings` apar cu `source="nmap-lua"` + `host_ip` adaugat in evidence; lipsa `scan.nmap` -> zero findings nmap; scan_type=standard NU declanseaza regula (min_level=deep). |
+| `test_admin_role.py`            | 2     | First user inregistrat in DB gol devine admin auto; al 2-lea user are `role="user"`. Foloseste fixture `fresh_db_client` (drop + create_all + TestClient nou). |
+| `test_admin_endpoints.py`       | 9     | Endpoints `/admin/*`: list users / promote-demote / reset password (invalideaza sesiuni) / delete user. Self-protection: admin nu se poate demote sau sterge. Verifica 403 pentru user normal. Admin vede toate device-urile (cross-user) + scans paginat. |
+| `test_reports.py`               | 4     | Endpoint `GET /scans/{id}/report.pdf`: PDF valid (`%PDF-` signature, > 1KB), 404 pentru non-owner, admin bypass, sectiunea nmap creste dimensiunea PDF. |
+| `test_scheduler.py`             | 11    | `compute_next_run` pentru daily/weekly/monthly (cap la 28); CRUD endpoints `/devices/{uid}/schedules`; weekly fara `day_of_week` → 400; max 5 schedules/user; izolare multi-tenant (user B nu poate face schedule pe device-ul lui A). |
+| `test_profile_endpoints.py`     | 8     | `/me/stats` (empty + with data), `/me/sessions` (current marker + revoke), `/me/password` (change ok + wrong old → 401), `/admin/stats` (platform metrics + 403 pentru user normal). |
 
-## Total: 108 teste end-to-end + 63 unit tests in `agent/tests/` = **171 teste**.
+## Total: 142 teste end-to-end + 63 unit tests in `agent/tests/` = **205 teste**.
 
 ## Pattern important
 
