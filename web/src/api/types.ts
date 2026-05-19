@@ -48,6 +48,7 @@ export type ScanPayload = {
   software?: { name: string; version?: string }[];
   persistence?: Record<string, unknown> | null;
   forensics?: Record<string, unknown> | null;
+  nmap?: NmapData | null;
 };
 
 export type ScanDetailResponse = {

@@ -5,6 +5,7 @@ import { getScan } from "../api/exposure";
 import type { ScanDetailResponse, Finding } from "../api/types";
 import Navbar from "../components/Navbar";
 import { ScoreGauge } from "../components/ScoreGauge";
+import NmapSection from "../components/NmapSection";
 
 type Category = "persistence" | "network" | "system" | "software" | "processes" | "forensics";
 
@@ -266,6 +267,10 @@ export default function ScanDetail() {
               )}
             </main>
           </motion.div>
+        )}
+
+        {data?.payload?.nmap && (
+          <NmapSection nmap={data.payload.nmap} />
         )}
       </div>
     </div>

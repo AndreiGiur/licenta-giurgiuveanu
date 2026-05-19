@@ -1143,3 +1143,71 @@ button:focus-visible {
   color: var(--text-muted);
   margin-top: 6px;
 }
+
+/* ── nmap section in ScanDetail ────────────────────────────────────────────── */
+.nmap-section {
+  margin-top: 32px;
+  padding: 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.nmap-section h2 {
+  color: var(--accent);
+  font-family: var(--font-display);
+  margin: 0 0 6px;
+}
+.nmap-meta { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+.nmap-hosts { display: flex; flex-direction: column; gap: 12px; }
+.nmap-host-card {
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.nmap-host-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.nmap-host-ip { font-family: var(--font-mono); font-weight: 700; color: var(--accent); }
+.nmap-host-name { color: var(--text-muted); font-size: 12px; }
+.nmap-role {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.nmap-risk { font-size: 11px; color: var(--text-secondary); margin-left: auto; }
+.nmap-os { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.nmap-port { font-family: var(--font-mono); font-size: 12px; margin: 4px 0; color: var(--text-secondary); }
+.nmap-port code { color: var(--accent); }
+.nmap-version { color: var(--text-muted); font-style: italic; }
+.nmap-findings { margin-top: 10px; }
+.nmap-findings h4 { font-size: 13px; margin: 0 0 6px; color: var(--text-primary); }
+.nmap-finding {
+  padding: 6px 10px;
+  margin: 4px 0;
+  border-left: 3px solid;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  font-size: 12px;
+}
+.nmap-finding .finding-rule {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  margin-right: 8px;
+}
+.nmap-finding.sev-critical { border-color: #d04060; }
+.nmap-finding.sev-high     { border-color: #e07090; }
+.nmap-finding.sev-medium   { border-color: var(--accent); }
+.nmap-finding.sev-low      { border-color: var(--text-muted); }
+.nmap-finding.sev-info     { border-color: var(--border); }
+.nmap-error { color: #e07090; padding: 12px; }
+.nmap-lua-errors { margin-top: 12px; font-size: 12px; color: var(--text-muted); }
+.nmap-lua-errors pre { background: var(--bg); padding: 8px; border-radius: var(--radius-sm); overflow-x: auto; }
