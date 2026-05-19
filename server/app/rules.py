@@ -594,3 +594,29 @@ def check_bitlocker_off(scan: dict) -> dict | None:
             "Activeaza: Enable-BitLocker -MountPoint 'C:' -EncryptionMethod XtsAes256 -UsedSpaceOnly -TpmProtector"
         ),
     }
+
+
+@rule("NMAP-LUA-1", min_level="deep")
+def collect_nmap_lua_findings(scan: dict) -> list[dict] | None:
+    """Wrapper pass-through pentru finding-urile emise de scriptul NSE custom
+    `vulnwatch-audit.nse`. Lua a decis deja severitatea; Python doar le muta
+    in lista finala cu prefix source='nmap-lua' + host_ip in evidence."""
+    nmap = scan.get("nmap")
+    if not nmap or not nmap.get("hosts"):
+        return None
+    findings: list[dict] = []
+    for host in nmap["hosts"]:
+        host_ip = host.get("ip", "")
+        for f in host.get("vulnwatch_findings", []) or []:
+            evidence = dict(f.get("evidence", {}) or {})
+            evidence["host_ip"] = host_ip
+            findings.append({
+                "rule_id": f.get("rule_id", "NMAP-UNKNOWN"),
+                "title": f.get("title", "Finding from nmap NSE"),
+                "severity": f.get("severity", "info"),
+                "evidence": evidence,
+                "recommendation": f.get("recommendation",
+                    "Vezi detaliile in sectiunea Network scan din raport."),
+                "source": "nmap-lua",
+            })
+    return findings or None
