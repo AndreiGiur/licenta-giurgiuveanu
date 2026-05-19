@@ -24,8 +24,9 @@ Rulare: `python -m pytest server/tests` (din radacina repo-ului).
 | `test_google_auth.py`           | 3     | Mock pentru modulul `server/app/google_auth.py`: `verify_id_token` returneaza payload-ul cand `id_token.verify_oauth2_token` da OK; arunca `GoogleAuthError` cand subjacent da `ValueError`; `exchange_code_for_token` (async) POST-eaza la token endpoint si returneaza dict cu `id_token`. Foloseste `pytest-asyncio` (auto-mode via `pytest.ini`). |
 | `test_google_web_oauth.py`      | 4     | Flow web OAuth end-to-end cu mock pe `google_auth.exchange_code_for_token` + `verify_id_token`: `GET /auth/google/url` returneaza `auth_url` + `state`; `GET /auth/google/callback` cu state valid creeaza User nou (auth_provider=google), seteaza cookie `vw_session`, redirect 302 catre `/dashboard`; state invalid -> 400; user existent cu parola devine `auth_provider="both"` dupa login Google la acelasi email. |
 | `test_google_agent_enroll.py`   | 3     | Endpoint `POST /api/v1/agent/google-enroll` cu mock pe `google_auth.verify_id_token`: creeaza User + Device la prima inrolare si returneaza `device_token` plain; re-emite token pentru acelasi `(owner, device_uid)` la a doua inrolare (relink, token1 != token2); 401 cand `verify_id_token` arunca `GoogleAuthError`. |
+| `test_nmap_findings.py`         | 3     | Rule `NMAP-LUA-1` pass-through: finding-uri din `scan.nmap.hosts[].vulnwatch_findings` apar cu `source="nmap-lua"` + `host_ip` adaugat in evidence; lipsa `scan.nmap` -> zero findings nmap; scan_type=standard NU declanseaza regula (min_level=deep). |
 
-## Total: 101 teste end-to-end + 17 unit tests in `agent/tests/` = **118 teste**.
+## Total: 108 teste end-to-end + 63 unit tests in `agent/tests/` = **171 teste**.
 
 ## Pattern important
 
