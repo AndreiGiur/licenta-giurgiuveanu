@@ -1525,3 +1525,60 @@ button:focus-visible {
   background: var(--accent-strong);
   box-shadow: 0 2px 8px rgba(244, 201, 93, 0.40);
 }
+
+/* ── Score breakdown bars (4 categorii) ─────────────────────────────────── */
+.score-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+}
+.score-breakdown-compact { padding: 12px 14px; gap: 10px; }
+
+.score-breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(80px, 3fr) 36px;
+  align-items: center;
+  gap: 12px;
+}
+.score-breakdown-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.score-breakdown-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+}
+.score-breakdown-weight {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+.score-breakdown-track {
+  height: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+.score-breakdown-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: background 0.3s ease;
+}
+.score-breakdown-value {
+  font-family: var(--font-display, serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

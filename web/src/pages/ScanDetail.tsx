@@ -5,6 +5,7 @@ import { getScan, getScanPdfUrl } from "../api/exposure";
 import type { ScanDetailResponse, Finding } from "../api/types";
 import Navbar from "../components/Navbar";
 import { ScoreGauge } from "../components/ScoreGauge";
+import { ScoreBreakdownBars } from "../components/ScoreBreakdownBars";
 import NmapSection from "../components/NmapSection";
 
 type Category = "persistence" | "network" | "system" | "software" | "processes" | "forensics";
@@ -221,6 +222,9 @@ export default function ScanDetail() {
               <div className="score-summary">
                 <strong>{data.findings.length}</strong> vulnerabilități găsite
               </div>
+              {data.score_breakdown && (
+                <ScoreBreakdownBars breakdown={data.score_breakdown} compact />
+              )}
 
               <nav className="category-nav">
                 {categories.map(cat => {

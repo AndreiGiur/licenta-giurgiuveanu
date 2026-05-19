@@ -336,9 +336,14 @@ def create_scan(
         )
 
     scan_dict = payload.model_dump()
-    score, findings = evaluate(scan_dict)
+    score, breakdown, findings = evaluate(scan_dict)
 
-    scan = Scan(device_id=device.id, payload=scan_dict, exposure_score=score)
+    scan = Scan(
+        device_id=device.id,
+        payload=scan_dict,
+        exposure_score=score,
+        score_breakdown=breakdown,
+    )
     db.add(scan)
     db.flush()
 
@@ -362,6 +367,7 @@ def create_scan(
         device_uid=device.device_uid,
         device_name=device.name,
         exposure_score=score,
+        score_breakdown=breakdown,
         findings=findings,
     )
 
@@ -420,6 +426,7 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
         device_name=device.name,
         created_at=scan.created_at.isoformat(),
         exposure_score=scan.exposure_score,
+        score_breakdown=scan.score_breakdown,
         findings=[
             {
                 "rule_id": f.rule_id,
@@ -655,10 +662,16 @@ def agent_submit_result(
         "software": payload.software,
         "persistence": payload.persistence,
         "forensics": payload.forensics,
+        "nmap": payload.nmap,
     }
-    score, findings = evaluate(scan_dict)
+    score, breakdown, findings = evaluate(scan_dict)
 
-    scan = Scan(device_id=device.id, payload=scan_dict, exposure_score=score)
+    scan = Scan(
+        device_id=device.id,
+        payload=scan_dict,
+        exposure_score=score,
+        score_breakdown=breakdown,
+    )
     db.add(scan)
     db.flush()  # ca sa avem scan.id
 

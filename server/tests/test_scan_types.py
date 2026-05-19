@@ -19,7 +19,7 @@ def _empty_scan(scan_type: str = "standard") -> dict:
 def test_standard_runs_only_standard_rules():
     """Pentru scan_type='standard', nicio regula advanced/deep nu trebuie sa
     poata gasi findings (chiar daca am avea date — care nu exista oricum)."""
-    score, findings = evaluate(_empty_scan("standard"))
+    score, _, findings = evaluate(_empty_scan("standard"))
     assert score == 0
     assert findings == []
 
@@ -27,7 +27,7 @@ def test_standard_runs_only_standard_rules():
 def test_advanced_can_fire_advanced_rules():
     scan = _empty_scan("advanced")
     scan["network"]["shares"] = [{"name": "MyShare", "path": "C:\\Public"}]
-    score, findings = evaluate(scan)
+    score, _, findings = evaluate(scan)
     assert any(f["rule_id"] == "NET-SHARE-1" for f in findings)
 
 
@@ -36,14 +36,14 @@ def test_standard_ignores_advanced_data():
     advanced NU ruleaza."""
     scan = _empty_scan("standard")
     scan["network"]["shares"] = [{"name": "MyShare", "path": "C:\\Public"}]
-    _, findings = evaluate(scan)
+    _, _, findings = evaluate(scan)
     assert not any(f["rule_id"] == "NET-SHARE-1" for f in findings)
 
 
 def test_deep_can_fire_deep_rules():
     scan = _empty_scan("deep")
     scan["persistence"] = {"wmi_subscriptions": [{"name": "Evil", "command": "cmd.exe"}]}
-    _, findings = evaluate(scan)
+    _, _, findings = evaluate(scan)
     assert any(f["rule_id"] == "WMI-PERSIST-1" for f in findings)
 
 

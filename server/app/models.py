@@ -127,6 +127,9 @@ class Scan(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     exposure_score: Mapped[int] = mapped_column(Integer, default=0)
+    # Sub-scoruri 0-100 per categorie: {critical_risk, network_exposure, hygiene, activity}.
+    # Nullable pentru compat cu scan-uri vechi (pre-2026-05-19).
+    score_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     payload: Mapped[dict] = mapped_column(JSON)
     nmap_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

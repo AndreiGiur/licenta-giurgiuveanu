@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -38,6 +39,16 @@ SEVERITY_COLOR = {
 }
 
 
+def _ascii(s) -> str:
+    """Transliterare ASCII: elimina diacritice + caractere non-Latin1 pentru Helvetica."""
+    if s is None:
+        return ""
+    text = str(s)
+    nfkd = unicodedata.normalize("NFKD", text)
+    no_marks = "".join(ch for ch in nfkd if not unicodedata.combining(ch))
+    return no_marks.encode("ascii", "replace").decode("ascii")
+
+
 def _ev_str(evidence) -> str:
     """Serializează evidence dict în text formatat pentru PDF."""
     if not evidence:
@@ -49,10 +60,11 @@ def _ev_str(evidence) -> str:
 
 
 def _escape_html(s: str) -> str:
-    """Escape minimal pentru Paragraph (care interpretează tag-uri HTML)."""
-    return (s.replace("&", "&amp;")
-             .replace("<", "&lt;")
-             .replace(">", "&gt;"))
+    """Escape minimal pentru Paragraph + transliterare ASCII pentru Helvetica."""
+    safe = _ascii(s)
+    return (safe.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;"))
 
 
 def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
@@ -97,11 +109,11 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
     payload = scan.payload or {}
     os_info = payload.get("os", {}) or {}
     meta_data = [
-        ["Device", device.name],
-        ["UID", device.device_uid],
-        ["Owner", owner_email],
-        ["OS", f"{os_info.get('system', '?')} {os_info.get('release', '')}".strip()],
-        ["Hostname", os_info.get("hostname", "?")],
+        ["Device", _ascii(device.name)],
+        ["UID", _ascii(device.device_uid)],
+        ["Owner", _ascii(owner_email)],
+        ["OS", _ascii(f"{os_info.get('system', '?')} {os_info.get('release', '')}".strip())],
+        ["Hostname", _ascii(os_info.get("hostname", "?"))],
         ["Scan type", (payload.get("scan_type") or "standard").upper()],
         ["Data", scan.created_at.strftime("%d %b %Y, %H:%M")],
         ["Scan ID", f"#{scan.id}"],
@@ -147,7 +159,7 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
         sev = (f.severity or "info").lower()
         sev_counts[sev] = sev_counts.get(sev, 0) + 1
 
-    sev_data = [["Severitate", "Număr"]]
+    sev_data = [["Severitate", "Numar"]]
     for sev in ["critical", "high", "medium", "low", "info"]:
         sev_data.append([sev.upper(), str(sev_counts[sev])])
 
@@ -170,14 +182,53 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
     elements.append(sev_tbl)
     elements.append(Spacer(1, 0.8 * cm))
 
+    # ── Score breakdown pe 4 categorii ──
+    breakdown = getattr(scan, "score_breakdown", None) or {}
+    if breakdown:
+        elements.append(Paragraph("Score breakdown pe categorii", h2_style))
+        breakdown_rows = [["Categorie", "Pondere", "Sub-scor"]]
+        cat_labels = [
+            ("critical_risk",    "Risc critic",       "40%"),
+            ("network_exposure", "Expunere retea",    "30%"),
+            ("hygiene",          "Igiena sistem",     "20%"),
+            ("activity",         "Activitate suspecta", "10%"),
+        ]
+        for key, label, pct in cat_labels:
+            val = breakdown.get(key, 0)
+            breakdown_rows.append([label, pct, f"{val}/100"])
+        bd_tbl = Table(breakdown_rows, colWidths=[7 * cm, 4 * cm, 5 * cm])
+        bd_style_cmds = [
+            ("BACKGROUND", (0, 0), (-1, 0), PLUM),
+            ("TEXTCOLOR", (0, 0), (-1, 0), CREAM),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 10),
+            ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ]
+        for i, (_, _, _) in enumerate(cat_labels, start=1):
+            val = breakdown.get(cat_labels[i - 1][0], 0)
+            sev = "critical" if val >= 75 else "high" if val >= 50 else "medium" if val >= 25 else "low" if val > 0 else "info"
+            bd_style_cmds.append(("TEXTCOLOR", (2, i), (2, i), SEVERITY_COLOR.get(sev, MUTED)))
+            bd_style_cmds.append(("FONTNAME", (2, i), (2, i), "Helvetica-Bold"))
+        bd_tbl.setStyle(TableStyle(bd_style_cmds))
+        elements.append(bd_tbl)
+        elements.append(Paragraph(
+            f"<font size=8 color='{MUTED.hexval()}'>"
+            "Scor agregat = 0.40 * Risc critic + 0.30 * Expunere retea + 0.20 * Igiena + 0.10 * Activitate"
+            "</font>", small_style))
+        elements.append(Spacer(1, 0.6 * cm))
+
     # ── Findings detaliate ──
     elements.append(PageBreak())
-    elements.append(Paragraph("Vulnerabilități detectate", h2_style))
+    elements.append(Paragraph("Vulnerabilitati detectate", h2_style))
     elements.append(Spacer(1, 0.3 * cm))
 
     if not findings:
         elements.append(Paragraph(
-            "<font color='#7a9a5a'>✓</font> Sistem curat — nicio vulnerabilitate detectată.",
+            "<font color='#7a9a5a'>OK</font> Sistem curat - nicio vulnerabilitate detectata.",
             body_style,
         ))
     else:
@@ -219,7 +270,7 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
         targets = ", ".join(nmap.get("targets", []) or [])
         elements.append(Paragraph(f"<b>Targets:</b> {_escape_html(targets)}", small_style))
         elements.append(Paragraph(
-            f"<b>Durată:</b> {nmap.get('scan_time_sec', '?')}s · "
+            f"<b>Durata:</b> {nmap.get('scan_time_sec', '?')}s - "
             f"{len(nmap['hosts'])} host-uri descoperite", small_style))
         elements.append(Spacer(1, 0.4 * cm))
 
@@ -260,7 +311,7 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     elements.append(Paragraph(
         f"<font size=8 color='{MUTED.hexval()}'>"
-        f"Generat de VulnWatch · {generated_at}</font>",
+        f"Generat de VulnWatch - {generated_at}</font>",
         small_style,
     ))
 

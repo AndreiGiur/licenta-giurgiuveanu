@@ -18,6 +18,7 @@ Componente reutilizabile, folosite de mai multe pagini.
 | `ScheduleForm.tsx`   | **Form pentru creare schedule scan** (folosit in Devices.tsx, sectiunea "Planificare"). Selecte: scan_type (standard/advanced/deep), frequency (daily/weekly/monthly), zi (DOW pentru weekly, DOM 1-28 pentru monthly), hour (0-23 UTC). Buton "+ Adauga" → POST `/devices/{uid}/schedules`. Validare client minimala (backend respinge corect). |
 | `ProtectedRoute.tsx` (update) | + prop `requireAdmin?: boolean` — daca true, dupa `fetchMe()` verifica `me.role === "admin"`; daca nu, redirect catre `/dashboard` (fara mesaj de eroare, deoarece linkul nici nu apare in UI pentru non-admin). |
 | `Navbar.tsx` (update) | + link "Profil" (vizibil pentru toti utilizatorii autentificati). + buton "⚙ Admin" distinct (background accent, weight 700) vizibil DOAR pentru `me.role === "admin"`. Refresh `me` la schimbare pathname. |
+| `ScoreBreakdownBars.tsx` | **Componenta noua (2026-05-19)**: 4 bare orizontale pentru sub-scorurile pe categorii (critical_risk/network_exposure/hygiene/activity). Fiecare row: label + pondere (40%/30%/20%/10%) + bara animata Framer Motion + valoare 0-100. Culoarea barii dupa severitate (plum >=75, raspberry >=50, honey >=25, lavender otherwise). Prop `compact` reduce padding/gap. Folosit in Dashboard si ScanDetail. |
 
 ## Pattern de folosire
 

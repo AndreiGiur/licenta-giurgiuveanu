@@ -1,5 +1,19 @@
 export type ScanType = "standard" | "advanced" | "deep";
 
+export type ScoreBreakdown = {
+  critical_risk: number;
+  network_exposure: number;
+  hygiene: number;
+  activity: number;
+};
+
+export const SCORE_CATEGORIES: { key: keyof ScoreBreakdown; label: string; weight: number }[] = [
+  { key: "critical_risk",    label: "Risc critic",       weight: 0.40 },
+  { key: "network_exposure", label: "Expunere retea",    weight: 0.30 },
+  { key: "hygiene",          label: "Igiena sistem",     weight: 0.20 },
+  { key: "activity",         label: "Activitate suspecta", weight: 0.10 },
+];
+
 export type Finding = {
   rule_id: string;
   title: string;
@@ -57,6 +71,7 @@ export type ScanDetailResponse = {
   device_name: string;
   created_at: string;
   exposure_score: number;
+  score_breakdown?: ScoreBreakdown | null;
   findings: Finding[];
   payload?: ScanPayload;
   scan_type?: ScanType;

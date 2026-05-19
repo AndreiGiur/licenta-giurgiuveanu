@@ -21,7 +21,7 @@ def test_nmap_lua_findings_passthrough():
         "processes": [],
         "software": [],
     }
-    score, findings = evaluate(scan)
+    score, _, findings = evaluate(scan)
     nmap_findings = [f for f in findings if f.get("source") == "nmap-lua"]
     assert len(nmap_findings) == 1
     assert nmap_findings[0]["rule_id"] == "NMAP-CVE-2017-0144"
@@ -37,7 +37,7 @@ def test_nmap_lua_no_findings_when_no_nmap_data():
         "processes": [],
         "software": [],
     }
-    score, findings = evaluate(scan)
+    score, _, findings = evaluate(scan)
     nmap_findings = [f for f in findings if f.get("source") == "nmap-lua"]
     assert len(nmap_findings) == 0
 
@@ -57,6 +57,6 @@ def test_nmap_lua_skipped_for_standard_scan():
         "processes": [],
         "software": [],
     }
-    score, findings = evaluate(scan)
+    score, _, findings = evaluate(scan)
     nmap_findings = [f for f in findings if f.get("source") == "nmap-lua"]
     assert len(nmap_findings) == 0

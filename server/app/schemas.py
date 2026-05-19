@@ -68,11 +68,20 @@ class ScanIn(BaseModel):
     nmap: Dict[str, Any] | None = None
 
 
+class ScoreBreakdown(BaseModel):
+    """Sub-scoruri 0-100 per categorie."""
+    critical_risk: int = 0
+    network_exposure: int = 0
+    hygiene: int = 0
+    activity: int = 0
+
+
 class ScanCreateOut(BaseModel):
     scan_id: int
     device_uid: str
     device_name: str
     exposure_score: int
+    score_breakdown: ScoreBreakdown | None = None
     findings: List[Dict[str, Any]]
 
 
@@ -88,6 +97,7 @@ class ScanDetailOut(BaseModel):
     device_name: str
     created_at: str
     exposure_score: int
+    score_breakdown: ScoreBreakdown | None = None
     findings: List[Dict[str, Any]]
     payload: Dict[str, Any] = {}
     scan_type: str = "standard"
@@ -128,6 +138,7 @@ class JobResultIn(BaseModel):
     system_info: Dict[str, Any] = {}
     persistence: Dict[str, Any] | None = None
     forensics: Dict[str, Any] | None = None
+    nmap: Dict[str, Any] | None = None
 
 
 class JobFailureIn(BaseModel):

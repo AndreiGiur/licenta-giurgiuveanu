@@ -26,6 +26,9 @@ server/static/agent/*.exe
 # Pytest
 .pytest_cache/
 
+# Logs locale
+*.log
+
 # OS
 .DS_Store
 Thumbs.db

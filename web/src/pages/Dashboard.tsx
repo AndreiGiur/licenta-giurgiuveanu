@@ -6,6 +6,7 @@ import { getScan, listDeviceScans, listScanJobs } from "../api/exposure";
 import type { DeviceScanListItem, ScanDetailResponse, ScanJobResponse } from "../api/types";
 import Navbar from "../components/Navbar";
 import { ScoreGauge } from "../components/ScoreGauge";
+import { ScoreBreakdownBars } from "../components/ScoreBreakdownBars";
 
 type DeviceListItem = {
   id: number;
@@ -275,6 +276,18 @@ export default function Dashboard() {
                 <div className="count-label">Low</div>
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {/* ── Score breakdown 4 categorii ── */}
+        {detail?.score_breakdown && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            style={{ marginTop: 16 }}
+          >
+            <ScoreBreakdownBars breakdown={detail.score_breakdown} />
           </motion.div>
         )}
 

@@ -8,18 +8,32 @@ Adaugare regula noua = decoreaza o functie. Zero modificari in alte parti.
 """
 from __future__ import annotations
 
-import math
 from typing import Any, Callable
 
 SEVERITY_WEIGHT: dict[str, int] = {
     "critical": 40,
-    "high": 25,
-    "medium": 15,
-    "low": 5,
+    "high": 20,
+    "medium": 10,
+    "low": 3,
     "info": 0,
 }
 
 LEVEL_ORDER: dict[str, int] = {"standard": 0, "advanced": 1, "deep": 2}
+
+CATEGORIES: tuple[str, ...] = (
+    "critical_risk",
+    "network_exposure",
+    "hygiene",
+    "activity",
+)
+
+# Ponderi pentru agregarea finala (suma = 1.0).
+CATEGORY_AGGREGATE_WEIGHT: dict[str, float] = {
+    "critical_risk":    0.40,
+    "network_exposure": 0.30,
+    "hygiene":          0.20,
+    "activity":         0.10,
+}
 
 # Tip pentru o functie-regula: primeste scan dict, returneaza None / dict / list[dict].
 RuleFn = Callable[[dict[str, Any]], "dict | list[dict] | None"]
@@ -29,41 +43,78 @@ RuleFn = Callable[[dict[str, Any]], "dict | list[dict] | None"]
 _RULES: list[RuleFn] = []
 
 
-def rule(rule_id: str, min_level: str = "standard") -> Callable[[RuleFn], RuleFn]:
-    """Decorator: marcheaza o functie ca regula si o inregistreaza in _RULES."""
+def rule(
+    rule_id: str,
+    min_level: str = "standard",
+    category: str = "hygiene",
+    weight: float = 1.0,
+    confidence: float = 1.0,
+) -> Callable[[RuleFn], RuleFn]:
+    """Decorator: marcheaza o functie ca regula si o inregistreaza in _RULES.
+
+    `category`: una din `CATEGORIES` — determina sub-scorul in care contribuie.
+    `weight`: multiplicator per-regula peste severity (default 1.0).
+    `confidence`: penalizare pentru reguli cu fals-pozitivi (0-1, default 1.0).
+    """
     if min_level not in LEVEL_ORDER:
         raise ValueError(f"min_level invalid: {min_level!r}")
+    if category not in CATEGORIES:
+        raise ValueError(f"category invalid: {category!r}, asteptat unul din {CATEGORIES}")
+    if not (0.0 <= confidence <= 1.0):
+        raise ValueError(f"confidence trebuie in [0, 1], dat: {confidence}")
+    if weight <= 0:
+        raise ValueError(f"weight trebuie > 0, dat: {weight}")
 
     def decorator(fn: RuleFn) -> RuleFn:
         fn._rule_id = rule_id        # type: ignore[attr-defined]
         fn._min_level = min_level    # type: ignore[attr-defined]
+        fn._category = category      # type: ignore[attr-defined]
+        fn._weight = weight          # type: ignore[attr-defined]
+        fn._confidence = confidence  # type: ignore[attr-defined]
         _RULES.append(fn)
         return fn
 
     return decorator
 
 
-def evaluate(scan: dict[str, Any]) -> tuple[int, list[dict[str, Any]]]:
+def evaluate(scan: dict[str, Any]) -> tuple[int, dict[str, int], list[dict[str, Any]]]:
     """Ruleaza toate regulile aplicabile pentru `scan["scan_type"]`.
-    Returneaza (exposure_score 0-100, lista de findings)."""
+
+    Returneaza tuple:
+      - exposure_score (0-100, agregat ponderat pe categorii)
+      - breakdown dict {category: score 0-100}
+      - lista de findings (fiecare cu `_category`, `_rule_weight`, `_rule_confidence`)
+    """
     scan_type = scan.get("scan_type", "standard")
     level = LEVEL_ORDER.get(scan_type, 0)
 
     findings: list[dict[str, Any]] = []
+    # Acumulator raw per categorie (inainte de cap).
+    cat_raw: dict[str, float] = {c: 0.0 for c in CATEGORIES}
+
     for fn in _RULES:
         if LEVEL_ORDER.get(fn._min_level, 0) > level:
             continue
         result = fn(scan)
         if result is None:
             continue
-        if isinstance(result, list):
-            findings.extend(result)
-        else:
-            findings.append(result)
+        items = result if isinstance(result, list) else [result]
+        for f in items:
+            # Anoteaza fiecare finding cu metadata regulii sursa (util pentru UI).
+            f["category"] = fn._category
+            f["rule_weight"] = fn._weight
+            f["rule_confidence"] = fn._confidence
+            sev_w = SEVERITY_WEIGHT.get(f.get("severity", "info"), 0)
+            cat_raw[fn._category] += sev_w * fn._weight * fn._confidence
+            findings.append(f)
 
-    raw = sum(SEVERITY_WEIGHT.get(f.get("severity", "info"), 0) for f in findings)
-    exposure_score = min(100, round(100 * (1 - math.exp(-raw / 60))))
-    return exposure_score, findings
+    # Cap per categorie la 100, apoi agregat ponderat.
+    breakdown: dict[str, int] = {c: min(100, round(cat_raw[c])) for c in CATEGORIES}
+    exposure_score = round(sum(
+        CATEGORY_AGGREGATE_WEIGHT[c] * breakdown[c] for c in CATEGORIES
+    ))
+    exposure_score = max(0, min(100, exposure_score))
+    return exposure_score, breakdown, findings
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,7 +122,7 @@ def evaluate(scan: dict[str, Any]) -> tuple[int, list[dict[str, Any]]]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@rule("NET-OPEN-PORTS-1", min_level="standard")
+@rule("NET-OPEN-PORTS-1", min_level="standard", category="network_exposure", weight=1.5)
 def check_risky_ports(scan: dict) -> dict | None:
     RISKY_PORTS: dict[int, str] = {
         21:   "FTP – transfer fisiere necriptat",
@@ -101,7 +152,7 @@ def check_risky_ports(scan: dict) -> dict | None:
     }
 
 
-@rule("NET-MANY-PORTS-2", min_level="standard")
+@rule("NET-MANY-PORTS-2", min_level="standard", category="network_exposure", weight=1.0)
 def check_many_ports(scan: dict) -> dict | None:
     open_ports = scan.get("network", {}).get("open_ports", []) or []
     if len(open_ports) <= 20:
@@ -118,7 +169,7 @@ def check_many_ports(scan: dict) -> dict | None:
     }
 
 
-@rule("OS-ADMIN-1", min_level="standard")
+@rule("OS-ADMIN-1", min_level="standard", category="hygiene", weight=0.8)
 def check_admin_session(scan: dict) -> dict | None:
     os_info = scan.get("os", {}) or {}
     if os_info.get("is_admin") is not True:
@@ -135,7 +186,7 @@ def check_admin_session(scan: dict) -> dict | None:
     }
 
 
-@rule("PROC-SUSPICIOUS-1", min_level="standard")
+@rule("PROC-SUSPICIOUS-1", min_level="standard", category="critical_risk", weight=1.5)
 def check_suspicious_processes(scan: dict) -> dict | None:
     SUSPICIOUS_PROCS: dict[str, str] = {
         "nc.exe":           "Netcat – tool de retea, frecvent abuzat",
@@ -166,7 +217,7 @@ def check_suspicious_processes(scan: dict) -> dict | None:
     }
 
 
-@rule("PROC-POWERSHELL-2", min_level="standard")
+@rule("PROC-POWERSHELL-2", min_level="standard", category="activity", weight=0.3)
 def check_powershell_running(scan: dict) -> dict | None:
     procs = scan.get("processes", []) or []
     proc_names = {p.get("name", "").lower() for p in procs}
@@ -186,7 +237,7 @@ def check_powershell_running(scan: dict) -> dict | None:
     }
 
 
-@rule("SW-VULNERABLE-1", min_level="standard")
+@rule("SW-VULNERABLE-1", min_level="standard", category="critical_risk", weight=1.5)
 def check_vulnerable_software(scan: dict) -> list[dict]:
     VULNERABLE_SOFTWARE: list[dict] = [
         {"name_contains": "Adobe Flash",        "severity": "critical", "cve": "multiple",       "note": "EOL din 2020, nu mai primeste patch-uri"},
@@ -217,7 +268,7 @@ def check_vulnerable_software(scan: dict) -> list[dict]:
     return out
 
 
-@rule("OS-EOL-1", min_level="standard")
+@rule("OS-EOL-1", min_level="standard", category="critical_risk", weight=1.5)
 def check_eol_os(scan: dict) -> dict | None:
     OS_EOL = [
         {"system": "Windows", "rel": "XP",    "severity": "critical"},
@@ -253,7 +304,7 @@ def check_eol_os(scan: dict) -> dict | None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@rule("FW-DISABLED-1", min_level="standard")
+@rule("FW-DISABLED-1", min_level="standard", category="hygiene", weight=1.2)
 def check_firewall_disabled(scan: dict) -> dict | None:
     profiles = (scan.get("system_info", {}) or {}).get("firewall", {}).get("profiles", {})
     disabled = [p for p in ("domain", "public") if profiles.get(p) is False]
@@ -270,7 +321,7 @@ def check_firewall_disabled(scan: dict) -> dict | None:
     }
 
 
-@rule("USER-ADMIN-1", min_level="standard")
+@rule("USER-ADMIN-1", min_level="standard", category="hygiene", weight=1.0)
 def check_extra_admins(scan: dict) -> dict | None:
     users = (scan.get("system_info", {}) or {}).get("local_users", []) or []
     current = (scan.get("os", {}) or {}).get("username", "").lower()
@@ -293,7 +344,7 @@ def check_extra_admins(scan: dict) -> dict | None:
     }
 
 
-@rule("STARTUP-SUSPICIOUS-1", min_level="advanced")
+@rule("STARTUP-SUSPICIOUS-1", min_level="advanced", category="activity", weight=0.7, confidence=0.7)
 def check_suspicious_startup(scan: dict) -> dict | None:
     startup = (scan.get("persistence", {}) or {}).get("startup", []) or []
     SUSP = ("%temp%", "%appdata%", "\\temp\\", "\\appdata\\local\\temp",
@@ -315,7 +366,7 @@ def check_suspicious_startup(scan: dict) -> dict | None:
     }
 
 
-@rule("TASK-SUSPICIOUS-1", min_level="advanced")
+@rule("TASK-SUSPICIOUS-1", min_level="advanced", category="activity", weight=1.0)
 def check_suspicious_tasks(scan: dict) -> dict | None:
     tasks = (scan.get("persistence", {}) or {}).get("tasks", []) or []
     FLAGS = ("-enc ", "-encodedcommand", " -e ")
@@ -337,7 +388,7 @@ def check_suspicious_tasks(scan: dict) -> dict | None:
     }
 
 
-@rule("SVC-SUSPICIOUS-1", min_level="advanced")
+@rule("SVC-SUSPICIOUS-1", min_level="advanced", category="activity", weight=0.8)
 def check_suspicious_services(scan: dict) -> dict | None:
     services = (scan.get("persistence", {}) or {}).get("services", []) or []
     STD = ("c:\\windows\\", "c:\\program files\\", "c:\\program files (x86)\\")
@@ -360,7 +411,7 @@ def check_suspicious_services(scan: dict) -> dict | None:
     }
 
 
-@rule("NET-SHARE-1", min_level="advanced")
+@rule("NET-SHARE-1", min_level="advanced", category="network_exposure", weight=1.0)
 def check_network_shares(scan: dict) -> dict | None:
     shares = (scan.get("network", {}) or {}).get("shares", []) or []
     DEFAULT = {"admin$", "ipc$", "c$", "d$", "e$", "print$"}
@@ -378,7 +429,7 @@ def check_network_shares(scan: dict) -> dict | None:
     }
 
 
-@rule("PS-POLICY-1", min_level="advanced")
+@rule("PS-POLICY-1", min_level="advanced", category="activity", weight=0.8)
 def check_ps_policy(scan: dict) -> dict | None:
     policy = (scan.get("persistence", {}) or {}).get("ps_policy", "")
     if not policy or policy.lower() not in ("bypass", "unrestricted"):
@@ -394,7 +445,7 @@ def check_ps_policy(scan: dict) -> dict | None:
     }
 
 
-@rule("NET-ESTABLISHED-1", min_level="advanced")
+@rule("NET-ESTABLISHED-1", min_level="advanced", category="network_exposure", weight=0.7)
 def check_established_connections(scan: dict) -> dict | None:
     conns = (scan.get("network", {}) or {}).get("connections", []) or []
     PRIVATE = ("10.", "127.", "192.168.", "169.254.", "::1", "fe80:",
@@ -424,7 +475,7 @@ def check_established_connections(scan: dict) -> dict | None:
     }
 
 
-@rule("REG-HIJACK-1", min_level="deep")
+@rule("REG-HIJACK-1", min_level="deep", category="critical_risk", weight=2.0)
 def check_registry_hijack(scan: dict) -> dict | None:
     reg = (scan.get("persistence", {}) or {}).get("reg_persistence", {}) or {}
     suspicious = {k: v for k, v in reg.items() if v}
@@ -441,7 +492,7 @@ def check_registry_hijack(scan: dict) -> dict | None:
     }
 
 
-@rule("WMI-PERSIST-1", min_level="deep")
+@rule("WMI-PERSIST-1", min_level="deep", category="critical_risk", weight=2.0)
 def check_wmi_persistence(scan: dict) -> dict | None:
     subs = (scan.get("persistence", {}) or {}).get("wmi_subscriptions", []) or []
     if not subs:
@@ -457,7 +508,7 @@ def check_wmi_persistence(scan: dict) -> dict | None:
     }
 
 
-@rule("CERT-UNTRUSTED-1", min_level="deep")
+@rule("CERT-UNTRUSTED-1", min_level="deep", category="hygiene", weight=1.0)
 def check_untrusted_certs(scan: dict) -> dict | None:
     certs = (scan.get("forensics", {}) or {}).get("certificates", []) or []
     KNOWN = ("microsoft", "digicert", "comodo", "sectigo", "verisign",
@@ -486,7 +537,7 @@ def check_untrusted_certs(scan: dict) -> dict | None:
     }
 
 
-@rule("AV-DISABLED-1", min_level="deep")
+@rule("AV-DISABLED-1", min_level="deep", category="hygiene", weight=1.2)
 def check_av_disabled(scan: dict) -> dict | None:
     defender = (scan.get("system_info", {}) or {}).get("defender", {})
     if not defender:
@@ -510,7 +561,7 @@ def check_av_disabled(scan: dict) -> dict | None:
     }
 
 
-@rule("EVENTLOG-BRUTEFORCE-1", min_level="deep")
+@rule("EVENTLOG-BRUTEFORCE-1", min_level="deep", category="activity", weight=1.2)
 def check_brute_force(scan: dict) -> dict | None:
     events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
     failures = [e for e in events if e.get("event_id") == 4625]
@@ -528,7 +579,7 @@ def check_brute_force(scan: dict) -> dict | None:
     }
 
 
-@rule("EVENTLOG-PRIVESC-1", min_level="deep")
+@rule("EVENTLOG-PRIVESC-1", min_level="deep", category="activity", weight=1.0)
 def check_privesc(scan: dict) -> dict | None:
     events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
     SYS = {"system", "local service", "network service", "administrator", ""}
@@ -552,7 +603,7 @@ def check_privesc(scan: dict) -> dict | None:
     }
 
 
-@rule("HOSTS-TAMPERED-1", min_level="deep")
+@rule("HOSTS-TAMPERED-1", min_level="deep", category="activity", weight=1.0)
 def check_hosts_tampered(scan: dict) -> dict | None:
     entries = (scan.get("forensics", {}) or {}).get("hosts", []) or []
     OK = {("127.0.0.1", "localhost"), ("::1", "localhost"),
@@ -575,7 +626,7 @@ def check_hosts_tampered(scan: dict) -> dict | None:
     }
 
 
-@rule("BITLOCKER-OFF-1", min_level="deep")
+@rule("BITLOCKER-OFF-1", min_level="deep", category="hygiene", weight=1.0)
 def check_bitlocker_off(scan: dict) -> dict | None:
     volumes = (scan.get("system_info", {}) or {}).get("bitlocker", []) or []
     sys_vols = [
@@ -596,7 +647,7 @@ def check_bitlocker_off(scan: dict) -> dict | None:
     }
 
 
-@rule("NMAP-LUA-1", min_level="deep")
+@rule("NMAP-LUA-1", min_level="deep", category="critical_risk", weight=1.0)
 def collect_nmap_lua_findings(scan: dict) -> list[dict] | None:
     """Wrapper pass-through pentru finding-urile emise de scriptul NSE custom
     `vulnwatch-audit.nse`. Lua a decis deja severitatea; Python doar le muta

@@ -30,8 +30,9 @@ Rulare: `python -m pytest server/tests` (din radacina repo-ului).
 | `test_reports.py`               | 4     | Endpoint `GET /scans/{id}/report.pdf`: PDF valid (`%PDF-` signature, > 1KB), 404 pentru non-owner, admin bypass, sectiunea nmap creste dimensiunea PDF. |
 | `test_scheduler.py`             | 11    | `compute_next_run` pentru daily/weekly/monthly (cap la 28); CRUD endpoints `/devices/{uid}/schedules`; weekly fara `day_of_week` → 400; max 5 schedules/user; izolare multi-tenant (user B nu poate face schedule pe device-ul lui A). |
 | `test_profile_endpoints.py`     | 8     | `/me/stats` (empty + with data), `/me/sessions` (current marker + revoke), `/me/password` (change ok + wrong old → 401), `/admin/stats` (platform metrics + 403 pentru user normal). |
+| `test_scoring_breakdown.py`     | 12    | **Noul scoring multidimensional**: `evaluate()` returneaza 3-tuple, breakdown dict are exact 4 categorii (CATEGORIES), agregate weights insumate = 1.0, cap per categorie la 100, scor agregat foloseste ponderi 0.40/0.30/0.20/0.10, findings primesc metadata `category`+`rule_weight`+`rule_confidence`, confidence penalty aplicat la STARTUP-SUSPICIOUS, SEVERITY_WEIGHT actualizat (critical=40, high=20, medium=10, low=3), toate regulile au atribute valide, decorator rejecteaza category invalid + confidence invalid. |
 
-## Total: 142 teste end-to-end + 63 unit tests in `agent/tests/` = **205 teste**.
+## Total: 154 teste end-to-end + 63 unit tests in `agent/tests/` = **217 teste**.
 
 ## Pattern important
 

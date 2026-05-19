@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Navbar from "../components/Navbar";
-import UserAvatar from "../components/UserAvatar";
+import { UserAvatar } from "../components/UserAvatar";
 import { fetchMe, type Me } from "../api/auth";
 import {
   getUserStats, listMySessions, revokeSession, changePassword,
