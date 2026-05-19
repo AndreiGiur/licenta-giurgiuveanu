@@ -722,6 +722,25 @@ body {
   padding: 6px;
 }
 
+.deep-settings { margin-top: 10px; font-size: 12px; }
+.deep-settings .warn-banner {
+  background: rgba(244, 201, 93, 0.10);
+  border: 1px solid var(--accent);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+.deep-settings .warn-banner a { color: var(--accent); margin-left: 6px; }
+.deep-settings .lan-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.deep-settings .lan-toggle input[type="checkbox"] { accent-color: var(--accent); }
+.muted { color: var(--text-muted); font-size: 12px; }
+
 .job-progress { margin-top: 12px; }
 .job-progress-bar {
   width: 100%;

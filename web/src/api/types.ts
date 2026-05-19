@@ -70,6 +70,47 @@ export type ScanJobStatus =
   | "failed"
   | "cancelled";
 
+export type ScanJobPreview = {
+  detected_subnet: string | null;
+  nmap_installed: boolean;
+  estimated_hosts: number;
+  estimated_duration_sec: number;
+};
+
+export type NmapFinding = {
+  rule_id: string;
+  severity: string;
+  title: string;
+  evidence: Record<string, unknown>;
+};
+
+export type NmapHost = {
+  ip: string;
+  hostname: string;
+  state: string;
+  os_guess: string;
+  ports: Array<{
+    port: number;
+    proto: string;
+    state: string;
+    service: string;
+    version: string;
+    cpe: string;
+  }>;
+  vulnwatch_findings: NmapFinding[];
+  topology: { role: string; risk_score: number; reasons: string[] };
+};
+
+export type NmapData = {
+  version: string;
+  scan_time_sec: number | null;
+  targets: string[];
+  lan_opt_in: boolean;
+  lua_errors: string[];
+  hosts: NmapHost[];
+  error?: string;
+};
+
 export type ScanJobResponse = {
   job_id: number;
   device_uid: string;

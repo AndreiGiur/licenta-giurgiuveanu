@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import Navbar from "../components/Navbar";
 import { apiDelete, apiGet, API_BASE_URL } from "../api/http";
-import { requestScan, getScanJob, getAgentDownloadInfo } from "../api/exposure";
-import type { Device, ScanJobResponse, ScanType } from "../api/types";
+import { requestScan, getScanJob, getAgentDownloadInfo, getScanJobPreview } from "../api/exposure";
+import type { Device, ScanJobPreview, ScanJobResponse, ScanType } from "../api/types";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -47,6 +47,10 @@ export default function Devices() {
   const [jobNotice, setJobNotice] = useState<Record<string, string>>({});
   // Map device_uid -> tipul de scanare ales pentru urmatoarea cerere.
   const [scanTypeByDevice, setScanTypeByDevice] = useState<Record<string, ScanType>>({});
+  // Map device_uid -> preview info pentru scan deep (nmap installed, subnet detectat).
+  const [previewByDevice, setPreviewByDevice] = useState<Record<string, ScanJobPreview | null>>({});
+  // Map device_uid -> opt-in pentru scanarea LAN (doar pentru scan deep).
+  const [lanOptInByDevice, setLanOptInByDevice] = useState<Record<string, boolean>>({});
   // Tinem ref-uri ca sa anulam polling-urile la unmount.
   const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -67,6 +71,17 @@ export default function Devices() {
       clearInterval(refresh);
     };
   }, []);
+
+  // Fetch preview pentru orice device cu scan_type deep selectat (cache local).
+  useEffect(() => {
+    for (const [uid, type] of Object.entries(scanTypeByDevice)) {
+      if (type === "deep" && !(uid in previewByDevice)) {
+        getScanJobPreview(uid)
+          .then(p => setPreviewByDevice(prev => ({ ...prev, [uid]: p })))
+          .catch(() => setPreviewByDevice(prev => ({ ...prev, [uid]: null })));
+      }
+    }
+  }, [scanTypeByDevice, previewByDevice]);
 
   async function loadDevices() {
     setLoading(true);
@@ -158,10 +173,23 @@ export default function Devices() {
 
   async function handleScanNow(deviceUid: string) {
     const scanType = scanTypeByDevice[deviceUid] ?? "standard";
+    let nmapTarget: string | null = null;
+    if (scanType === "deep") {
+      const preview = previewByDevice[deviceUid];
+      const lanOptIn = lanOptInByDevice[deviceUid] ?? false;
+      if (lanOptIn && preview?.detected_subnet) {
+        const ok = window.confirm(
+          `Vei scana ~${preview.estimated_hosts} IP-uri din reteaua ta locala ` +
+          `(${preview.detected_subnet}). Asigura-te ca ai autorizare sa faci asta. Continui?`
+        );
+        if (!ok) return;
+        nmapTarget = preview.detected_subnet;
+      }
+    }
     setJobNotice(prev => ({ ...prev, [deviceUid]: `Se cere scanare ${scanType}...` }));
     stopPolling(deviceUid);
     try {
-      const job = await requestScan(deviceUid, scanType);
+      const job = await requestScan(deviceUid, scanType, nmapTarget);
       setActiveJob(prev => ({ ...prev, [deviceUid]: job }));
       setJobNotice(prev => ({
         ...prev,
@@ -341,6 +369,40 @@ export default function Devices() {
                       : "Scanează acum"}
                   </button>
                 </div>
+
+                {selectedType === "deep" && (
+                  <div className="deep-settings">
+                    {(() => {
+                      const preview = previewByDevice[d.device_uid];
+                      if (preview === undefined) return <div className="muted">Verificare nmap…</div>;
+                      if (preview === null) return <div className="muted">Preview indisponibil.</div>;
+                      if (!preview.nmap_installed) {
+                        return (
+                          <div className="warn-banner">
+                            ⚠ nmap nu este instalat pe acest device.{" "}
+                            <a href="https://nmap.org/download.html" target="_blank" rel="noreferrer">
+                              Instalează nmap
+                            </a> şi reporneşte agentul.
+                          </div>
+                        );
+                      }
+                      return (
+                        <label className="lan-toggle">
+                          <input
+                            type="checkbox"
+                            checked={lanOptInByDevice[d.device_uid] ?? false}
+                            onChange={e => setLanOptInByDevice(prev => ({
+                              ...prev, [d.device_uid]: e.target.checked,
+                            }))}
+                          />
+                          Include LAN: {preview.detected_subnet ?? "(subnet nedetectat)"}{" — "}
+                          ~{preview.estimated_hosts} hosts,
+                          ~{Math.max(1, Math.round(preview.estimated_duration_sec / 60))} min
+                        </label>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 {inFlight && (
                   <div className="job-progress">

@@ -2,6 +2,7 @@ import { apiGet, apiPost } from "./client";
 import type {
   DeviceScanListItem,
   ScanDetailResponse,
+  ScanJobPreview,
   ScanJobResponse,
   ScanType,
 } from "./types";
@@ -20,10 +21,23 @@ export function getScan(scanId: number) {
 
 /** UI cere o scanare on-demand pentru un device. `scanType` controleaza
  * ce nivel de scanare ruleaza agentul (standard/advanced/deep). */
-export function requestScan(deviceUid: string, scanType: ScanType = "standard") {
-  return apiPost<{ scan_type: ScanType }, ScanJobResponse>(
+export function requestScan(
+  deviceUid: string,
+  scanType: ScanType = "standard",
+  nmapTarget?: string | null,
+) {
+  const body: { scan_type: ScanType; nmap_target?: string | null } = { scan_type: scanType };
+  if (nmapTarget) body.nmap_target = nmapTarget;
+  return apiPost<typeof body, ScanJobResponse>(
     `/devices/${encodeURIComponent(deviceUid)}/scan-jobs`,
-    { scan_type: scanType },
+    body,
+  );
+}
+
+/** Preview pentru scan deep — afla detected_subnet, nmap_installed, etc. */
+export function getScanJobPreview(deviceUid: string) {
+  return apiGet<ScanJobPreview>(
+    `/devices/${encodeURIComponent(deviceUid)}/scan-jobs/preview`,
   );
 }
 
