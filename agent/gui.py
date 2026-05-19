@@ -972,7 +972,43 @@ class AgentApp:
             pass
         self._session_token = None
 
+        # Pentru deep scan-uri (nmap + NSE) avem nevoie de Windows Service.
+        # La primul enrollment, prompt UAC daca service-ul nu e instalat.
+        try:
+            from . import service as svc_mod
+            if svc_mod._PYWIN32_AVAILABLE and not svc_mod.is_service_installed():
+                self.root.after(0, self._prompt_install_service)
+        except Exception:
+            pass
+
         self.root.after(0, self._render_root)
+
+    def _prompt_install_service(self) -> None:
+        from tkinter import messagebox
+        ok = messagebox.askyesno(
+            "Instalare serviciu VulnWatch",
+            "Pentru scan-uri Deep cu network audit (nmap + NSE Lua), agent-ul "
+            "trebuie instalat ca serviciu Windows.\n\n"
+            "Vei vedea un prompt UAC pentru aprobare. Continui?",
+        )
+        if ok:
+            self._launch_install_service()
+
+    def _launch_install_service(self) -> None:
+        """Relauncheaza exe-ul cu --install-service sub UAC."""
+        import ctypes
+        import sys
+        exe = sys.executable
+        try:
+            ret = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", exe, "--install-service", None, 1
+            )
+            if ret <= 32:
+                self._append_log("Install Service: UAC anulat sau esuat", "warn")
+            else:
+                self._append_log("Install Service: lansat cu UAC", "ok")
+        except Exception as e:
+            self._append_log(f"Install Service: {e}", "error")
 
     def _on_enroll_failure(self, error: str) -> None:
         self._enroll_btn.configure(state="normal")
@@ -1320,6 +1356,17 @@ class AgentApp:
         m.add_command(label="Schimbă cont", command=self._on_change_account)
         m.add_command(label="Deconectează acest PC", command=self._on_disconnect_pc)
         m.add_separator()
+
+        try:
+            from . import service as svc_mod
+            if svc_mod._PYWIN32_AVAILABLE:
+                svc_installed = svc_mod.is_service_installed()
+                svc_label = ("Re-instalează serviciu Windows"
+                             if svc_installed else "Instalează serviciu Windows (UAC)")
+                m.add_command(label=svc_label, command=self._launch_install_service)
+                m.add_separator()
+        except Exception:
+            pass
 
         m.add_command(label="Setări avansate API URL...",
                       command=self._open_api_url_modal)
