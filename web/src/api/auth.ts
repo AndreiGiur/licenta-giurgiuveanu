@@ -11,6 +11,7 @@ export type Me = {
   email: string;
   google_picture_url?: string | null;
   auth_provider?: "password" | "google" | "both";
+  role?: "user" | "admin";
 };
 
 export async function registerUser(input: { email: string; password: string }): Promise<Me> {

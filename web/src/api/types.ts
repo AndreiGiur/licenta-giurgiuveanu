@@ -71,6 +71,70 @@ export type ScanJobStatus =
   | "failed"
   | "cancelled";
 
+// ── Profile + Admin ──────────────────────────────────────────────────────────
+
+export type UserStats = {
+  device_count: number;
+  scan_count: number;
+  avg_exposure_score: number | null;
+  last_scan_at: string | null;
+  last_scan_score: number | null;
+};
+
+export type SessionInfo = {
+  id: number;
+  user_agent: string | null;
+  ip: string | null;
+  created_at: string;
+  expires_at: string | null;
+  is_current: boolean;
+};
+
+export type PlatformStats = {
+  total_users: number;
+  total_devices: number;
+  devices_online: number;
+  scans_last_24h: number;
+  scans_total: number;
+  avg_exposure_score: number | null;
+};
+
+export type AdminUserRow = {
+  id: number;
+  email: string;
+  role: "user" | "admin";
+  auth_provider: string;
+  created_at: string;
+  device_count: number;
+};
+
+export type AdminDeviceRow = {
+  id: number;
+  device_uid: string;
+  name: string;
+  owner_id: number;
+  owner_email: string;
+  created_at: string;
+  is_online: boolean;
+};
+
+export type AdminScanRow = {
+  scan_id: number;
+  device_uid: string;
+  device_name: string;
+  owner_email: string;
+  created_at: string;
+  exposure_score: number;
+  scan_type: string | null;
+};
+
+export type AdminScansPage = {
+  items: AdminScanRow[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 export type ScheduleFrequency = "daily" | "weekly" | "monthly";
 
 export type Schedule = {
