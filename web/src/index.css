@@ -1501,3 +1501,27 @@ button:focus-visible {
   outline: none;
   border-color: var(--accent);
 }
+
+/* ── Navbar Admin button ─────────────────────────────────────────────────── */
+.navbar-admin-link {
+  padding: 7px 14px;
+  background: var(--accent);
+  color: var(--text-inverse);
+  border: 1px solid var(--accent-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.navbar-admin-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(244, 201, 93, 0.30);
+}
+.navbar-admin-link.active {
+  background: var(--accent-strong);
+  box-shadow: 0 2px 8px rgba(244, 201, 93, 0.40);
+}

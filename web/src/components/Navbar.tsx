@@ -56,9 +56,24 @@ export default function Navbar() {
           >
             Dispozitive
           </button>
+          <button
+            onClick={() => navigate("/profile")}
+            className={`navbar-link ${isActive("/profile") ? "active" : ""}`}
+          >
+            Profil
+          </button>
         </div>
 
         <div className="navbar-actions">
+          {me?.role === "admin" && (
+            <button
+              onClick={() => navigate("/admin")}
+              className={`navbar-admin-link ${isActive("/admin") ? "active" : ""}`}
+              title="Administrare platforma"
+            >
+              ⚙ Admin
+            </button>
+          )}
           <ThemeToggle />
           {me && (
             <>
