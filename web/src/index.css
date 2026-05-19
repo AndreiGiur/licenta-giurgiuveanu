@@ -1424,3 +1424,80 @@ button:focus-visible {
   margin-top: 3px;
   font-family: var(--font-mono);
 }
+
+/* ── Admin page ──────────────────────────────────────────────────────────── */
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin: 24px 0 20px;
+}
+.admin-tabs button {
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 0.2s, border-color 0.2s;
+}
+.admin-tabs button:hover {
+  color: var(--text-primary);
+}
+.admin-tabs button.active {
+  color: var(--accent-strong);
+  border-bottom-color: var(--accent);
+}
+.admin-content {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px;
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.admin-table th, .admin-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.admin-table th {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  background: var(--bg);
+}
+.admin-table tr:last-child td {
+  border-bottom: none;
+}
+.admin-table tr:hover td {
+  background: var(--bg-hover);
+}
+.admin-table a {
+  color: var(--accent-strong);
+  text-decoration: none;
+  font-family: var(--font-mono);
+}
+.admin-table a:hover { text-decoration: underline; }
+.admin-select {
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+.admin-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
