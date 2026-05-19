@@ -229,3 +229,42 @@ class AdminRoleChangeIn(BaseModel):
 
 class AdminResetPasswordIn(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
+
+
+# ── Scheduler ────────────────────────────────────────────────────────────────
+
+class ScheduleIn(BaseModel):
+    scan_type: Literal["standard", "advanced", "deep"] = "standard"
+    frequency: Literal["daily", "weekly", "monthly"]
+    hour: int = Field(ge=0, le=23)
+    day_of_week: int | None = Field(default=None, ge=0, le=6)
+    day_of_month: int | None = Field(default=None, ge=1, le=28)
+    nmap_target: str | None = Field(default=None, max_length=64)
+    enabled: bool = True
+
+
+class ScheduleUpdateIn(BaseModel):
+    scan_type: Literal["standard", "advanced", "deep"] | None = None
+    frequency: Literal["daily", "weekly", "monthly"] | None = None
+    hour: int | None = Field(default=None, ge=0, le=23)
+    day_of_week: int | None = Field(default=None, ge=0, le=6)
+    day_of_month: int | None = Field(default=None, ge=1, le=28)
+    nmap_target: str | None = Field(default=None, max_length=64)
+    enabled: bool | None = None
+
+
+class ScheduleOut(BaseModel):
+    id: int
+    device_id: int
+    scan_type: str
+    frequency: str
+    hour: int
+    day_of_week: int | None
+    day_of_month: int | None
+    nmap_target: str | None
+    enabled: bool
+    next_run_at: datetime
+    last_run_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

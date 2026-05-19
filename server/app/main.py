@@ -1,15 +1,38 @@
+import asyncio
+import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .db import Base, engine
+from .db import Base, SessionLocal, engine
 from .routes import router  # importa config -> incarca .env automat
+from .scheduler import scheduler_loop
+
+logger = logging.getLogger(__name__)
 
 # In dev este ok sa cream tabelele la pornire. In productie ar trebui Alembic.
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="VulnWatch API", version="1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Pornire scheduler background (skip in teste prin DISABLE_SCHEDULER=true).
+    scheduler_task: asyncio.Task | None = None
+    if os.getenv("DISABLE_SCHEDULER", "").lower() != "true":
+        scheduler_task = asyncio.create_task(scheduler_loop(SessionLocal))
+        logger.info("Scheduler task started")
+    yield
+    if scheduler_task is not None:
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
+app = FastAPI(title="VulnWatch API", version="1.0", lifespan=lifespan)
 
 # Origins permise pentru CORS. In productie se poate seta CORS_ORIGINS,
 # o lista separata prin virgule (ex: "https://app.example.com,https://admin.example.com").

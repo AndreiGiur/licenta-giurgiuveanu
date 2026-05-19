@@ -211,5 +211,43 @@ class ScanJob(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     phase: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
+    # Sursa jobului: "manual" (cerut din UI) sau "scheduled" (creat de scheduler_loop).
+    source: Mapped[str] = mapped_column(String(16), default="manual")
+
     device: Mapped["Device"] = relationship(back_populates="scan_jobs")
     scan: Mapped["Scan | None"] = relationship(foreign_keys=[scan_id])
+
+
+class ScanSchedule(Base):
+    """Planificare scanare recurenta per device. Loop scheduler_loop ruleaza
+    in background si creeaza ScanJob-uri pentru schedule-urile due."""
+    __tablename__ = "scan_schedules"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), index=True
+    )
+
+    scan_type: Mapped[str] = mapped_column(String(16), default="standard")
+    # daily | weekly | monthly
+    frequency: Mapped[str] = mapped_column(String(16))
+    # Ora UTC 0-23 la care se ruleaza.
+    hour: Mapped[int] = mapped_column(Integer, default=3)
+    # Doar pentru frequency="weekly": 0=luni .. 6=duminica
+    day_of_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Doar pentru frequency="monthly": 1-28 (cap la 28 ca sa evitam Feb)
+    day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # LAN opt-in pentru scan deep (CIDR).
+    nmap_target: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    enabled: Mapped[bool] = mapped_column(default=True)
+    next_run_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
