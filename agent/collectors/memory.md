@@ -10,12 +10,12 @@ pentru sub-colectorii Windows-only.
 | Fisier              | Functie + scop |
 | ------------------- | -------------- |
 | `__init__.py`       | Re-export pentru `collect_network`, `collect_processes`, `collect_software`, `collect_system`, `collect_persistence`, `collect_forensics`. |
-| `network.py`        | `collect_network(cfg)` → `{open_ports, port_processes?, connections?, shares?, adapters?}`. Foloseste psutil pentru porturi+conexiuni; `net share` pentru share-uri Windows; psutil pentru adaptoare. |
+| `network.py`        | `collect_network(cfg)` → `{open_ports, port_processes?, connections?, shares?, adapters?}`. Foloseste psutil pentru porturi+conexiuni; share-uri Windows prin **`Get-SmbShare`** (PowerShell JSON) — `net share` parsing era confundat de output localizat (RO) sau text de header; psutil pentru adaptoare. Fallback `net share` cu validare path (drive letter / UNC). |
 | `processes.py`      | `collect_processes(cfg)` → `list[{pid, name, memory_percent, username, cmdline?, ppid?}]`. Sortat dupa memory_percent desc. Limita din `cfg.process_limit` (None = toate). |
 | `software.py`       | `collect_software(cfg)` → `list[{name, version}]`. Citeste 3 chei Uninstall (HKLM x64, HKLM WOW6432, HKCU). Dedupe pe (name, version). |
 | `system_info.py`    | `collect_system(cfg)` → `{system, release, version, machine, hostname, username, uptime_seconds, is_admin, firewall?, local_users?, bitlocker?, defender?}`. Firewall din registry; useri si Defender prin PowerShell. |
 | `persistence.py`    | `collect_persistence(cfg)` → `{startup?, tasks?, services?, ps_policy?, reg_persistence?, wmi_subscriptions?}`. Startup din registry direct; tasks/services/WMI prin PowerShell + `ConvertTo-Json`. `reg_persistence` cauta AppInit_DLLs / IFEO Debugger / Winlogon Userinit & Shell modificate. |
-| `forensics.py`      | `collect_forensics(cfg)` → `{event_log?, hosts?, dns_cache?, arp_table?, certificates?, recent_files?}`. Event log: ultimele 500 events 4625/4672/4720 din Security. Hosts: parsare directa. Certs: `Cert:\\LocalMachine\\Root`. Recent files: System32 + Program Files modificate in 7 zile. |
+| `forensics.py`      | `collect_forensics(cfg)` → `{event_log?, hosts?, dns_cache?, arp_table?, certificates?, recent_files?}`. Event log: ultimele 500 events 4625/4672/4720 din Security. Hosts: parsare directa cu **`utf-8-sig` encoding** (strip BOM ﻿) + skip linii goale/comentariu. Certs: `Cert:\\LocalMachine\\Root`. Recent files: System32 + Program Files modificate in 7 zile. |
 
 ## Pattern PowerShell
 

@@ -78,19 +78,62 @@ def _established_connections() -> list[dict]:
 
 
 def _network_shares() -> list[dict]:
-    shares: list[dict] = []
+    """Listare share-uri Windows. Foloseste WMI prin PowerShell pentru output
+    structurat (JSON) — `net share` are output dependent de limba sistemului
+    si parser-ul whitespace-split confunda textul de header/footer cu share-uri."""
+    out: list[dict] = []
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-SmbShare -ErrorAction SilentlyContinue | "
+             "Select-Object Name, Path | ConvertTo-Json -Compress"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            import json as _json
+            data = _json.loads(r.stdout)
+            if isinstance(data, dict):
+                data = [data]  # un singur share -> dict, nu list
+            for item in data:
+                name = (item.get("Name") or "").strip()
+                path = (item.get("Path") or "").strip()
+                if name:
+                    out.append({"name": name, "path": path})
+            return out
+    except (subprocess.SubprocessError, OSError, FileNotFoundError, ValueError):
+        pass
+
+    # Fallback: `net share` cu validare stricta — path-ul trebuie sa para o
+    # locatie de filesystem (drive letter + ":", "\\", sau "(special)" pentru
+    # share-uri admin/IPC$).
+    def _looks_like_path(s: str) -> bool:
+        if not s:
+            return False
+        s_low = s.lower()
+        # Drive letter (C:\..., D:\...), UNC (\\server\share), sau pseudo (IPC$ are loc vid).
+        if len(s) >= 2 and s[1] == ":":
+            return True
+        if s.startswith("\\\\") or s.startswith("\\"):
+            return True
+        return False
+
     try:
         r = subprocess.run(["net", "share"], capture_output=True, text=True, timeout=10)
         for line in r.stdout.splitlines():
             line = line.strip()
-            if not line or line.startswith("-") or line.lower().startswith("share name") or line.lower().startswith("the command"):
+            if not line or line.startswith("-"):
                 continue
             parts = line.split(None, 2)
-            if len(parts) >= 2:
-                shares.append({"name": parts[0], "path": parts[1] if len(parts) > 1 else ""})
+            if len(parts) < 2:
+                continue
+            name, path = parts[0], parts[1]
+            # Accept doar liniile unde "path" este o locatie filesystem valida.
+            if not _looks_like_path(path):
+                continue
+            out.append({"name": name, "path": path})
     except (subprocess.SubprocessError, OSError, FileNotFoundError):
         pass
-    return shares
+    return out
 
 
 def _adapters() -> list[dict]:

@@ -452,12 +452,32 @@ def check_established_connections(scan: dict) -> dict | None:
                "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
                "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
                "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")
-    STD_PORTS = {80, 443, 53, 22, 25, 587, 465, 993, 995, 8080, 8443}
+    STD_PORTS = {
+        80, 443, 53, 22, 25, 587, 465, 993, 995, 8080, 8443,
+        5228, 5229, 5230,  # Google FCM / push notifications
+        5223,              # XMPP (Hangouts/iCloud)
+        5222,              # XMPP plain
+        3478, 3479,        # STUN (WebRTC)
+        5061, 5060,        # SIP
+        1935,              # RTMP (streaming)
+        8009, 8008,        # Chromecast
+    }
+    # Procese cunoscute care fac multe conexiuni externe legitime.
+    KNOWN_PROCS = {
+        "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe", "safari.exe",
+        "anydesk.exe", "teamviewer.exe", "teamviewer_service.exe",
+        "teams.exe", "ms-teams.exe", "slack.exe", "discord.exe", "skype.exe", "zoom.exe",
+        "spotify.exe", "steam.exe", "epicgameslauncher.exe", "battle.net.exe",
+        "code.exe", "code - insiders.exe",
+        "outlook.exe", "thunderbird.exe",
+        "onedrive.exe", "dropbox.exe", "googledrivefs.exe",
+    }
     suspicious = [
         c for c in conns
         if c.get("remote_ip")
         and not any(c["remote_ip"].startswith(p) for p in PRIVATE)
         and c.get("remote_port", 0) not in STD_PORTS
+        and (c.get("process") or "").lower() not in KNOWN_PROCS
     ]
     if not suspicious:
         return None
@@ -478,7 +498,36 @@ def check_established_connections(scan: dict) -> dict | None:
 @rule("REG-HIJACK-1", min_level="deep", category="critical_risk", weight=2.0)
 def check_registry_hijack(scan: dict) -> dict | None:
     reg = (scan.get("persistence", {}) or {}).get("reg_persistence", {}) or {}
-    suspicious = {k: v for k, v in reg.items() if v}
+
+    # Valori default Windows pentru cheile monitorizate — NU sunt suspecte.
+    # Userinit poate avea trailing comma in valoarea default.
+    WINLOGON_DEFAULTS = {
+        "userinit": ("c:\\windows\\system32\\userinit.exe", "c:\\windows\\system32\\userinit.exe,"),
+        "shell": ("explorer.exe",),
+    }
+
+    def _is_winlogon_default(values: dict) -> bool:
+        """True daca dict Winlogon contine doar valori default Windows."""
+        if not isinstance(values, dict):
+            return False
+        for k, v in values.items():
+            k_low = k.lower()
+            v_low = (v or "").strip().lower()
+            if k_low not in WINLOGON_DEFAULTS:
+                return False  # cheie necunoscuta -> suspect
+            if v_low not in WINLOGON_DEFAULTS[k_low]:
+                return False
+        return True
+
+    # Pastram doar entry-uri non-default + non-empty.
+    suspicious: dict = {}
+    for key, value in reg.items():
+        if not value:
+            continue
+        if key == "Winlogon" and _is_winlogon_default(value):
+            continue
+        suspicious[key] = value
+
     if not suspicious:
         return None
     return {
@@ -495,13 +544,28 @@ def check_registry_hijack(scan: dict) -> dict | None:
 @rule("WMI-PERSIST-1", min_level="deep", category="critical_risk", weight=2.0)
 def check_wmi_persistence(scan: dict) -> dict | None:
     subs = (scan.get("persistence", {}) or {}).get("wmi_subscriptions", []) or []
-    if not subs:
+    # Subscriptii built-in Windows cu command vid — nu sunt malware.
+    BUILTIN_NAMES = {
+        "scm event log consumer",
+        "bvtconsumer",
+        "bvtfilter",
+        "ntevent_logbiosfilter",
+    }
+    suspicious = []
+    for s in subs:
+        cmd = (s.get("command") or "").strip()
+        name_low = (s.get("name") or "").strip().lower()
+        # Skip subscriptii cu command vid (built-in) sau cu name in lista cunoscuta.
+        if not cmd or name_low in BUILTIN_NAMES:
+            continue
+        suspicious.append(s)
+    if not suspicious:
         return None
     return {
         "rule_id": "WMI-PERSIST-1",
         "title": "Subscriptii WMI active detectate",
         "severity": "critical",
-        "evidence": {"subscriptions": [{"name": s.get("name"), "command": s.get("command")} for s in subs]},
+        "evidence": {"subscriptions": [{"name": s.get("name"), "command": s.get("command")} for s in suspicious]},
         "recommendation": (
             "Sterge cu: Get-WMIObject -Namespace root\\subscription -Class __EventFilter | Remove-WMIObject"
         ),
@@ -514,7 +578,15 @@ def check_untrusted_certs(scan: dict) -> dict | None:
     KNOWN = ("microsoft", "digicert", "comodo", "sectigo", "verisign",
              "globalsign", "entrust", "thawte", "geotrust", "symantec",
              "let's encrypt", "lets encrypt", "amazon", "google trust services",
-             "go daddy", "starfield", "identrust", "isrg")
+             "go daddy", "starfield", "identrust", "isrg",
+             # Self-signed cert-uri legit instalate de app-uri populare:
+             "blizzard", "battle.net",
+             "valve", "steam",
+             "epic games", "easyanticheat",
+             "riot games",
+             "dell", "hp inc", "lenovo",
+             "intel", "amd", "nvidia",
+             "qualcomm", "realtek")
     suspicious = [
         c for c in certs
         if not any(k in c.get("issuer", "").lower() for k in KNOWN)
@@ -606,11 +678,31 @@ def check_privesc(scan: dict) -> dict | None:
 @rule("HOSTS-TAMPERED-1", min_level="deep", category="activity", weight=1.0)
 def check_hosts_tampered(scan: dict) -> dict | None:
     entries = (scan.get("forensics", {}) or {}).get("hosts", []) or []
-    OK = {("127.0.0.1", "localhost"), ("::1", "localhost"),
-          ("127.0.0.1", "localhost.localdomain")}
+    OK = {
+        ("127.0.0.1", "localhost"), ("::1", "localhost"),
+        ("127.0.0.1", "localhost.localdomain"),
+        # Entry-uri default scrise de aplicatii populare:
+        ("127.0.0.1", "kubernetes.docker.internal"),  # Docker Desktop
+        ("127.0.0.1", "host.docker.internal"),
+        ("127.0.0.1", "gateway.docker.internal"),
+    }
+
+    def _is_clean_entry(h: dict) -> bool:
+        """Filtreaza entry-uri care nu sunt valide hosts file (BOM, comentarii, etc.)."""
+        ip = (h.get("ip") or "").strip()
+        host = (h.get("hostname") or "").strip().lower()
+        # Skip linii fara IP valid (gol, BOM, comentariu).
+        if not ip or ip.startswith("#") or "﻿" in ip:
+            return False
+        # Skip linii fara hostname valid.
+        if not host:
+            return False
+        return True
+
     suspicious = [
         h for h in entries
-        if (h.get("ip", ""), h.get("hostname", "").lower()) not in OK
+        if _is_clean_entry(h)
+        and (h.get("ip", "").strip(), h.get("hostname", "").strip().lower()) not in OK
     ]
     if not suspicious:
         return None

@@ -79,9 +79,10 @@ def _hosts_file() -> list[dict]:
     path = Path(os.environ.get("WINDIR", "C:\\Windows")) / "System32" / "drivers" / "etc" / "hosts"
     entries: list[dict] = []
     try:
-        with path.open(encoding="utf-8", errors="ignore") as f:
+        # utf-8-sig: gestioneaza UTF-8 cu BOM (﻿) la inceput de fisier.
+        with path.open(encoding="utf-8-sig", errors="ignore") as f:
             for line in f:
-                line = line.strip()
+                line = line.strip().lstrip("﻿")  # defensiv: strip BOM si pe linie
                 if not line or line.startswith("#"):
                     continue
                 parts = line.split(None, 1)
