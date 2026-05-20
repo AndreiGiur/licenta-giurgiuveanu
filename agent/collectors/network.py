@@ -10,7 +10,8 @@ from ..core import ScanProfile
 
 
 def collect_network(cfg: ScanProfile) -> dict:
-    out: dict = {"open_ports": _listen_ports()}
+    ports, bindings = _listen_ports_with_bindings()
+    out: dict = {"open_ports": ports, "port_bindings": bindings}
 
     if cfg.include_port_process:
         out["port_processes"] = _port_processes()
@@ -24,17 +25,24 @@ def collect_network(cfg: ScanProfile) -> dict:
     return out
 
 
-def _listen_ports() -> list[int]:
+def _listen_ports_with_bindings() -> tuple[list[int], list[dict]]:
+    """Returneaza:
+      - lista porturilor unice (compat backward cu vechiul `open_ports`)
+      - lista bindings [(port, bind_ip), ...] pentru analiza adresei locale
+    """
     ports: list[int] = []
+    bindings: list[dict] = []
     try:
         for conn in psutil.net_connections(kind="tcp"):
             if conn.status == psutil.CONN_LISTEN and conn.laddr:
                 p = conn.laddr.port
+                ip = conn.laddr.ip or ""
+                bindings.append({"port": p, "ip": ip})
                 if p not in ports:
                     ports.append(p)
     except (psutil.AccessDenied, PermissionError, Exception):
         pass
-    return sorted(ports)
+    return sorted(ports), bindings
 
 
 def _port_processes() -> list[dict]:

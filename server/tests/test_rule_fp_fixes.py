@@ -207,3 +207,94 @@ def test_hosts_tampered_fires_on_real_redirect():
     ]
     _, _, findings = evaluate(scan)
     assert any(f["rule_id"] == "HOSTS-TAMPERED-1" for f in findings)
+
+
+# ── AV-DISABLED-1 ──────────────────────────────────────────────────────────
+
+def test_av_disabled_skip_when_third_party_av_active():
+    """Daca utilizatorul are Bitdefender/Kaspersky/etc. activ, Defender disabled
+    e comportamentul normal Windows — nu raportam ca probleme."""
+    scan = _base_deep()
+    scan["system_info"]["defender"] = {
+        "enabled": False,
+        "signature_age_days": 0,
+        "mode": "Not running",
+        "third_party_av": [{"name": "Bitdefender Antivirus", "product_state": 266240}],
+    }
+    _, _, findings = evaluate(scan)
+    assert not any(f["rule_id"] == "AV-DISABLED-1" for f in findings)
+
+
+def test_av_disabled_fires_when_no_third_party_and_defender_off():
+    """Defender off + nici un alt AV = expunere reala."""
+    scan = _base_deep()
+    scan["system_info"]["defender"] = {
+        "enabled": False,
+        "signature_age_days": 0,
+        "mode": "Not running",
+        "third_party_av": [],
+    }
+    _, _, findings = evaluate(scan)
+    assert any(f["rule_id"] == "AV-DISABLED-1" for f in findings)
+
+
+def test_av_disabled_skip_when_defender_on():
+    scan = _base_deep()
+    scan["system_info"]["defender"] = {
+        "enabled": True,
+        "signature_age_days": 2,
+        "mode": "Normal",
+        "third_party_av": [],
+    }
+    _, _, findings = evaluate(scan)
+    assert not any(f["rule_id"] == "AV-DISABLED-1" for f in findings)
+
+
+# ── NET-OPEN-PORTS-1 (virtual adapter awareness) ───────────────────────────
+
+def test_net_open_ports_high_when_on_wildcard_bind():
+    """RDP bind pe 0.0.0.0 = expunere reala (severity high)."""
+    scan = _base_deep()
+    scan["network"]["open_ports"] = [3389]
+    scan["network"]["port_bindings"] = [{"port": 3389, "ip": "0.0.0.0"}]
+    _, _, findings = evaluate(scan)
+    risky = [f for f in findings if f["rule_id"] == "NET-OPEN-PORTS-1"]
+    assert len(risky) == 1
+    assert risky[0]["severity"] == "high"
+
+
+def test_net_open_ports_low_when_only_on_wsl_vswitch():
+    """Port 139 expus DOAR pe 172.25.x.x (WSL vSwitch) = low/info, nu high."""
+    scan = _base_deep()
+    scan["network"]["open_ports"] = [139]
+    scan["network"]["port_bindings"] = [{"port": 139, "ip": "172.25.48.1"}]
+    _, _, findings = evaluate(scan)
+    risky = [f for f in findings if f["rule_id"] == "NET-OPEN-PORTS-1"]
+    assert len(risky) == 1
+    assert risky[0]["severity"] == "low"
+    assert "virtuale" in risky[0]["title"].lower()
+
+
+def test_net_open_ports_high_when_mixed_real_and_virtual():
+    """Daca portul are si bind pe 0.0.0.0 si pe virtual, prevaleaza high."""
+    scan = _base_deep()
+    scan["network"]["open_ports"] = [139]
+    scan["network"]["port_bindings"] = [
+        {"port": 139, "ip": "172.25.48.1"},
+        {"port": 139, "ip": "0.0.0.0"},
+    ]
+    _, _, findings = evaluate(scan)
+    risky = [f for f in findings if f["rule_id"] == "NET-OPEN-PORTS-1"]
+    assert len(risky) == 1
+    assert risky[0]["severity"] == "high"
+
+
+def test_net_open_ports_fallback_high_when_no_bindings():
+    """Backward compat: scan-uri vechi fara port_bindings → severity high (cum era inainte)."""
+    scan = _base_deep()
+    scan["network"]["open_ports"] = [3389, 445]
+    # Nu includem port_bindings -> fallback
+    _, _, findings = evaluate(scan)
+    risky = [f for f in findings if f["rule_id"] == "NET-OPEN-PORTS-1"]
+    assert len(risky) == 1
+    assert risky[0]["severity"] == "high"

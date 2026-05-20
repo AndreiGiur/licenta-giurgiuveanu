@@ -147,27 +147,60 @@ def _bitlocker_status() -> list[dict]:
 
 
 def _defender_status() -> dict:
+    """Status Defender + lista AV-uri terte din SecurityCenter2.
+
+    Returneaza:
+      - `enabled`/`signature_age_days`/`mode` pentru Defender
+      - `third_party_av`: lista nume AV-uri terte cu real-time activ
+        (bit 0x1000 in productState). Daca exista, Defender disabled e NORMAL.
+    """
+    result: dict = {}
+
     out = _ps(
         "Get-MpComputerStatus | Select-Object AMRunningMode, RealTimeProtectionEnabled, "
         "AntivirusSignatureLastUpdated | ConvertTo-Json -Compress"
     )
-    if not out:
-        return {}
-    try:
-        data = json.loads(out)
-        enabled = bool(data.get("RealTimeProtectionEnabled", False))
-        sig_age = 0
-        sig_raw = str(data.get("AntivirusSignatureLastUpdated", ""))
-        if "Date(" in sig_raw:
-            try:
-                ms = int(sig_raw.split("Date(")[1].split(")")[0])
-                sig_age = int((time.time() - ms / 1000) / 86400)
-            except (ValueError, IndexError):
-                pass
-        return {
-            "enabled": enabled,
-            "signature_age_days": max(0, sig_age),
-            "mode": data.get("AMRunningMode", ""),
-        }
-    except json.JSONDecodeError:
-        return {}
+    if out:
+        try:
+            data = json.loads(out)
+            enabled = bool(data.get("RealTimeProtectionEnabled", False))
+            sig_age = 0
+            sig_raw = str(data.get("AntivirusSignatureLastUpdated", ""))
+            if "Date(" in sig_raw:
+                try:
+                    ms = int(sig_raw.split("Date(")[1].split(")")[0])
+                    sig_age = int((time.time() - ms / 1000) / 86400)
+                except (ValueError, IndexError):
+                    pass
+            result["enabled"] = enabled
+            result["signature_age_days"] = max(0, sig_age)
+            result["mode"] = data.get("AMRunningMode", "")
+        except json.JSONDecodeError:
+            pass
+
+    # SecurityCenter2: listare AV-uri inregistrate (Defender + terti).
+    # productState bit 0x1000 (4096) = real-time activ.
+    sc_out = _ps(
+        "Get-CimInstance -Namespace root\\SecurityCenter2 -ClassName AntiVirusProduct "
+        "-ErrorAction SilentlyContinue | Select-Object displayName, productState | "
+        "ConvertTo-Json -Compress"
+    )
+    third_party = []
+    if sc_out:
+        try:
+            data = json.loads(sc_out)
+            if isinstance(data, dict):
+                data = [data]
+            for item in data:
+                name = (item.get("displayName") or "").strip()
+                state = int(item.get("productState") or 0)
+                # Skip Defender (raportat separat) + skip AV-uri inactive.
+                if "windows defender" in name.lower() or "microsoft defender" in name.lower():
+                    continue
+                # Bit 0x1000 = real-time enabled. Folosim pentru a marca "activ".
+                if state & 0x1000:
+                    third_party.append({"name": name, "product_state": state})
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+    result["third_party_av"] = third_party
+    return result

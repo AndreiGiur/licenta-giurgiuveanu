@@ -135,19 +135,76 @@ def check_risky_ports(scan: dict) -> dict | None:
         5985: "WinRM HTTP – management remote Windows",
         5986: "WinRM HTTPS – management remote Windows",
     }
-    open_ports: list[int] = scan.get("network", {}).get("open_ports", []) or []
-    risky_found = {p: RISKY_PORTS[p] for p in open_ports if p in RISKY_PORTS}
-    if not risky_found:
+    # Prefixe pentru adaptoare virtuale (Hyper-V vSwitch / WSL / Docker bridge).
+    # Aceste IP-uri NU sunt accesibile din internet — sunt doar pe subnet-uri
+    # virtuale interne. Porturile expuse doar pe astfel de IP-uri primesc
+    # severitate redusa (low → "informational").
+    VIRTUAL_PREFIXES = (
+        "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
+        "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+        "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+        "169.254.",  # link-local
+        "fe80:",     # link-local IPv6
+    )
+    net = scan.get("network", {}) or {}
+    open_ports: list[int] = net.get("open_ports", []) or []
+    bindings: list[dict] = net.get("port_bindings", []) or []
+
+    def _is_public_only_virtual(port: int) -> bool:
+        """True daca portul e bind-uit DOAR pe adaptoare virtuale (nu pe
+        0.0.0.0, IP public, IP LAN tipic). Folosit pentru downgrade severitate."""
+        if not bindings:
+            return False  # fara info, fallback la high
+        ips = [b.get("ip", "") for b in bindings if b.get("port") == port]
+        if not ips:
+            return False
+        for ip in ips:
+            # Bind pe wildcard sau pe orice IP non-virtual = expunere reala.
+            if ip in ("0.0.0.0", "::", ""):
+                return False
+            if not any(ip.startswith(p) for p in VIRTUAL_PREFIXES):
+                return False
+        return True
+
+    risky_real = {}
+    risky_virtual = {}
+    for p in open_ports:
+        if p not in RISKY_PORTS:
+            continue
+        if _is_public_only_virtual(p):
+            risky_virtual[p] = RISKY_PORTS[p]
+        else:
+            risky_real[p] = RISKY_PORTS[p]
+
+    if not risky_real and not risky_virtual:
         return None
+
+    # Prioritate pe finding-ul real (high). Daca exista doar pe virtual, scoatem
+    # un finding info (severitate "low") cu mentiunea adaptorului.
+    if risky_real:
+        return {
+            "rule_id": "NET-OPEN-PORTS-1",
+            "title": "Porturi cu risc ridicat expuse",
+            "severity": "high",
+            "evidence": {"ports": [{"port": p, "service": d} for p, d in risky_real.items()]},
+            "recommendation": (
+                "Inchide porturile neutilizate din firewall. "
+                "Daca sunt necesare, restrictioneaza accesul la IP-uri de incredere "
+                "si utilizeaza VPN pentru acces remote."
+            ),
+        }
+    # Doar pe virtual: low / informational.
     return {
         "rule_id": "NET-OPEN-PORTS-1",
-        "title": "Porturi cu risc ridicate expuse",
-        "severity": "high",
-        "evidence": {"ports": [{"port": p, "service": d} for p, d in risky_found.items()]},
+        "title": "Porturi cu risc ridicat expuse doar pe adaptoare virtuale",
+        "severity": "low",
+        "evidence": {
+            "ports": [{"port": p, "service": d} for p, d in risky_virtual.items()],
+            "note": "Porturile sunt expuse doar pe adaptoare virtuale (WSL/Hyper-V/Docker). Nu sunt accesibile din internet.",
+        },
         "recommendation": (
-            "Inchide porturile neutilizate din firewall. "
-            "Daca sunt necesare, restrictioneaza accesul la IP-uri de incredere "
-            "si utilizeaza VPN pentru acces remote."
+            "Acceptabil pentru dezvoltatori cu WSL/Docker. "
+            "Pentru reducere supraf. atac: dezactiveaza NetBIOS pe adaptorul virtual."
         ),
     }
 
@@ -614,6 +671,13 @@ def check_av_disabled(scan: dict) -> dict | None:
     defender = (scan.get("system_info", {}) or {}).get("defender", {})
     if not defender:
         return None
+
+    # Daca exista un AV tert activ (Bitdefender/Kaspersky/etc.), Defender disabled
+    # e comportamentul normal Windows — nu trigger FP.
+    third_party = defender.get("third_party_av") or []
+    if third_party:
+        return None
+
     issues = []
     if defender.get("enabled") is False:
         issues.append("Windows Defender dezactivat")
