@@ -6,6 +6,7 @@ import type { ScanDetailResponse, Finding } from "../api/types";
 import Navbar from "../components/Navbar";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { ScoreBreakdownBars } from "../components/ScoreBreakdownBars";
+import { ScanDiff } from "../components/ScanDiff";
 import NmapSection from "../components/NmapSection";
 
 type Category = "persistence" | "network" | "system" | "software" | "processes" | "forensics";
@@ -49,6 +50,23 @@ function categoryOf(ruleId: string): Category {
   return RULE_CATEGORY[ruleId] ?? "system";
 }
 
+
+function ScanDiffSection({ scanId }: { scanId: number }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: 12 }}>
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => setOpen(o => !o)}
+        style={{ border: "1px solid var(--border)" }}
+      >
+        {open ? "▾ Ascunde comparatie" : "▸ Compara cu scanarea anterioara"}
+      </button>
+      {open && <ScanDiff scanId={scanId} />}
+    </div>
+  );
+}
+
 const SEVERITY_RANK: Record<string, number> = {
   critical: 4, high: 3, medium: 2, low: 1, info: 0,
 };
@@ -73,6 +91,10 @@ function formatDate(raw: string): string {
 }
 
 function FindingDetailPanel({ finding }: { finding: Finding }) {
+  const compliance = finding.compliance ?? [];
+  const cisRefs = compliance.filter(c => c.startsWith("CIS-"));
+  const nistRefs = compliance.filter(c => c.startsWith("NIST-"));
+
   return (
     <div className={`finding-detail ${finding.severity.toLowerCase()}`}>
       <div className="finding-detail-header">
@@ -82,6 +104,21 @@ function FindingDetailPanel({ finding }: { finding: Finding }) {
         <h3 className="finding-detail-title">{finding.title}</h3>
         <span className="finding-detail-id">{finding.rule_id}</span>
       </div>
+
+      {compliance.length > 0 && (
+        <div className="finding-compliance">
+          {cisRefs.map(ref => (
+            <span key={ref} className="compliance-chip compliance-cis" title="CIS Controls v8">
+              {ref}
+            </span>
+          ))}
+          {nistRefs.map(ref => (
+            <span key={ref} className="compliance-chip compliance-nist" title="NIST CSF 2.0">
+              {ref}
+            </span>
+          ))}
+        </div>
+      )}
 
       <section className="finding-section">
         <h4>Recomandare</h4>
@@ -208,6 +245,10 @@ export default function ScanDetail() {
             <div className="alert-title">Eroare</div>
             <div style={{ fontSize: 12, marginTop: 2 }}>{error}</div>
           </div>
+        )}
+
+        {data && (
+          <ScanDiffSection scanId={data.scan_id} />
         )}
 
         {data && (

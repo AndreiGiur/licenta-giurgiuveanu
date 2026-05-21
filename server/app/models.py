@@ -37,6 +37,13 @@ class User(Base):
     # devine admin automat (vezi register handler). Admin = vede tot + manage users.
     role: Mapped[str] = mapped_column(String(16), default="user", nullable=False)
 
+    # Profil editabil (PATCH /me).
+    first_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Default scan_type pe care UI il selecteaza preset cand declanseaza scan.
+    default_scan_type: Mapped[str] = mapped_column(String(16), default="standard", nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     sessions: Mapped[list["Session"]] = relationship(

@@ -55,6 +55,9 @@ from .schemas import (
     DeviceOut,
     DeviceRelinkIn,
     DeviceScanListItem,
+    ScoreTrendPoint,
+    ScanDiffOut,
+    ScanDiffFinding,
     GoogleAgentEnrollIn,
     GoogleAgentEnrollOut,
     GoogleAuthUrlOut,
@@ -64,6 +67,7 @@ from .schemas import (
     JobResultIn,
     LoginIn,
     MeOut,
+    UpdateProfileIn,
     RegisterIn,
     ScanCreateOut,
     ScanDetailOut,
@@ -203,6 +207,37 @@ def me(user: User = Depends(require_user)):
         google_picture_url=user.google_picture_url,
         auth_provider=user.auth_provider,
         role=user.role,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        default_scan_type=user.default_scan_type or "standard",
+    )
+
+
+@router.patch("/me", response_model=MeOut)
+def update_my_profile(
+    payload: UpdateProfileIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Editare profil curent: nume, prenume, scan type default. Toate sunt
+    optionale - doar campurile prezente in body sunt actualizate."""
+    if payload.first_name is not None:
+        user.first_name = payload.first_name.strip() or None
+    if payload.last_name is not None:
+        user.last_name = payload.last_name.strip() or None
+    if payload.default_scan_type is not None:
+        user.default_scan_type = payload.default_scan_type
+    db.commit()
+    db.refresh(user)
+    return MeOut(
+        id=user.id,
+        email=user.email,
+        google_picture_url=user.google_picture_url,
+        auth_provider=user.auth_provider,
+        role=user.role,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        default_scan_type=user.default_scan_type or "standard",
     )
 
 
@@ -407,6 +442,97 @@ def list_scans_for_device(device_uid: str, db: Session = Depends(get_db), user: 
         )
         for r in rows
     ]
+
+
+@router.get("/devices/{device_uid}/score-trend", response_model=list[ScoreTrendPoint])
+def device_score_trend(
+    device_uid: str,
+    days: int = 30,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Punctele de scor pentru graficul de trend (Recharts) per device.
+    Returneaza scan-urile din ultimele `days` zile (max 90), in ordine cronologica."""
+    days = max(1, min(days, 90))
+    device = db.execute(
+        select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    from datetime import timedelta
+    cutoff = _utcnow() - timedelta(days=days)
+    rows = db.execute(
+        select(Scan.id, Scan.created_at, Scan.exposure_score, Scan.payload)
+        .where(Scan.device_id == device.id, Scan.created_at >= cutoff)
+        .order_by(Scan.created_at.asc())
+    ).all()
+
+    return [
+        ScoreTrendPoint(
+            scan_id=r.id,
+            created_at=r.created_at.isoformat(),
+            exposure_score=r.exposure_score,
+            scan_type=(r.payload or {}).get("scan_type", "standard"),
+        )
+        for r in rows
+    ]
+
+
+@router.get("/scans/{scan_id}/diff", response_model=ScanDiffOut)
+def scan_diff(
+    scan_id: int,
+    previous: int | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Diff intre `previous` (scan vechi) si `scan_id` (scan nou).
+    Daca `previous` nu e specificat, foloseste scan-ul anterior pentru acelasi device."""
+    scan = db.get(Scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="scan not found")
+    device = db.get(Device, scan.device_id)
+    if not device or device.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="scan not found")
+
+    if previous is not None:
+        prev = db.get(Scan, previous)
+        if not prev or prev.device_id != scan.device_id:
+            raise HTTPException(status_code=404, detail="previous scan not found on same device")
+    else:
+        # Cauta automat scan-ul anterior pe acelasi device.
+        prev = db.execute(
+            select(Scan)
+            .where(Scan.device_id == scan.device_id, Scan.id < scan.id)
+            .order_by(Scan.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if not prev:
+            raise HTTPException(status_code=404, detail="no previous scan exists for this device")
+
+    def _key(f):
+        return f.rule_id
+
+    prev_findings = {_key(f): f for f in prev.findings}
+    cur_findings = {_key(f): f for f in scan.findings}
+
+    added_ids = set(cur_findings) - set(prev_findings)
+    fixed_ids = set(prev_findings) - set(cur_findings)
+    unchanged_ids = set(prev_findings) & set(cur_findings)
+
+    def _to_diff(f):
+        return ScanDiffFinding(rule_id=f.rule_id, title=f.title, severity=f.severity)
+
+    return ScanDiffOut(
+        from_scan_id=prev.id,
+        to_scan_id=scan.id,
+        from_score=prev.exposure_score,
+        to_score=scan.exposure_score,
+        delta=scan.exposure_score - prev.exposure_score,
+        added=sorted([_to_diff(cur_findings[k]) for k in added_ids], key=lambda x: x.rule_id),
+        fixed=sorted([_to_diff(prev_findings[k]) for k in fixed_ids], key=lambda x: x.rule_id),
+        unchanged=sorted([_to_diff(cur_findings[k]) for k in unchanged_ids], key=lambda x: x.rule_id),
+    )
 
 
 @router.get("/scans/{scan_id}", response_model=ScanDetailOut)

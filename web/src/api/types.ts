@@ -20,6 +20,34 @@ export type Finding = {
   severity: "critical" | "high" | "medium" | "low" | "info" | string;
   evidence?: unknown;
   recommendation: string;
+  category?: string;
+  rule_weight?: number;
+  rule_confidence?: number;
+  compliance?: string[];
+};
+
+export type ScoreTrendPoint = {
+  scan_id: number;
+  created_at: string;
+  exposure_score: number;
+  scan_type: string;
+};
+
+export type ScanDiffFinding = {
+  rule_id: string;
+  title: string;
+  severity: string;
+};
+
+export type ScanDiff = {
+  from_scan_id: number;
+  to_scan_id: number;
+  from_score: number;
+  to_score: number;
+  delta: number;
+  added: ScanDiffFinding[];
+  fixed: ScanDiffFinding[];
+  unchanged: ScanDiffFinding[];
 };
 
 export type DeviceScanListItem = {

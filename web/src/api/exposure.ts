@@ -7,7 +7,20 @@ import type {
   ScanJobPreview,
   ScanJobResponse,
   ScanType,
+  ScoreTrendPoint,
+  ScanDiff,
 } from "./types";
+
+export function getDeviceScoreTrend(deviceUid: string, days = 30) {
+  return apiGet<ScoreTrendPoint[]>(
+    `/devices/${encodeURIComponent(deviceUid)}/score-trend?days=${days}`,
+  );
+}
+
+export function getScanDiff(scanId: number, previousId?: number) {
+  const qs = previousId !== undefined ? `?previous=${previousId}` : "";
+  return apiGet<ScanDiff>(`/scans/${scanId}/diff${qs}`);
+}
 
 export function listDeviceScans(deviceId: string) {
   return apiGet<DeviceScanListItem[]>(

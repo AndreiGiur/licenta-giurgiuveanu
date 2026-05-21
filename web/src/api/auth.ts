@@ -1,4 +1,6 @@
-import { apiDelete, apiGet, apiPost } from "./http";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./http";
+
+export type ScanType = "standard" | "advanced" | "deep";
 
 /**
  * Frontend-ul NU mai stocheaza tokenul de sesiune. Backend-ul seteaza un
@@ -12,7 +14,20 @@ export type Me = {
   google_picture_url?: string | null;
   auth_provider?: "password" | "google" | "both";
   role?: "user" | "admin";
+  first_name?: string | null;
+  last_name?: string | null;
+  default_scan_type?: ScanType;
 };
+
+export type UpdateProfileInput = {
+  first_name?: string | null;
+  last_name?: string | null;
+  default_scan_type?: ScanType;
+};
+
+export async function updateMyProfile(input: UpdateProfileInput): Promise<Me> {
+  return apiPatch<UpdateProfileInput, Me>("/me", input);
+}
 
 export async function registerUser(input: { email: string; password: string }): Promise<Me> {
   return apiPost<typeof input, Me>("/auth/register", input);

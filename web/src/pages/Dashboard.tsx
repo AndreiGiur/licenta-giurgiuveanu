@@ -261,6 +261,31 @@ export default function Dashboard() {
           >
             <div className="dashboard-score">
               <ScoreGauge value={detail.exposure_score} size={180} />
+              {/* Badge delta fata de scan-ul anterior pe acelasi device. */}
+              {(() => {
+                const idx = scans.findIndex(s => s.scan_id === detail.scan_id);
+                const prev = idx >= 0 && idx < scans.length - 1 ? scans[idx + 1] : null;
+                if (!prev) return null;
+                const delta = detail.exposure_score - prev.exposure_score;
+                if (delta === 0) {
+                  return (
+                    <div className="score-delta-badge score-delta-same">
+                      = neschimbat fata de #{prev.scan_id}
+                    </div>
+                  );
+                }
+                const isImproved = delta < 0;
+                return (
+                  <div className={`score-delta-badge ${isImproved ? "score-delta-improved" : "score-delta-regressed"}`}>
+                    <span className="score-delta-arrow">{isImproved ? "↓" : "↑"}</span>
+                    <span>
+                      {isImproved
+                        ? `imbunatatire ${Math.abs(delta)} puncte`
+                        : `regresie ${delta} puncte`} (vs #{prev.scan_id})
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
             <div className="dashboard-counts">
               <div className="count-card">

@@ -221,6 +221,58 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
             "</font>", small_style))
         elements.append(Spacer(1, 0.6 * cm))
 
+    # ── Coverage standarde (CIS Controls v8 + NIST CSF 2.0) ──
+    compliance_refs: dict[str, list[str]] = {}  # "CIS-9.2" -> [rule_id-uri care l-au declansat]
+    for f in findings:
+        for ref in (f.evidence.get("_compliance_at_finding", []) if False else (getattr(f, "compliance", None) or [])):
+            compliance_refs.setdefault(ref, []).append(f.rule_id)
+    # Fallback: ia compliance din finding dict (cum vine din evaluate()).
+    if not compliance_refs:
+        # Reincarca compliance per regula din _RULES.
+        try:
+            from .rules import _RULES
+            rules_by_id = {fn._rule_id: getattr(fn, "_compliance", []) for fn in _RULES}
+            for f in findings:
+                for ref in rules_by_id.get(f.rule_id, []):
+                    compliance_refs.setdefault(ref, []).append(f.rule_id)
+        except Exception:
+            pass
+
+    if compliance_refs:
+        elements.append(Paragraph("Coverage standarde de securitate", h2_style))
+        # Grupare pe framework (prefix CIS vs NIST).
+        cis_refs = sorted([r for r in compliance_refs if r.startswith("CIS-")])
+        nist_refs = sorted([r for r in compliance_refs if r.startswith("NIST-")])
+
+        cmpl_rows = [["Framework", "Control afectat", "Reguli care semnaleaza"]]
+        for ref in cis_refs:
+            rules_str = ", ".join(sorted(set(compliance_refs[ref])))
+            cmpl_rows.append(["CIS Controls v8", ref.replace("CIS-", ""), rules_str])
+        for ref in nist_refs:
+            rules_str = ", ".join(sorted(set(compliance_refs[ref])))
+            cmpl_rows.append(["NIST CSF 2.0", ref.replace("NIST-", ""), rules_str])
+
+        cmpl_tbl = Table(cmpl_rows, colWidths=[4 * cm, 4 * cm, 8 * cm])
+        cmpl_style_cmds = [
+            ("BACKGROUND", (0, 0), (-1, 0), PLUM),
+            ("TEXTCOLOR", (0, 0), (-1, 0), CREAM),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]
+        cmpl_tbl.setStyle(TableStyle(cmpl_style_cmds))
+        elements.append(cmpl_tbl)
+        elements.append(Paragraph(
+            f"<font size=8 color='{MUTED.hexval()}'>"
+            f"{len(cis_refs)} controale CIS Controls v8 + {len(nist_refs)} subcategorii NIST CSF 2.0 "
+            "afectate de vulnerabilitatile detectate. Sursa: cisecurity.org/controls, nist.gov/cyberframework."
+            "</font>", small_style))
+        elements.append(Spacer(1, 0.6 * cm))
+
     # ── Findings detaliate ──
     elements.append(PageBreak())
     elements.append(Paragraph("Vulnerabilitati detectate", h2_style))

@@ -23,6 +23,16 @@ class MeOut(BaseModel):
     google_picture_url: str | None = None
     auth_provider: str = "password"
     role: str = "user"
+    first_name: str | None = None
+    last_name: str | None = None
+    default_scan_type: str = "standard"
+
+
+class UpdateProfileIn(BaseModel):
+    """PATCH /me — toate campurile sunt optionale, doar cele trimise se updateaza."""
+    first_name: str | None = Field(default=None, max_length=64)
+    last_name: str | None = Field(default=None, max_length=64)
+    default_scan_type: str | None = Field(default=None, pattern=r"^(standard|advanced|deep)$")
 
 
 class DeviceCreateIn(BaseModel):
@@ -89,6 +99,33 @@ class DeviceScanListItem(BaseModel):
     scan_id: int
     created_at: str
     exposure_score: int
+
+
+class ScoreTrendPoint(BaseModel):
+    """Punct pe graficul de trend pentru un device."""
+    scan_id: int
+    created_at: str
+    exposure_score: int
+    scan_type: str = "standard"
+
+
+class ScanDiffFinding(BaseModel):
+    """Reprezentare finding pentru diff intre scan-uri."""
+    rule_id: str
+    title: str
+    severity: str
+
+
+class ScanDiffOut(BaseModel):
+    """Diff intre doua scan-uri ale aceluiasi device."""
+    from_scan_id: int
+    to_scan_id: int
+    from_score: int
+    to_score: int
+    delta: int  # to_score - from_score (pozitiv = mai rau)
+    added: List[ScanDiffFinding]      # in to dar nu in from = vulnerabilitati noi
+    fixed: List[ScanDiffFinding]      # in from dar nu in to = rezolvate
+    unchanged: List[ScanDiffFinding]  # in ambele
 
 
 class ScanDetailOut(BaseModel):

@@ -9,7 +9,7 @@
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
-export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export class HttpError extends Error {
   status: number;
@@ -93,5 +93,7 @@ export async function http<T>(
 export const apiGet = <T>(path: string) => http<T>(path, { method: "GET" });
 export const apiPost = <TReq, TRes>(path: string, body: TReq) =>
   http<TRes>(path, { method: "POST", body });
+export const apiPatch = <TReq, TRes>(path: string, body: TReq) =>
+  http<TRes>(path, { method: "PATCH", body });
 export const apiDelete = <T = void>(path: string) =>
   http<T>(path, { method: "DELETE" });

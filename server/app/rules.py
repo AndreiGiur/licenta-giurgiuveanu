@@ -49,12 +49,16 @@ def rule(
     category: str = "hygiene",
     weight: float = 1.0,
     confidence: float = 1.0,
+    compliance: list[str] | None = None,
 ) -> Callable[[RuleFn], RuleFn]:
     """Decorator: marcheaza o functie ca regula si o inregistreaza in _RULES.
 
     `category`: una din `CATEGORIES` — determina sub-scorul in care contribuie.
     `weight`: multiplicator per-regula peste severity (default 1.0).
     `confidence`: penalizare pentru reguli cu fals-pozitivi (0-1, default 1.0).
+    `compliance`: lista de referinte la standarde de securitate (CIS Controls v8 +
+        NIST CSF 2.0). Exemple: ["CIS-9.2", "NIST-PR.AC-4"]. Folosit pentru
+        afisare in UI/PDF si calcul de coverage per framework.
     """
     if min_level not in LEVEL_ORDER:
         raise ValueError(f"min_level invalid: {min_level!r}")
@@ -64,6 +68,10 @@ def rule(
         raise ValueError(f"confidence trebuie in [0, 1], dat: {confidence}")
     if weight <= 0:
         raise ValueError(f"weight trebuie > 0, dat: {weight}")
+    compliance_list = list(compliance or [])
+    for ref in compliance_list:
+        if not isinstance(ref, str) or not ref.strip():
+            raise ValueError(f"compliance ref invalid: {ref!r}")
 
     def decorator(fn: RuleFn) -> RuleFn:
         fn._rule_id = rule_id        # type: ignore[attr-defined]
@@ -71,6 +79,7 @@ def rule(
         fn._category = category      # type: ignore[attr-defined]
         fn._weight = weight          # type: ignore[attr-defined]
         fn._confidence = confidence  # type: ignore[attr-defined]
+        fn._compliance = compliance_list  # type: ignore[attr-defined]
         _RULES.append(fn)
         return fn
 
@@ -104,6 +113,7 @@ def evaluate(scan: dict[str, Any]) -> tuple[int, dict[str, int], list[dict[str, 
             f["category"] = fn._category
             f["rule_weight"] = fn._weight
             f["rule_confidence"] = fn._confidence
+            f["compliance"] = list(getattr(fn, "_compliance", []))
             sev_w = SEVERITY_WEIGHT.get(f.get("severity", "info"), 0)
             cat_raw[fn._category] += sev_w * fn._weight * fn._confidence
             findings.append(f)
@@ -122,7 +132,8 @@ def evaluate(scan: dict[str, Any]) -> tuple[int, dict[str, int], list[dict[str, 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@rule("NET-OPEN-PORTS-1", min_level="standard", category="network_exposure", weight=1.5)
+@rule("NET-OPEN-PORTS-1", min_level="standard", category="network_exposure", weight=1.5,
+       compliance=["CIS-4.5", "CIS-12.4", "NIST-PR.PS-01", "NIST-PR.IR-01"])
 def check_risky_ports(scan: dict) -> dict | None:
     RISKY_PORTS: dict[int, str] = {
         21:   "FTP – transfer fisiere necriptat",
@@ -209,7 +220,8 @@ def check_risky_ports(scan: dict) -> dict | None:
     }
 
 
-@rule("NET-MANY-PORTS-2", min_level="standard", category="network_exposure", weight=1.0)
+@rule("NET-MANY-PORTS-2", min_level="standard", category="network_exposure", weight=1.0,
+       compliance=["CIS-4.5", "NIST-PR.PS-01"])
 def check_many_ports(scan: dict) -> dict | None:
     open_ports = scan.get("network", {}).get("open_ports", []) or []
     if len(open_ports) <= 20:
@@ -226,7 +238,8 @@ def check_many_ports(scan: dict) -> dict | None:
     }
 
 
-@rule("OS-ADMIN-1", min_level="standard", category="hygiene", weight=0.8)
+@rule("OS-ADMIN-1", min_level="standard", category="hygiene", weight=0.8,
+       compliance=["CIS-5.4", "CIS-6.8", "NIST-PR.AA-01", "NIST-PR.AA-05"])
 def check_admin_session(scan: dict) -> dict | None:
     os_info = scan.get("os", {}) or {}
     if os_info.get("is_admin") is not True:
@@ -243,7 +256,8 @@ def check_admin_session(scan: dict) -> dict | None:
     }
 
 
-@rule("PROC-SUSPICIOUS-1", min_level="standard", category="critical_risk", weight=1.5)
+@rule("PROC-SUSPICIOUS-1", min_level="standard", category="critical_risk", weight=1.5,
+       compliance=["CIS-10.1", "CIS-13.2", "NIST-DE.CM-01", "NIST-DE.AE-02"])
 def check_suspicious_processes(scan: dict) -> dict | None:
     SUSPICIOUS_PROCS: dict[str, str] = {
         "nc.exe":           "Netcat – tool de retea, frecvent abuzat",
@@ -274,7 +288,8 @@ def check_suspicious_processes(scan: dict) -> dict | None:
     }
 
 
-@rule("PROC-POWERSHELL-2", min_level="standard", category="activity", weight=0.3)
+@rule("PROC-POWERSHELL-2", min_level="standard", category="activity", weight=0.3,
+       compliance=["CIS-8.5", "CIS-8.11", "NIST-DE.CM-09"])
 def check_powershell_running(scan: dict) -> dict | None:
     procs = scan.get("processes", []) or []
     proc_names = {p.get("name", "").lower() for p in procs}
@@ -294,7 +309,8 @@ def check_powershell_running(scan: dict) -> dict | None:
     }
 
 
-@rule("SW-VULNERABLE-1", min_level="standard", category="critical_risk", weight=1.5)
+@rule("SW-VULNERABLE-1", min_level="standard", category="critical_risk", weight=1.5,
+       compliance=["CIS-2.2", "CIS-7.4", "NIST-ID.RA-01", "NIST-PR.PS-02"])
 def check_vulnerable_software(scan: dict) -> list[dict]:
     VULNERABLE_SOFTWARE: list[dict] = [
         {"name_contains": "Adobe Flash",        "severity": "critical", "cve": "multiple",       "note": "EOL din 2020, nu mai primeste patch-uri"},
@@ -325,7 +341,8 @@ def check_vulnerable_software(scan: dict) -> list[dict]:
     return out
 
 
-@rule("OS-EOL-1", min_level="standard", category="critical_risk", weight=1.5)
+@rule("OS-EOL-1", min_level="standard", category="critical_risk", weight=1.5,
+       compliance=["CIS-2.2", "CIS-7.3", "NIST-PR.PS-02", "NIST-ID.RA-01"])
 def check_eol_os(scan: dict) -> dict | None:
     OS_EOL = [
         {"system": "Windows", "rel": "XP",    "severity": "critical"},
@@ -361,7 +378,8 @@ def check_eol_os(scan: dict) -> dict | None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@rule("FW-DISABLED-1", min_level="standard", category="hygiene", weight=1.2)
+@rule("FW-DISABLED-1", min_level="standard", category="hygiene", weight=1.2,
+       compliance=["CIS-4.4", "CIS-4.5", "NIST-PR.IR-01", "NIST-PR.PS-01"])
 def check_firewall_disabled(scan: dict) -> dict | None:
     profiles = (scan.get("system_info", {}) or {}).get("firewall", {}).get("profiles", {})
     disabled = [p for p in ("domain", "public") if profiles.get(p) is False]
@@ -378,7 +396,8 @@ def check_firewall_disabled(scan: dict) -> dict | None:
     }
 
 
-@rule("USER-ADMIN-1", min_level="standard", category="hygiene", weight=1.0)
+@rule("USER-ADMIN-1", min_level="standard", category="hygiene", weight=1.0,
+       compliance=["CIS-5.4", "CIS-6.2", "NIST-PR.AA-05"])
 def check_extra_admins(scan: dict) -> dict | None:
     users = (scan.get("system_info", {}) or {}).get("local_users", []) or []
     current = (scan.get("os", {}) or {}).get("username", "").lower()
@@ -401,7 +420,8 @@ def check_extra_admins(scan: dict) -> dict | None:
     }
 
 
-@rule("STARTUP-SUSPICIOUS-1", min_level="advanced", category="activity", weight=0.7, confidence=0.7)
+@rule("STARTUP-SUSPICIOUS-1", min_level="advanced", category="activity", weight=0.7, confidence=0.7,
+       compliance=["CIS-10.1", "CIS-2.3", "NIST-DE.AE-02", "NIST-PR.PS-04"])
 def check_suspicious_startup(scan: dict) -> dict | None:
     startup = (scan.get("persistence", {}) or {}).get("startup", []) or []
     SUSP = ("%temp%", "%appdata%", "\\temp\\", "\\appdata\\local\\temp",
@@ -423,7 +443,8 @@ def check_suspicious_startup(scan: dict) -> dict | None:
     }
 
 
-@rule("TASK-SUSPICIOUS-1", min_level="advanced", category="activity", weight=1.0)
+@rule("TASK-SUSPICIOUS-1", min_level="advanced", category="activity", weight=1.0,
+       compliance=["CIS-8.5", "CIS-10.7", "NIST-DE.AE-02"])
 def check_suspicious_tasks(scan: dict) -> dict | None:
     tasks = (scan.get("persistence", {}) or {}).get("tasks", []) or []
     FLAGS = ("-enc ", "-encodedcommand", " -e ")
@@ -445,7 +466,8 @@ def check_suspicious_tasks(scan: dict) -> dict | None:
     }
 
 
-@rule("SVC-SUSPICIOUS-1", min_level="advanced", category="activity", weight=0.8)
+@rule("SVC-SUSPICIOUS-1", min_level="advanced", category="activity", weight=0.8,
+       compliance=["CIS-2.3", "CIS-10.1", "NIST-DE.CM-09"])
 def check_suspicious_services(scan: dict) -> dict | None:
     services = (scan.get("persistence", {}) or {}).get("services", []) or []
     STD = ("c:\\windows\\", "c:\\program files\\", "c:\\program files (x86)\\")
@@ -468,7 +490,8 @@ def check_suspicious_services(scan: dict) -> dict | None:
     }
 
 
-@rule("NET-SHARE-1", min_level="advanced", category="network_exposure", weight=1.0)
+@rule("NET-SHARE-1", min_level="advanced", category="network_exposure", weight=1.0,
+       compliance=["CIS-3.3", "CIS-12.2", "NIST-PR.DS-01", "NIST-PR.AA-05"])
 def check_network_shares(scan: dict) -> dict | None:
     shares = (scan.get("network", {}) or {}).get("shares", []) or []
     DEFAULT = {"admin$", "ipc$", "c$", "d$", "e$", "print$"}
@@ -486,7 +509,8 @@ def check_network_shares(scan: dict) -> dict | None:
     }
 
 
-@rule("PS-POLICY-1", min_level="advanced", category="activity", weight=0.8)
+@rule("PS-POLICY-1", min_level="advanced", category="activity", weight=0.8,
+       compliance=["CIS-2.7", "CIS-4.8", "NIST-PR.PS-01"])
 def check_ps_policy(scan: dict) -> dict | None:
     policy = (scan.get("persistence", {}) or {}).get("ps_policy", "")
     if not policy or policy.lower() not in ("bypass", "unrestricted"):
@@ -502,7 +526,8 @@ def check_ps_policy(scan: dict) -> dict | None:
     }
 
 
-@rule("NET-ESTABLISHED-1", min_level="advanced", category="network_exposure", weight=0.7)
+@rule("NET-ESTABLISHED-1", min_level="advanced", category="network_exposure", weight=0.7,
+       compliance=["CIS-13.5", "CIS-13.1", "NIST-DE.CM-01", "NIST-DE.AE-07"])
 def check_established_connections(scan: dict) -> dict | None:
     conns = (scan.get("network", {}) or {}).get("connections", []) or []
     PRIVATE = ("10.", "127.", "192.168.", "169.254.", "::1", "fe80:",
@@ -552,7 +577,8 @@ def check_established_connections(scan: dict) -> dict | None:
     }
 
 
-@rule("REG-HIJACK-1", min_level="deep", category="critical_risk", weight=2.0)
+@rule("REG-HIJACK-1", min_level="deep", category="critical_risk", weight=2.0,
+       compliance=["CIS-10.1", "CIS-10.7", "NIST-DE.AE-02", "NIST-DE.CM-09"])
 def check_registry_hijack(scan: dict) -> dict | None:
     reg = (scan.get("persistence", {}) or {}).get("reg_persistence", {}) or {}
 
@@ -598,7 +624,8 @@ def check_registry_hijack(scan: dict) -> dict | None:
     }
 
 
-@rule("WMI-PERSIST-1", min_level="deep", category="critical_risk", weight=2.0)
+@rule("WMI-PERSIST-1", min_level="deep", category="critical_risk", weight=2.0,
+       compliance=["CIS-10.1", "CIS-10.7", "NIST-DE.AE-02", "NIST-DE.CM-09"])
 def check_wmi_persistence(scan: dict) -> dict | None:
     subs = (scan.get("persistence", {}) or {}).get("wmi_subscriptions", []) or []
     # Subscriptii built-in Windows cu command vid — nu sunt malware.
@@ -629,7 +656,8 @@ def check_wmi_persistence(scan: dict) -> dict | None:
     }
 
 
-@rule("CERT-UNTRUSTED-1", min_level="deep", category="hygiene", weight=1.0)
+@rule("CERT-UNTRUSTED-1", min_level="deep", category="hygiene", weight=1.0,
+       compliance=["CIS-3.10", "CIS-12.2", "NIST-PR.DS-02", "NIST-PR.IR-01"])
 def check_untrusted_certs(scan: dict) -> dict | None:
     certs = (scan.get("forensics", {}) or {}).get("certificates", []) or []
     KNOWN = ("microsoft", "digicert", "comodo", "sectigo", "verisign",
@@ -666,7 +694,8 @@ def check_untrusted_certs(scan: dict) -> dict | None:
     }
 
 
-@rule("AV-DISABLED-1", min_level="deep", category="hygiene", weight=1.2)
+@rule("AV-DISABLED-1", min_level="deep", category="hygiene", weight=1.2,
+       compliance=["CIS-10.1", "CIS-10.6", "NIST-PR.PS-05", "NIST-DE.CM-09"])
 def check_av_disabled(scan: dict) -> dict | None:
     defender = (scan.get("system_info", {}) or {}).get("defender", {})
     if not defender:
@@ -697,7 +726,8 @@ def check_av_disabled(scan: dict) -> dict | None:
     }
 
 
-@rule("EVENTLOG-BRUTEFORCE-1", min_level="deep", category="activity", weight=1.2)
+@rule("EVENTLOG-BRUTEFORCE-1", min_level="deep", category="activity", weight=1.2,
+       compliance=["CIS-6.5", "CIS-8.5", "NIST-DE.AE-02", "NIST-PR.AA-03"])
 def check_brute_force(scan: dict) -> dict | None:
     events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
     failures = [e for e in events if e.get("event_id") == 4625]
@@ -715,7 +745,8 @@ def check_brute_force(scan: dict) -> dict | None:
     }
 
 
-@rule("EVENTLOG-PRIVESC-1", min_level="deep", category="activity", weight=1.0)
+@rule("EVENTLOG-PRIVESC-1", min_level="deep", category="activity", weight=1.0,
+       compliance=["CIS-5.4", "CIS-8.5", "NIST-PR.AA-05", "NIST-DE.AE-02"])
 def check_privesc(scan: dict) -> dict | None:
     events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
     SYS = {"system", "local service", "network service", "administrator", ""}
@@ -739,7 +770,8 @@ def check_privesc(scan: dict) -> dict | None:
     }
 
 
-@rule("HOSTS-TAMPERED-1", min_level="deep", category="activity", weight=1.0)
+@rule("HOSTS-TAMPERED-1", min_level="deep", category="activity", weight=1.0,
+       compliance=["CIS-10.1", "NIST-DE.AE-02", "NIST-PR.DS-06"])
 def check_hosts_tampered(scan: dict) -> dict | None:
     entries = (scan.get("forensics", {}) or {}).get("hosts", []) or []
     OK = {
@@ -782,7 +814,8 @@ def check_hosts_tampered(scan: dict) -> dict | None:
     }
 
 
-@rule("BITLOCKER-OFF-1", min_level="deep", category="hygiene", weight=1.0)
+@rule("BITLOCKER-OFF-1", min_level="deep", category="hygiene", weight=1.0,
+       compliance=["CIS-3.6", "CIS-3.11", "NIST-PR.DS-01"])
 def check_bitlocker_off(scan: dict) -> dict | None:
     volumes = (scan.get("system_info", {}) or {}).get("bitlocker", []) or []
     sys_vols = [
@@ -803,7 +836,8 @@ def check_bitlocker_off(scan: dict) -> dict | None:
     }
 
 
-@rule("NMAP-LUA-1", min_level="deep", category="critical_risk", weight=1.0)
+@rule("NMAP-LUA-1", min_level="deep", category="critical_risk", weight=1.0,
+       compliance=["CIS-7.5", "CIS-7.6", "NIST-ID.RA-01"])
 def collect_nmap_lua_findings(scan: dict) -> list[dict] | None:
     """Wrapper pass-through pentru finding-urile emise de scriptul NSE custom
     `vulnwatch-audit.nse`. Lua a decis deja severitatea; Python doar le muta
