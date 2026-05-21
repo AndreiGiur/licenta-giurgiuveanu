@@ -315,7 +315,7 @@ export default function Dashboard() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.1 }}
-            style={{ marginTop: 16 }}
+            style={{ marginTop: 16, marginBottom: 32 }}
           >
             <ScoreBreakdownBars breakdown={detail.score_breakdown} />
           </motion.div>

@@ -1109,15 +1109,21 @@ button:focus-visible {
 .dashboard-stat-row {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 32px;
+  gap: 56px;        /* spatiu mai mare intre ScoreGauge (cerc) si count-cards (patrat) */
   align-items: center;
-  padding: 32px;
+  padding: 32px 36px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   margin-bottom: 24px;
 }
-.dashboard-score { display: flex; justify-content: center; }
+.dashboard-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;          /* spatiu intre ScoreGauge si delta badge */
+  padding-right: 12px;
+}
 .dashboard-counts {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
