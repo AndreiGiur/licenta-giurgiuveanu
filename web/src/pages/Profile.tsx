@@ -138,13 +138,13 @@ function AccountSection({ me, onUpdated }: { me: Me; onUpdated: (newMe: Me) => v
               <label className="profile-label">
                 <span>Prenume</span>
                 <input className="profile-input" type="text" maxLength={64}
-                       placeholder="Ex: Andrei"
+                       placeholder="Ex: Maria"
                        value={firstName} onChange={e => setFirstName(e.target.value)} />
               </label>
               <label className="profile-label">
                 <span>Nume</span>
                 <input className="profile-input" type="text" maxLength={64}
-                       placeholder="Ex: Giurgiuveanu"
+                       placeholder="Ex: Popescu"
                        value={lastName} onChange={e => setLastName(e.target.value)} />
               </label>
             </div>

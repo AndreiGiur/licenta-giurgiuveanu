@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { getScan, getScanPdfUrl } from "../api/exposure";
@@ -90,6 +90,67 @@ function formatDate(raw: string): string {
   } catch { return raw; }
 }
 
+function formatLabel(key: string): string {
+  // Capitalize si inlocuieste _ cu spatii pentru o cheie tehnica.
+  if (!key) return "";
+  const cleaned = key.replace(/_/g, " ");
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function renderEvidenceValue(value: unknown): ReactNode {
+  // Primitive (string, number, bool) → afisate direct.
+  if (value === null || value === undefined) {
+    return <span className="ev-null">—</span>;
+  }
+  if (typeof value === "string") return <span className="ev-string">{value}</span>;
+  if (typeof value === "number") return <span className="ev-number">{value}</span>;
+  if (typeof value === "boolean") {
+    return <span className={value ? "ev-true" : "ev-false"}>{value ? "da" : "nu"}</span>;
+  }
+  // Arrays → lista cu chips daca primitive, sau lista de carduri daca obiecte.
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className="ev-null">—</span>;
+    if (value.every(v => typeof v === "string" || typeof v === "number")) {
+      return (
+        <div className="ev-chips">
+          {value.map((v, i) => <span key={i} className="ev-chip">{String(v)}</span>)}
+        </div>
+      );
+    }
+    return (
+      <div className="ev-list">
+        {value.map((v, i) => (
+          <div key={i} className="ev-list-item">{renderEvidenceValue(v)}</div>
+        ))}
+      </div>
+    );
+  }
+  // Obiect → grid key-value recursiv.
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return <span className="ev-null">—</span>;
+    return (
+      <div className="ev-object">
+        {entries.map(([k, v]) => (
+          <div key={k} className="ev-kv">
+            <span className="ev-key">{formatLabel(k)}</span>
+            <span className="ev-val">{renderEvidenceValue(v)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return <span className="ev-string">{String(value)}</span>;
+}
+
+
+function EvidenceView({ evidence }: { evidence: unknown }) {
+  if (evidence === null || evidence === undefined) return null;
+  if (typeof evidence !== "object") return <div>{String(evidence)}</div>;
+  return <div className="finding-evidence-tree">{renderEvidenceValue(evidence)}</div>;
+}
+
+
 function FindingDetailPanel({ finding }: { finding: Finding }) {
   const compliance = finding.compliance ?? [];
   const cisRefs = compliance.filter(c => c.startsWith("CIS-"));
@@ -129,9 +190,7 @@ function FindingDetailPanel({ finding }: { finding: Finding }) {
         Object.keys(finding.evidence as object).length > 0 && (
         <section className="finding-section">
           <h4>Dovezi</h4>
-          <pre className="finding-evidence">
-            {JSON.stringify(finding.evidence, null, 2)}
-          </pre>
+          <EvidenceView evidence={finding.evidence} />
         </section>
       )}
     </div>

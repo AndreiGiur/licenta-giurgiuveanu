@@ -155,9 +155,10 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId]);
 
-  const highCount   = detail?.findings.filter(f => f.severity.toLowerCase() === "high").length   ?? 0;
-  const medCount    = detail?.findings.filter(f => f.severity.toLowerCase() === "medium").length ?? 0;
-  const lowCount    = detail?.findings.filter(f => f.severity.toLowerCase() === "low").length    ?? 0;
+  const criticalCount = detail?.findings.filter(f => f.severity.toLowerCase() === "critical").length ?? 0;
+  const highCount     = detail?.findings.filter(f => f.severity.toLowerCase() === "high").length     ?? 0;
+  const medCount      = detail?.findings.filter(f => f.severity.toLowerCase() === "medium").length   ?? 0;
+  const lowCount      = detail?.findings.filter(f => f.severity.toLowerCase() === "low").length      ?? 0;
 
   return (
     <div className="page">
@@ -289,16 +290,20 @@ export default function Dashboard() {
             </div>
             <div className="dashboard-counts">
               <div className="count-card">
-                <div className="count-value" style={{ color: "var(--severity-high)" }}>{highCount}</div>
-                <div className="count-label">High / Critical</div>
+                <div className="count-value count-critical">{criticalCount}</div>
+                <div className="count-label">Critice</div>
               </div>
               <div className="count-card">
-                <div className="count-value" style={{ color: "var(--severity-medium)" }}>{medCount}</div>
-                <div className="count-label">Medium</div>
+                <div className="count-value count-high">{highCount}</div>
+                <div className="count-label">Importante</div>
               </div>
               <div className="count-card">
-                <div className="count-value" style={{ color: "var(--severity-low)" }}>{lowCount}</div>
-                <div className="count-label">Low</div>
+                <div className="count-value count-medium">{medCount}</div>
+                <div className="count-label">Medii</div>
+              </div>
+              <div className="count-card">
+                <div className="count-value count-low">{lowCount}</div>
+                <div className="count-label">Minore</div>
               </div>
             </div>
           </motion.div>

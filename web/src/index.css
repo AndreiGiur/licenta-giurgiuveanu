@@ -1120,15 +1120,20 @@ button:focus-visible {
 .dashboard-score { display: flex; justify-content: center; }
 .dashboard-counts {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
 }
 .count-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 20px;
+  padding: 18px 12px;
   text-align: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.count-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(45, 27, 61, 0.08);
 }
 .count-value {
   font-family: var(--font-display);
@@ -1136,6 +1141,14 @@ button:focus-visible {
   font-weight: 500;
   line-height: 1;
 }
+.count-value.count-critical { color: #5a2d6e; }
+[data-theme="dark"] .count-value.count-critical { color: #c4a2d4; }
+.count-value.count-high { color: #b8456e; }
+[data-theme="dark"] .count-value.count-high { color: #ff9a73; }
+.count-value.count-medium { color: #d4a73d; }
+[data-theme="dark"] .count-value.count-medium { color: #ffd97a; }
+.count-value.count-low { color: #a8639a; }
+[data-theme="dark"] .count-value.count-low { color: #c8a3d8; }
 .count-label {
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -1644,6 +1657,93 @@ button:focus-visible {
   border-radius: var(--radius-sm);
 }
 .score-trend-error { color: var(--danger); }
+
+/* ── Evidence View (înlocuiește JSON raw cu key-value tree) ─────────────── */
+.finding-evidence-tree {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.ev-object {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ev-kv {
+  display: grid;
+  grid-template-columns: minmax(110px, max-content) 1fr;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.ev-kv:last-child { border-bottom: none; padding-bottom: 0; }
+.ev-key {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+}
+.ev-val {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.ev-string { color: var(--text-primary); }
+.ev-number {
+  color: var(--accent-strong);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ev-true { color: #4d8a5e; font-weight: 600; }
+.ev-false { color: #b8456e; font-weight: 600; }
+.ev-null { color: var(--text-muted); font-style: italic; }
+
+.ev-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.ev-chip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.ev-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ev-list-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.ev-list-item .ev-object { gap: 4px; }
+.ev-list-item .ev-kv {
+  grid-template-columns: minmax(90px, max-content) 1fr;
+  padding: 3px 0;
+  border-bottom: 1px dashed rgba(0,0,0,0.05);
+}
+[data-theme="dark"] .ev-list-item .ev-kv {
+  border-bottom: 1px dashed rgba(255,255,255,0.05);
+}
 
 /* ── Compliance chips (CIS / NIST) pe finding cards ─────────────────────── */
 .finding-compliance {
