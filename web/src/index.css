@@ -1945,9 +1945,15 @@ button:focus-visible {
 
 .score-breakdown-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(80px, 3fr) 36px;
+  grid-template-columns: minmax(110px, 1.2fr) minmax(60px, 3fr) 44px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
+}
+.score-breakdown-compact .score-breakdown-row {
+  /* In sidebar (260px container), reducem mai mult coloanele si valoarea. */
+  grid-template-columns: minmax(80px, 1fr) minmax(40px, 2fr) 32px;
+  gap: 8px;
 }
 .score-breakdown-label {
   display: flex;
@@ -1986,4 +1992,10 @@ button:focus-visible {
   color: var(--text-primary);
   text-align: right;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: visible;  /* permitem cifrelor 3-digit sa fie vizibile complet */
+}
+.score-breakdown-compact .score-breakdown-value {
+  font-size: 15px;  /* mai mic in sidebar pentru a incapea 3-digit (100) */
 }
