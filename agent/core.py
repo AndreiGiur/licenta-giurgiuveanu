@@ -702,6 +702,7 @@ def api_submit_job_result(api_base: str, device_token: str, job_id: int, payload
         "software": payload.get("software", []),
         "persistence": payload.get("persistence"),
         "forensics": payload.get("forensics"),
+        "nmap": payload.get("nmap"),
     }
     return _request_with_device_token(
         "POST", f"{api_base}/agent/jobs/{job_id}/result",
