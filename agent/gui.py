@@ -87,7 +87,6 @@ class DaemonRunner:
             core.daemon_loop(
                 api_base, device_uid, device_token,
                 poll_interval=3,
-                auto_interval=0,
                 log=self._emit,
                 should_stop=self._stop.is_set,
                 should_pause=self._pause.is_set,

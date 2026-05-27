@@ -676,6 +676,8 @@ def api_logout(api_base: str, session_token: str) -> None:
 
 
 def api_send_scan(api_base: str, device_token: str, payload: dict) -> dict:
+    """Push direct la `POST /scans` — folosit doar de comanda CLI `scan.py scan`
+    (one-shot manual). Daemon-ul UI-ului foloseste scan-on-demand prin /agent/jobs/*."""
     return _request_with_device_token(
         "POST", f"{api_base}/scans",
         device_token=device_token, json=payload,
@@ -824,7 +826,6 @@ def daemon_loop(
     *,
     poll_interval: int = 3,
     heartbeat_interval: int = 10,
-    auto_interval: int = 0,
     log: LogFn = _noop_log,
     should_stop: Callable[[], bool] = lambda: False,
     should_pause: Callable[[], bool] = lambda: False,
@@ -844,7 +845,6 @@ def daemon_loop(
     `should_pause` → callback ce returneaza True cand bucla doar asteapta.
     `on_token_invalid` → callback apelat la HTTP 401, inainte de a iesi din loop.
     """
-    last_auto_scan = time.monotonic()
     last_heartbeat = 0.0  # forteaza heartbeat la primul tick
 
     capabilities = agent_capabilities()  # dinamic: include "deep" doar dacă nmap e instalat
@@ -900,21 +900,6 @@ def daemon_loop(
                 _handle_token_invalid(e)
                 return
             continue  # poate exista alt job pending
-
-        # 2) Auto-scan periodic (optional)
-        if auto_interval and (time.monotonic() - last_auto_scan) >= auto_interval:
-            log(f"[{_ts()}] Auto-scan (interval {auto_interval}s)...", "info")
-            try:
-                data = collect_system_data(device_uid)
-                result = api_send_scan(api_base, device_token, data)
-                log(f"[{_ts()}] Auto-scan done. Scan #{result.get('scan_id')}, "
-                    f"score {result.get('exposure_score')}/100.", "ok")
-            except DeviceTokenInvalidError as e:
-                _handle_token_invalid(e)
-                return
-            except ApiError as e:
-                log(f"[{_ts()}] Auto-scan failed: {e}", "warn")
-            last_auto_scan = time.monotonic()
 
         _interruptible_sleep(poll_interval, should_stop)
 

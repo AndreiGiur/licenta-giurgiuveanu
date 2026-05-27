@@ -8,6 +8,7 @@ management dispozitive, scan-on-demand din UI.
 - **React 19** + React Router 7
 - **TypeScript 5.9**
 - **Vite 7** (HMR, proxy `/api/*` la backend in dev)
+- **Vitest 4** + **@testing-library/react** + **jsdom** pentru teste unitare componente
 - **ESLint** + `eslint-plugin-react-hooks` + `eslint-plugin-react-refresh`
 
 Sesiune autentificata prin **cookie HttpOnly** setat de backend la
@@ -21,7 +22,7 @@ Sesiune autentificata prin **cookie HttpOnly** setat de backend la
 | `src/`                  | Cod sursa React. Vezi `src/memory.md`.                               |
 | `public/`               | Asset-uri statice servite as-is. Vezi `public/memory.md`.            |
 | `index.html`            | Template HTML — punctul de intrare Vite. `<div id="root">`.          |
-| `package.json`          | Dependencies + scripts: `dev` (Vite dev server), `build` (`tsc -b && vite build`), `lint`, `preview`. |
+| `package.json`          | Dependencies + scripts: `dev` (Vite dev server), `build` (`tsc -b && vite build`), `lint`, `preview`, **`test` (vitest run)**, **`test:watch`**. |
 | `package-lock.json`     | Lock file npm — versiuni exacte ale tuturor tranzitivelor.           |
 | `vite.config.ts`        | Plugin `@vitejs/plugin-react`; proxy `server: { proxy: { "/api": { target: "http://127.0.0.1:8000" } } }`. |
 | `tsconfig.json`         | Root config — referinta la `tsconfig.app.json` si `tsconfig.node.json`. |
@@ -57,3 +58,19 @@ In productie, backend-ul ar trebui sa serveasca `dist/` ca static
 ## API client
 
 Toata comunicarea HTTP trece prin `src/api/http.ts`. Vezi `src/api/memory.md`.
+
+## Teste
+
+```powershell
+npm test          # ruleaza o data si iese (ideal pentru CI)
+npm run test:watch # watch mode
+```
+
+Setup-ul vitest e in `vite.config.ts` cu `test.environment: "jsdom"` si
+`setupFiles: ["./src/test/setup.ts"]` (importa matchers de la
+@testing-library/jest-dom). Conventie: fisierele de test sunt langa
+componenta lor, cu suffix `.test.tsx`.
+
+Acoperire actuala: `ScoreBreakdownBars`, `ScoreGauge`, `UserAvatar` (18 teste).
+Pattern-ul demonstrat → user-ul poate adauga teste similare pentru `ScanDiff`,
+`ScoreTrendChart`, paginile principale.

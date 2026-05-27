@@ -155,7 +155,6 @@ def test_daemon_loop_calls_on_token_invalid_and_exits(monkeypatch):
     core.daemon_loop(
         "http://api", "uid-1", "token-1",
         poll_interval=0,
-        auto_interval=0,
         log=lambda m, s="info": None,
         should_stop=lambda: False,
         should_pause=lambda: False,
@@ -177,7 +176,7 @@ def test_daemon_loop_continues_on_api_error(monkeypatch):
     invalid_called = []
     core.daemon_loop(
         "http://api", "uid", "tok",
-        poll_interval=0, auto_interval=0,
+        poll_interval=0,
         log=lambda m, s="info": None,
         should_stop=lambda: call_count[0] >= 3,
         should_pause=lambda: False,

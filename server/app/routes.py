@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from .config import MAX_NMAP_TARGET_HOSTS, MAX_SCHEDULES_PER_USER
 import secrets
 import time
 from datetime import datetime, timezone
@@ -670,8 +671,8 @@ def create_scan_job(
             net = ipaddress.ip_network(payload.nmap_target, strict=False)
             if net.is_global:
                 raise HTTPException(400, "nmap_target nu poate fi IP public")
-            if net.num_addresses > 4096:
-                raise HTTPException(400, "nmap_target prea mare (max 4096 hosts)")
+            if net.num_addresses > MAX_NMAP_TARGET_HOSTS:
+                raise HTTPException(400, f"nmap_target prea mare (max {MAX_NMAP_TARGET_HOSTS} hosts)")
         except ValueError as e:
             raise HTTPException(400, f"nmap_target invalid: {e}")
 
@@ -1223,8 +1224,6 @@ def admin_list_scans(
 
 
 # ── Scheduler endpoints ──────────────────────────────────────────────────────
-
-MAX_SCHEDULES_PER_USER = int(os.getenv("MAX_SCHEDULES_PER_USER", "5"))
 
 
 @router.post("/devices/{device_uid}/schedules", response_model=ScheduleOut)

@@ -10,6 +10,12 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from .config import (
+    MANY_PORTS_THRESHOLD,
+    SIGNATURE_AGE_DAYS_THRESHOLD,
+    BRUTEFORCE_FAIL_COUNT_THRESHOLD,
+)
+
 SEVERITY_WEIGHT: dict[str, int] = {
     "critical": 40,
     "high": 20,
@@ -224,7 +230,7 @@ def check_risky_ports(scan: dict) -> dict | None:
        compliance=["CIS-4.5", "NIST-PR.PS-01"])
 def check_many_ports(scan: dict) -> dict | None:
     open_ports = scan.get("network", {}).get("open_ports", []) or []
-    if len(open_ports) <= 20:
+    if len(open_ports) <= MANY_PORTS_THRESHOLD:
         return None
     return {
         "rule_id": "NET-MANY-PORTS-2",
@@ -711,7 +717,7 @@ def check_av_disabled(scan: dict) -> dict | None:
     if defender.get("enabled") is False:
         issues.append("Windows Defender dezactivat")
     age = defender.get("signature_age_days", 0)
-    if isinstance(age, (int, float)) and age > 7:
+    if isinstance(age, (int, float)) and age > SIGNATURE_AGE_DAYS_THRESHOLD:
         issues.append(f"Semnaturi vechi ({age} zile)")
     if not issues:
         return None
@@ -731,7 +737,7 @@ def check_av_disabled(scan: dict) -> dict | None:
 def check_brute_force(scan: dict) -> dict | None:
     events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
     failures = [e for e in events if e.get("event_id") == 4625]
-    if len(failures) < 10:
+    if len(failures) < BRUTEFORCE_FAIL_COUNT_THRESHOLD:
         return None
     accounts = sorted({e.get("account", "") for e in failures})[:5]
     return {

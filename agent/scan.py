@@ -137,7 +137,6 @@ def cmd_daemon(args: argparse.Namespace) -> int:
         return 1
 
     poll_interval = max(1, int(args.poll))
-    auto_interval = int(args.auto_interval) if args.auto_interval else 0
     once = bool(args.once)
 
     print("=" * 60)
@@ -146,7 +145,6 @@ def cmd_daemon(args: argparse.Namespace) -> int:
     print(f" API           : {api_base}")
     print(f" Device UID    : {device_uid}")
     print(f" Poll interval : {poll_interval}s")
-    print(f" Auto-scan     : {('la fiecare ' + str(auto_interval) + 's') if auto_interval else 'dezactivat'}")
     print(f" Mode          : {'one-shot (--once)' if once else 'loop'}")
     print()
     print("Astept joburi de la backend... (Ctrl+C pentru oprire)")
@@ -168,7 +166,6 @@ def cmd_daemon(args: argparse.Namespace) -> int:
         core.daemon_loop(
             api_base, device_uid, device_token,
             poll_interval=poll_interval,
-            auto_interval=auto_interval,
             log=_print_log,
         )
     except KeyboardInterrupt:
@@ -245,7 +242,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_daemon = sub.add_parser("daemon", help="Foreground; proceseaza joburi cerute din UI.")
     p_daemon.add_argument("--poll", type=int, default=3)
-    p_daemon.add_argument("--auto-interval", dest="auto_interval", type=int, default=0)
     p_daemon.add_argument("--once", action="store_true")
     p_daemon.set_defaults(func=cmd_daemon)
 

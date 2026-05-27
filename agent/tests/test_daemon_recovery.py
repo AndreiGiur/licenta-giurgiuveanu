@@ -22,7 +22,7 @@ def test_daemon_invalid_token_exits_after_first_401(monkeypatch):
     triggered = []
     core.daemon_loop(
         "http://api", "uid", "tok",
-        poll_interval=0, auto_interval=0,
+        poll_interval=0,
         log=lambda m, s="info": None,
         should_stop=lambda: False,
         should_pause=lambda: False,
@@ -47,7 +47,7 @@ def test_daemon_network_error_keeps_running(monkeypatch):
     triggered = []
     core.daemon_loop(
         "http://api", "uid", "tok",
-        poll_interval=0, auto_interval=0,
+        poll_interval=0,
         log=lambda m, s="info": None,
         should_stop=lambda: iter_count[0] >= 5,
         should_pause=lambda: False,
@@ -68,7 +68,7 @@ def test_daemon_get_job_401_also_triggers_recovery(monkeypatch):
     triggered = []
     core.daemon_loop(
         "http://api", "uid", "tok",
-        poll_interval=0, auto_interval=0,
+        poll_interval=0,
         log=lambda m, s="info": None,
         should_stop=lambda: False,
         should_pause=lambda: False,

@@ -138,7 +138,6 @@ class Scan(Base):
     # Nullable pentru compat cu scan-uri vechi (pre-2026-05-19).
     score_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     payload: Mapped[dict] = mapped_column(JSON)
-    nmap_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     device: Mapped["Device"] = relationship(back_populates="scans")
     findings: Mapped[list["Finding"]] = relationship(back_populates="scan", cascade="all, delete-orphan")
