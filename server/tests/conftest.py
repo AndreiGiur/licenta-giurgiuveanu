@@ -81,3 +81,32 @@ def make_token_pair() -> tuple[str, str]:
     token = secrets.token_urlsafe(48)
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     return token, token_hash
+
+
+@pytest.fixture
+def make_scan():
+    """Fixture pentru construirea de scan dict-uri minimale in testele de reguli.
+
+    Returneaza o factory `make_scan(scan_type='standard') -> dict` care produce
+    un payload de scanare cu valori default rezonabile, peste care testele pot
+    suprascrie campuri specifice. Inlocuieste copiile locale `_empty_scan()`,
+    `_base()`, `_base_deep()` din test_rules.py, test_new_rules.py,
+    test_rule_fp_fixes.py, test_scoring_breakdown.py.
+    """
+    def _make(scan_type: str = "standard") -> dict:
+        return {
+            "scan_type": scan_type,
+            "device_uid": "test",
+            "os": {
+                "system": "Windows", "release": "11", "version": "10.0.22000",
+                "machine": "AMD64", "hostname": "host", "is_admin": False,
+                "username": "u",
+            },
+            "network": {"open_ports": []},
+            "processes": [],
+            "software": [],
+            "system_info": {},
+            "persistence": None,
+            "forensics": None,
+        }
+    return _make

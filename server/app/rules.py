@@ -24,6 +24,178 @@ SEVERITY_WEIGHT: dict[str, int] = {
     "info": 0,
 }
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTANTE LA NIVEL MODUL (extrase din interiorul funcțiilor regulilor)
+# ─────────────────────────────────────────────────────────────────────────────
+# Beneficii: evita re-crearea structurilor la fiecare call; permite reutilizarea
+# in teste/alte module; deduplica logica intre reguli (ex: VIRTUAL_PREFIXES).
+
+# Prefixe IP private + adaptoare virtuale (Hyper-V vSwitch / WSL / Docker bridge).
+# Folosit de NET-OPEN-PORTS-1 (downgrade severitate) si NET-ESTABLISHED-1 (skip).
+VIRTUAL_PREFIXES: tuple[str, ...] = (
+    "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
+    "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+    "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+    "169.254.",  # link-local
+    "fe80:",     # link-local IPv6
+)
+
+# Toate prefixele private (include LAN-uri tipice + virtual). Folosit pentru
+# NET-ESTABLISHED-1: o conexiune catre IP cu astfel de prefix nu e expunere externa.
+PRIVATE_IP_PREFIXES: tuple[str, ...] = (
+    "10.", "127.", "192.168.", "::1",
+) + VIRTUAL_PREFIXES
+
+# Porturi cunoscute periculoase si descrierile lor.
+RISKY_PORTS: dict[int, str] = {
+    21:   "FTP – transfer fisiere necriptat",
+    23:   "Telnet – acces remote necriptat",
+    25:   "SMTP – server de mail expus",
+    139:  "NetBIOS – partajare fisiere Windows",
+    445:  "SMB – partajare fisiere Windows (risc EternalBlue)",
+    3389: "RDP – Remote Desktop Protocol",
+    5900: "VNC – acces remote grafic",
+    5985: "WinRM HTTP – management remote Windows",
+    5986: "WinRM HTTPS – management remote Windows",
+}
+
+# Procese cunoscute ca instrumente de atac (mimikatz, etc.) sau cu utilizare
+# legitima dar frecvent abuzata (nmap, wireshark).
+SUSPICIOUS_PROCESSES: dict[str, str] = {
+    "nc.exe":           "Netcat – tool de retea, frecvent abuzat",
+    "netcat":           "Netcat – tool de retea, frecvent abuzat",
+    "ncat.exe":         "Ncat (Nmap) – tool de retea",
+    "nmap.exe":         "Nmap – scanner de retea",
+    "mimikatz.exe":     "Mimikatz – extragere credentiale (malware)",
+    "psexec.exe":       "PsExec – executie remote",
+    "meterpreter":      "Meterpreter – payload Metasploit",
+    "cobaltstrike":     "Cobalt Strike – framework ofensiv",
+    "wireshark.exe":    "Wireshark – sniffer de retea",
+    "rawcap.exe":       "RawCap – captare pachete",
+}
+
+# Software vulnerabil cunoscut. Match prin substring case-insensitive.
+VULNERABLE_SOFTWARE: tuple[dict, ...] = (
+    {"name_contains": "Adobe Flash",        "severity": "critical", "cve": "multiple",       "note": "EOL din 2020, nu mai primeste patch-uri"},
+    {"name_contains": "Internet Explorer",  "severity": "high",     "cve": "multiple",       "note": "EOL din 2022, vulnerabilitati nepatched"},
+    {"name_contains": "Java 6",             "severity": "high",     "cve": "multiple",       "note": "EOL, versiune nesupportata"},
+    {"name_contains": "Java 7",             "severity": "high",     "cve": "multiple",       "note": "EOL, versiune nesupportata"},
+    {"name_contains": "OpenSSL 1.0",        "severity": "high",     "cve": "CVE-2022-0778",  "note": "Versiune vulnerabila"},
+    {"name_contains": "WinRAR 5",           "severity": "medium",   "cve": "CVE-2023-38831", "note": "Versiune vulnerabila la executie de cod"},
+    {"name_contains": "7-Zip 2",            "severity": "low",      "cve": "CVE-2023-31102", "note": "Versiune mai veche"},
+)
+
+# Sisteme de operare EOL (End-of-Life) — fara mai primesc actualizari de securitate.
+EOL_OPERATING_SYSTEMS: tuple[dict, ...] = (
+    {"system": "Windows", "rel": "XP",    "severity": "critical"},
+    {"system": "Windows", "rel": "Vista", "severity": "critical"},
+    {"system": "Windows", "rel": "7",     "severity": "high"},
+    {"system": "Windows", "rel": "8.0",   "severity": "high"},
+    {"system": "Linux",   "rel": "2.6",   "severity": "high"},
+)
+
+# Path-uri suspecte pentru startup entries (executabile in directoare scrise de
+# user, frecvent folosite de malware pentru persistenta).
+SUSPICIOUS_STARTUP_PATHS: tuple[str, ...] = (
+    "%temp%", "%appdata%", "\\temp\\", "\\appdata\\local\\temp",
+    "\\users\\public\\", "\\programdata\\temp",
+)
+
+# Flag-uri PowerShell folosite frecvent in payload-uri ofensive (comenzi encoded).
+POWERSHELL_OFFENSIVE_FLAGS: tuple[str, ...] = ("-enc ", "-encodedcommand", " -e ")
+
+# Path-uri standard pentru servicii Windows legitime.
+STANDARD_SERVICE_PATHS: tuple[str, ...] = (
+    "c:\\windows\\", "c:\\program files\\", "c:\\program files (x86)\\",
+)
+
+# Share-uri default Windows (nu trebuie alertate).
+DEFAULT_WINDOWS_SHARES: frozenset[str] = frozenset({"admin$", "ipc$", "c$", "d$", "e$", "print$"})
+
+# Porturi standard care nu sunt suspecte la conexiuni externe (HTTP, push, etc.).
+STD_OUTBOUND_PORTS: frozenset[int] = frozenset({
+    80, 443, 53, 22, 25, 587, 465, 993, 995, 8080, 8443,
+    5228, 5229, 5230,  # Google FCM / push notifications
+    5223, 5222,        # XMPP
+    3478, 3479,        # STUN (WebRTC)
+    5061, 5060,        # SIP
+    1935,              # RTMP (streaming)
+    8009, 8008,        # Chromecast
+})
+
+# Procese cunoscute care fac multe conexiuni externe legitime (browsere, comunicare).
+KNOWN_NETWORK_PROCESSES: frozenset[str] = frozenset({
+    "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe", "safari.exe",
+    "anydesk.exe", "teamviewer.exe", "teamviewer_service.exe",
+    "teams.exe", "ms-teams.exe", "slack.exe", "discord.exe", "skype.exe", "zoom.exe",
+    "spotify.exe", "steam.exe", "epicgameslauncher.exe", "battle.net.exe",
+    "code.exe", "code - insiders.exe",
+    "outlook.exe", "thunderbird.exe",
+    "onedrive.exe", "dropbox.exe", "googledrivefs.exe",
+})
+
+# Valori default Windows pentru Winlogon — NU sunt suspecte (toate sistemele le au).
+WINLOGON_DEFAULTS: dict[str, tuple[str, ...]] = {
+    "userinit": ("c:\\windows\\system32\\userinit.exe", "c:\\windows\\system32\\userinit.exe,"),
+    "shell": ("explorer.exe",),
+}
+
+# Subscriptii WMI built-in Windows cu command vid — nu sunt malware.
+WMI_BUILTIN_NAMES: frozenset[str] = frozenset({
+    "scm event log consumer",
+    "bvtconsumer",
+    "bvtfilter",
+    "ntevent_logbiosfilter",
+})
+
+# Issuer-i de certificate de root cunoscuti (CA-uri globale + self-signed app legit).
+KNOWN_CERT_ISSUERS: tuple[str, ...] = (
+    "microsoft", "digicert", "comodo", "sectigo", "verisign",
+    "globalsign", "entrust", "thawte", "geotrust", "symantec",
+    "let's encrypt", "lets encrypt", "amazon", "google trust services",
+    "go daddy", "starfield", "identrust", "isrg",
+    # Self-signed cert-uri legit instalate de app-uri populare:
+    "blizzard", "battle.net",
+    "valve", "steam",
+    "epic games", "easyanticheat",
+    "riot games",
+    "dell", "hp inc", "lenovo",
+    "intel", "amd", "nvidia",
+    "qualcomm", "realtek",
+)
+
+# Conturi sistem care nu trebuie alertate la event 4672 (privilegii speciale).
+SYSTEM_ACCOUNTS_PRIVESC: frozenset[str] = frozenset({
+    "system", "local service", "network service", "administrator", "",
+})
+
+# Entry-uri default in hosts file (incluse de Docker Desktop si altele).
+HOSTS_DEFAULTS: frozenset[tuple[str, str]] = frozenset({
+    ("127.0.0.1", "localhost"), ("::1", "localhost"),
+    ("127.0.0.1", "localhost.localdomain"),
+    ("127.0.0.1", "kubernetes.docker.internal"),  # Docker Desktop
+    ("127.0.0.1", "host.docker.internal"),
+    ("127.0.0.1", "gateway.docker.internal"),
+})
+
+
+# Helper public — disponibil pentru teste si pentru reutilizare intre reguli.
+def is_virtual_ip(ip: str) -> bool:
+    """True daca IP-ul e pe adaptor virtual (Hyper-V/WSL/Docker bridge) sau link-local.
+    NU acopera 10.x si 192.168.x (LAN-uri reale, accesibile in retea privata)."""
+    if not ip or ip in ("0.0.0.0", "::"):
+        return False
+    return any(ip.startswith(p) for p in VIRTUAL_PREFIXES)
+
+
+def is_private_or_virtual_ip(ip: str) -> bool:
+    """True daca IP-ul e privat (LAN/loopback) sau virtual. Folosit pentru a
+    decide daca o conexiune merita raportata ca expunere externa."""
+    if not ip:
+        return False
+    return any(ip.startswith(p) for p in PRIVATE_IP_PREFIXES)
+
 LEVEL_ORDER: dict[str, int] = {"standard": 0, "advanced": 1, "deep": 2}
 
 CATEGORIES: tuple[str, ...] = (
@@ -141,28 +313,6 @@ def evaluate(scan: dict[str, Any]) -> tuple[int, dict[str, int], list[dict[str, 
 @rule("NET-OPEN-PORTS-1", min_level="standard", category="network_exposure", weight=1.5,
        compliance=["CIS-4.5", "CIS-12.4", "NIST-PR.PS-01", "NIST-PR.IR-01"])
 def check_risky_ports(scan: dict) -> dict | None:
-    RISKY_PORTS: dict[int, str] = {
-        21:   "FTP – transfer fisiere necriptat",
-        23:   "Telnet – acces remote necriptat",
-        25:   "SMTP – server de mail expus",
-        139:  "NetBIOS – partajare fisiere Windows",
-        445:  "SMB – partajare fisiere Windows (risc EternalBlue)",
-        3389: "RDP – Remote Desktop Protocol",
-        5900: "VNC – acces remote grafic",
-        5985: "WinRM HTTP – management remote Windows",
-        5986: "WinRM HTTPS – management remote Windows",
-    }
-    # Prefixe pentru adaptoare virtuale (Hyper-V vSwitch / WSL / Docker bridge).
-    # Aceste IP-uri NU sunt accesibile din internet — sunt doar pe subnet-uri
-    # virtuale interne. Porturile expuse doar pe astfel de IP-uri primesc
-    # severitate redusa (low → "informational").
-    VIRTUAL_PREFIXES = (
-        "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
-        "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
-        "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
-        "169.254.",  # link-local
-        "fe80:",     # link-local IPv6
-    )
     net = scan.get("network", {}) or {}
     open_ports: list[int] = net.get("open_ports", []) or []
     bindings: list[dict] = net.get("port_bindings", []) or []
@@ -175,13 +325,7 @@ def check_risky_ports(scan: dict) -> dict | None:
         ips = [b.get("ip", "") for b in bindings if b.get("port") == port]
         if not ips:
             return False
-        for ip in ips:
-            # Bind pe wildcard sau pe orice IP non-virtual = expunere reala.
-            if ip in ("0.0.0.0", "::", ""):
-                return False
-            if not any(ip.startswith(p) for p in VIRTUAL_PREFIXES):
-                return False
-        return True
+        return all(is_virtual_ip(ip) for ip in ips)
 
     risky_real = {}
     risky_virtual = {}
@@ -265,21 +409,9 @@ def check_admin_session(scan: dict) -> dict | None:
 @rule("PROC-SUSPICIOUS-1", min_level="standard", category="critical_risk", weight=1.5,
        compliance=["CIS-10.1", "CIS-13.2", "NIST-DE.CM-01", "NIST-DE.AE-02"])
 def check_suspicious_processes(scan: dict) -> dict | None:
-    SUSPICIOUS_PROCS: dict[str, str] = {
-        "nc.exe":           "Netcat – tool de retea, frecvent abuzat",
-        "netcat":           "Netcat – tool de retea, frecvent abuzat",
-        "ncat.exe":         "Ncat (Nmap) – tool de retea",
-        "nmap.exe":         "Nmap – scanner de retea",
-        "mimikatz.exe":     "Mimikatz – extragere credentiale (malware)",
-        "psexec.exe":       "PsExec – executie remote",
-        "meterpreter":      "Meterpreter – payload Metasploit",
-        "cobaltstrike":     "Cobalt Strike – framework ofensiv",
-        "wireshark.exe":    "Wireshark – sniffer de retea",
-        "rawcap.exe":       "RawCap – captare pachete",
-    }
     procs = scan.get("processes", []) or []
     proc_names = {p.get("name", "").lower() for p in procs}
-    found = {n: SUSPICIOUS_PROCS[n] for n in proc_names if n in SUSPICIOUS_PROCS}
+    found = {n: SUSPICIOUS_PROCESSES[n] for n in proc_names if n in SUSPICIOUS_PROCESSES}
     if not found:
         return None
     return {
@@ -318,15 +450,6 @@ def check_powershell_running(scan: dict) -> dict | None:
 @rule("SW-VULNERABLE-1", min_level="standard", category="critical_risk", weight=1.5,
        compliance=["CIS-2.2", "CIS-7.4", "NIST-ID.RA-01", "NIST-PR.PS-02"])
 def check_vulnerable_software(scan: dict) -> list[dict]:
-    VULNERABLE_SOFTWARE: list[dict] = [
-        {"name_contains": "Adobe Flash",        "severity": "critical", "cve": "multiple",       "note": "EOL din 2020, nu mai primeste patch-uri"},
-        {"name_contains": "Internet Explorer",  "severity": "high",     "cve": "multiple",       "note": "EOL din 2022, vulnerabilitati nepatched"},
-        {"name_contains": "Java 6",             "severity": "high",     "cve": "multiple",       "note": "EOL, versiune nesupportata"},
-        {"name_contains": "Java 7",             "severity": "high",     "cve": "multiple",       "note": "EOL, versiune nesupportata"},
-        {"name_contains": "OpenSSL 1.0",        "severity": "high",     "cve": "CVE-2022-0778",  "note": "Versiune vulnerabila"},
-        {"name_contains": "WinRAR 5",           "severity": "medium",   "cve": "CVE-2023-38831", "note": "Versiune vulnerabila la executie de cod"},
-        {"name_contains": "7-Zip 2",            "severity": "low",      "cve": "CVE-2023-31102", "note": "Versiune mai veche"},
-    ]
     software = scan.get("software", []) or []
     sw_names = [s.get("name", "") for s in software]
     out: list[dict] = []
@@ -350,17 +473,10 @@ def check_vulnerable_software(scan: dict) -> list[dict]:
 @rule("OS-EOL-1", min_level="standard", category="critical_risk", weight=1.5,
        compliance=["CIS-2.2", "CIS-7.3", "NIST-PR.PS-02", "NIST-ID.RA-01"])
 def check_eol_os(scan: dict) -> dict | None:
-    OS_EOL = [
-        {"system": "Windows", "rel": "XP",    "severity": "critical"},
-        {"system": "Windows", "rel": "Vista", "severity": "critical"},
-        {"system": "Windows", "rel": "7",     "severity": "high"},
-        {"system": "Windows", "rel": "8.0",   "severity": "high"},
-        {"system": "Linux",   "rel": "2.6",   "severity": "high"},
-    ]
     os_info = scan.get("os", {}) or {}
     system = os_info.get("system", "")
     release = os_info.get("release", "")
-    for r in OS_EOL:
+    for r in EOL_OPERATING_SYSTEMS:
         if r["system"] in system and r["rel"] in release:
             return {
                 "rule_id": "OS-EOL-1",
@@ -430,11 +546,9 @@ def check_extra_admins(scan: dict) -> dict | None:
        compliance=["CIS-10.1", "CIS-2.3", "NIST-DE.AE-02", "NIST-PR.PS-04"])
 def check_suspicious_startup(scan: dict) -> dict | None:
     startup = (scan.get("persistence", {}) or {}).get("startup", []) or []
-    SUSP = ("%temp%", "%appdata%", "\\temp\\", "\\appdata\\local\\temp",
-            "\\users\\public\\", "\\programdata\\temp")
     suspicious = [
         s for s in startup
-        if any(p in s.get("path", "").lower() for p in SUSP)
+        if any(p in s.get("path", "").lower() for p in SUSPICIOUS_STARTUP_PATHS)
     ]
     if not suspicious:
         return None
@@ -453,11 +567,10 @@ def check_suspicious_startup(scan: dict) -> dict | None:
        compliance=["CIS-8.5", "CIS-10.7", "NIST-DE.AE-02"])
 def check_suspicious_tasks(scan: dict) -> dict | None:
     tasks = (scan.get("persistence", {}) or {}).get("tasks", []) or []
-    FLAGS = ("-enc ", "-encodedcommand", " -e ")
     suspicious = [
         t for t in tasks
         if "powershell" in t.get("action", "").lower()
-        and any(f in t.get("action", "").lower() for f in FLAGS)
+        and any(f in t.get("action", "").lower() for f in POWERSHELL_OFFENSIVE_FLAGS)
     ]
     if not suspicious:
         return None
@@ -476,12 +589,11 @@ def check_suspicious_tasks(scan: dict) -> dict | None:
        compliance=["CIS-2.3", "CIS-10.1", "NIST-DE.CM-09"])
 def check_suspicious_services(scan: dict) -> dict | None:
     services = (scan.get("persistence", {}) or {}).get("services", []) or []
-    STD = ("c:\\windows\\", "c:\\program files\\", "c:\\program files (x86)\\")
     suspicious = [
         s for s in services
         if s.get("status", "").lower() == "running"
         and s.get("binary_path", "")
-        and not any(s.get("binary_path", "").lower().startswith(p) for p in STD)
+        and not any(s.get("binary_path", "").lower().startswith(p) for p in STANDARD_SERVICE_PATHS)
     ]
     if not suspicious:
         return None
@@ -500,8 +612,7 @@ def check_suspicious_services(scan: dict) -> dict | None:
        compliance=["CIS-3.3", "CIS-12.2", "NIST-PR.DS-01", "NIST-PR.AA-05"])
 def check_network_shares(scan: dict) -> dict | None:
     shares = (scan.get("network", {}) or {}).get("shares", []) or []
-    DEFAULT = {"admin$", "ipc$", "c$", "d$", "e$", "print$"}
-    non_default = [s for s in shares if s.get("name", "").lower() not in DEFAULT]
+    non_default = [s for s in shares if s.get("name", "").lower() not in DEFAULT_WINDOWS_SHARES]
     if not non_default:
         return None
     return {
@@ -536,36 +647,12 @@ def check_ps_policy(scan: dict) -> dict | None:
        compliance=["CIS-13.5", "CIS-13.1", "NIST-DE.CM-01", "NIST-DE.AE-07"])
 def check_established_connections(scan: dict) -> dict | None:
     conns = (scan.get("network", {}) or {}).get("connections", []) or []
-    PRIVATE = ("10.", "127.", "192.168.", "169.254.", "::1", "fe80:",
-               "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
-               "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
-               "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")
-    STD_PORTS = {
-        80, 443, 53, 22, 25, 587, 465, 993, 995, 8080, 8443,
-        5228, 5229, 5230,  # Google FCM / push notifications
-        5223,              # XMPP (Hangouts/iCloud)
-        5222,              # XMPP plain
-        3478, 3479,        # STUN (WebRTC)
-        5061, 5060,        # SIP
-        1935,              # RTMP (streaming)
-        8009, 8008,        # Chromecast
-    }
-    # Procese cunoscute care fac multe conexiuni externe legitime.
-    KNOWN_PROCS = {
-        "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe", "safari.exe",
-        "anydesk.exe", "teamviewer.exe", "teamviewer_service.exe",
-        "teams.exe", "ms-teams.exe", "slack.exe", "discord.exe", "skype.exe", "zoom.exe",
-        "spotify.exe", "steam.exe", "epicgameslauncher.exe", "battle.net.exe",
-        "code.exe", "code - insiders.exe",
-        "outlook.exe", "thunderbird.exe",
-        "onedrive.exe", "dropbox.exe", "googledrivefs.exe",
-    }
     suspicious = [
         c for c in conns
         if c.get("remote_ip")
-        and not any(c["remote_ip"].startswith(p) for p in PRIVATE)
-        and c.get("remote_port", 0) not in STD_PORTS
-        and (c.get("process") or "").lower() not in KNOWN_PROCS
+        and not is_private_or_virtual_ip(c["remote_ip"])
+        and c.get("remote_port", 0) not in STD_OUTBOUND_PORTS
+        and (c.get("process") or "").lower() not in KNOWN_NETWORK_PROCESSES
     ]
     if not suspicious:
         return None
@@ -583,31 +670,24 @@ def check_established_connections(scan: dict) -> dict | None:
     }
 
 
+def _is_winlogon_default(values: dict) -> bool:
+    """True daca dict Winlogon contine doar valori default Windows."""
+    if not isinstance(values, dict):
+        return False
+    for k, v in values.items():
+        k_low = k.lower()
+        v_low = (v or "").strip().lower()
+        if k_low not in WINLOGON_DEFAULTS:
+            return False  # cheie necunoscuta -> suspect
+        if v_low not in WINLOGON_DEFAULTS[k_low]:
+            return False
+    return True
+
+
 @rule("REG-HIJACK-1", min_level="deep", category="critical_risk", weight=2.0,
        compliance=["CIS-10.1", "CIS-10.7", "NIST-DE.AE-02", "NIST-DE.CM-09"])
 def check_registry_hijack(scan: dict) -> dict | None:
     reg = (scan.get("persistence", {}) or {}).get("reg_persistence", {}) or {}
-
-    # Valori default Windows pentru cheile monitorizate — NU sunt suspecte.
-    # Userinit poate avea trailing comma in valoarea default.
-    WINLOGON_DEFAULTS = {
-        "userinit": ("c:\\windows\\system32\\userinit.exe", "c:\\windows\\system32\\userinit.exe,"),
-        "shell": ("explorer.exe",),
-    }
-
-    def _is_winlogon_default(values: dict) -> bool:
-        """True daca dict Winlogon contine doar valori default Windows."""
-        if not isinstance(values, dict):
-            return False
-        for k, v in values.items():
-            k_low = k.lower()
-            v_low = (v or "").strip().lower()
-            if k_low not in WINLOGON_DEFAULTS:
-                return False  # cheie necunoscuta -> suspect
-            if v_low not in WINLOGON_DEFAULTS[k_low]:
-                return False
-        return True
-
     # Pastram doar entry-uri non-default + non-empty.
     suspicious: dict = {}
     for key, value in reg.items():
@@ -634,19 +714,12 @@ def check_registry_hijack(scan: dict) -> dict | None:
        compliance=["CIS-10.1", "CIS-10.7", "NIST-DE.AE-02", "NIST-DE.CM-09"])
 def check_wmi_persistence(scan: dict) -> dict | None:
     subs = (scan.get("persistence", {}) or {}).get("wmi_subscriptions", []) or []
-    # Subscriptii built-in Windows cu command vid — nu sunt malware.
-    BUILTIN_NAMES = {
-        "scm event log consumer",
-        "bvtconsumer",
-        "bvtfilter",
-        "ntevent_logbiosfilter",
-    }
     suspicious = []
     for s in subs:
         cmd = (s.get("command") or "").strip()
         name_low = (s.get("name") or "").strip().lower()
         # Skip subscriptii cu command vid (built-in) sau cu name in lista cunoscuta.
-        if not cmd or name_low in BUILTIN_NAMES:
+        if not cmd or name_low in WMI_BUILTIN_NAMES:
             continue
         suspicious.append(s)
     if not suspicious:
@@ -666,21 +739,9 @@ def check_wmi_persistence(scan: dict) -> dict | None:
        compliance=["CIS-3.10", "CIS-12.2", "NIST-PR.DS-02", "NIST-PR.IR-01"])
 def check_untrusted_certs(scan: dict) -> dict | None:
     certs = (scan.get("forensics", {}) or {}).get("certificates", []) or []
-    KNOWN = ("microsoft", "digicert", "comodo", "sectigo", "verisign",
-             "globalsign", "entrust", "thawte", "geotrust", "symantec",
-             "let's encrypt", "lets encrypt", "amazon", "google trust services",
-             "go daddy", "starfield", "identrust", "isrg",
-             # Self-signed cert-uri legit instalate de app-uri populare:
-             "blizzard", "battle.net",
-             "valve", "steam",
-             "epic games", "easyanticheat",
-             "riot games",
-             "dell", "hp inc", "lenovo",
-             "intel", "amd", "nvidia",
-             "qualcomm", "realtek")
     suspicious = [
         c for c in certs
-        if not any(k in c.get("issuer", "").lower() for k in KNOWN)
+        if not any(k in c.get("issuer", "").lower() for k in KNOWN_CERT_ISSUERS)
         and not any(k in c.get("subject", "").lower() for k in ("microsoft", "windows"))
     ]
     if not suspicious:
@@ -755,11 +816,10 @@ def check_brute_force(scan: dict) -> dict | None:
        compliance=["CIS-5.4", "CIS-8.5", "NIST-PR.AA-05", "NIST-DE.AE-02"])
 def check_privesc(scan: dict) -> dict | None:
     events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
-    SYS = {"system", "local service", "network service", "administrator", ""}
     suspicious = [
         e for e in events
         if e.get("event_id") == 4672
-        and e.get("account", "").lower() not in SYS
+        and e.get("account", "").lower() not in SYSTEM_ACCOUNTS_PRIVESC
         and not e.get("account", "").endswith("$")
     ]
     if not suspicious:
@@ -776,35 +836,27 @@ def check_privesc(scan: dict) -> dict | None:
     }
 
 
+def _is_clean_hosts_entry(h: dict) -> bool:
+    """Filtreaza entry-uri hosts care nu sunt valide (BOM, comentarii, etc.)."""
+    ip = (h.get("ip") or "").strip()
+    host = (h.get("hostname") or "").strip().lower()
+    # Skip linii fara IP valid (gol, BOM, comentariu).
+    if not ip or ip.startswith("#") or "﻿" in ip:
+        return False
+    # Skip linii fara hostname valid.
+    if not host:
+        return False
+    return True
+
+
 @rule("HOSTS-TAMPERED-1", min_level="deep", category="activity", weight=1.0,
        compliance=["CIS-10.1", "NIST-DE.AE-02", "NIST-PR.DS-06"])
 def check_hosts_tampered(scan: dict) -> dict | None:
     entries = (scan.get("forensics", {}) or {}).get("hosts", []) or []
-    OK = {
-        ("127.0.0.1", "localhost"), ("::1", "localhost"),
-        ("127.0.0.1", "localhost.localdomain"),
-        # Entry-uri default scrise de aplicatii populare:
-        ("127.0.0.1", "kubernetes.docker.internal"),  # Docker Desktop
-        ("127.0.0.1", "host.docker.internal"),
-        ("127.0.0.1", "gateway.docker.internal"),
-    }
-
-    def _is_clean_entry(h: dict) -> bool:
-        """Filtreaza entry-uri care nu sunt valide hosts file (BOM, comentarii, etc.)."""
-        ip = (h.get("ip") or "").strip()
-        host = (h.get("hostname") or "").strip().lower()
-        # Skip linii fara IP valid (gol, BOM, comentariu).
-        if not ip or ip.startswith("#") or "﻿" in ip:
-            return False
-        # Skip linii fara hostname valid.
-        if not host:
-            return False
-        return True
-
     suspicious = [
         h for h in entries
-        if _is_clean_entry(h)
-        and (h.get("ip", "").strip(), h.get("hostname", "").strip().lower()) not in OK
+        if _is_clean_hosts_entry(h)
+        and (h.get("ip", "").strip(), h.get("hostname", "").strip().lower()) not in HOSTS_DEFAULTS
     ]
     if not suspicious:
         return None
