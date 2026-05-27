@@ -1,0 +1,92 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── Backend (FastAPI + pytest) ─────────────────────────────────────────
+  backend:
+    name: Backend tests (server + rules)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: server/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r server/requirements.txt
+
+      - name: Run pytest
+        env:
+          # Tests folosesc SQLite in-memory (override-uit in conftest.py)
+          # + dezactiveaza scheduler-ul background + rate limiting
+          DISABLE_SCHEDULER: "true"
+          DISABLE_RATELIMIT: "true"
+          GOOGLE_CLIENT_ID_WEB: "ci-fake-id-web"
+          GOOGLE_CLIENT_SECRET_WEB: "ci-fake-secret"
+          GOOGLE_CLIENT_ID_DESKTOP: "ci-fake-id-desktop"
+          FRONTEND_BASE_URL: "http://localhost:5173"
+        run: |
+          cd server
+          python -m pytest -v --tb=short
+
+  # ─── Agent (Python + psutil + nmap_parser) ───────────────────────────────
+  agent:
+    name: Agent tests (collectors + daemon + parsers)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install agent dependencies (cross-platform safe)
+        run: |
+          python -m pip install --upgrade pip
+          # Agent are pywin32 ca dependinta Windows-only; CI ruleaza pe linux
+          # deci instalam doar dependintele cross-platform (psutil, requests, etc.)
+          pip install psutil requests google-auth google-auth-oauthlib pytest
+
+      - name: Run agent pytest
+        run: python -m pytest agent/tests -v --tb=short
+
+  # ─── Frontend (Vite + Vitest + TypeScript) ──────────────────────────────
+  frontend:
+    name: Frontend tests (Vitest + tsc)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc -b
+
+      - name: Vitest
+        run: npm test

@@ -5,8 +5,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from .db import Base, SessionLocal, engine
+from .ratelimit import limiter
 from .routes import router  # importa config -> incarca .env automat
 from .scheduler import scheduler_loop
 
@@ -32,7 +35,34 @@ async def lifespan(_app: FastAPI):
             pass
 
 
-app = FastAPI(title="VulnWatch API", version="1.0", lifespan=lifespan)
+# Metadata pentru documentația OpenAPI auto-generată la /docs și /redoc.
+# Tag-urile grupează endpoint-urile pe domenii funcționale.
+_OPENAPI_TAGS = [
+    {"name": "auth", "description": "Înregistrare, login, logout, Google OAuth (web). Returnează cookie HttpOnly pentru browser și `session_token` pentru clienți non-browser."},
+    {"name": "devices", "description": "Înrolare, listare, relink, ștergere dispozitive. Toate operațiile sunt filtrate pe `owner_id`."},
+    {"name": "scans", "description": "Detalii scanări, export PDF, diff între scanări, trend de scor. Acces doar pentru proprietar (sau admin)."},
+    {"name": "scan-jobs", "description": "Coada de joburi pentru flow-ul scan-on-demand. UI cere → backend creează → agent execută."},
+    {"name": "agent", "description": "Endpoint-uri folosite exclusiv de agent (heartbeat, polling joburi, raportare rezultat, descărcare executabil, înrolare Google desktop)."},
+    {"name": "profile", "description": "Gestionare profil utilizator: nume, preferințe, sesiuni active, schimbare parolă, statistici."},
+    {"name": "scheduler", "description": "Planificări recurente de scanare (daily/weekly/monthly). Maximum 5 per utilizator."},
+    {"name": "admin", "description": "Operații rezervate utilizatorilor cu `role=admin`. Listare cross-user a conturilor, dispozitivelor și scanărilor; resetare parolă; promovare/retrogradare."},
+]
+
+app = FastAPI(
+    title="VulnWatch API",
+    version="1.0",
+    description=(
+        "API REST pentru platforma VulnWatch — evaluare a expunerii cibernetice "
+        "pentru dispozitive personale. Documentația interactivă este disponibilă "
+        "la `/docs` (Swagger UI) și `/redoc` (ReDoc)."
+    ),
+    openapi_tags=_OPENAPI_TAGS,
+    lifespan=lifespan,
+)
+
+# Inregistreaza rate limiter-ul si handler-ul pentru HTTP 429.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Origins permise pentru CORS. In productie se poate seta CORS_ORIGINS,
 # o lista separata prin virgule (ex: "https://app.example.com,https://admin.example.com").

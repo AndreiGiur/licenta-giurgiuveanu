@@ -1,5 +1,7 @@
 # VulnWatch — Platformă de monitorizare a expunerilor
 
+[![Tests](https://github.com/AndreiGiur/licenta-giurgiuveanu/actions/workflows/test.yml/badge.svg)](https://github.com/AndreiGiur/licenta-giurgiuveanu/actions/workflows/test.yml)
+
 Lucrare de licență — Giurgiuveanu Andrei.
 
 VulnWatch este o platformă self-hosted ce colectează informații despre starea

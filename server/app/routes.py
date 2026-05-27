@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import config, google_auth
+from .ratelimit import limiter
 from .auth import (
     clear_session_cookie,
     create_password,
@@ -162,8 +163,9 @@ def _device_for_token_or_401(db: Session, x_device_token: str | None) -> Device:
     return device
 
 
-@router.post("/auth/register", response_model=MeOut)
-def register(payload: RegisterIn, db: Session = Depends(get_db)):
+@router.post("/auth/register", response_model=MeOut, tags=["auth"])
+@limiter.limit("5/minute")
+def register(request: Request, payload: RegisterIn, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
     if get_user_by_email(db, email):
         raise HTTPException(status_code=400, detail="email already registered")
@@ -180,7 +182,8 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
     return MeOut(id=user.id, email=user.email, role=user.role)
 
 
-@router.post("/auth/login", response_model=TokenOut)
+@router.post("/auth/login", response_model=TokenOut, tags=["auth"])
+@limiter.limit("5/minute")
 def login(request: Request, response: Response, payload: LoginIn, db: Session = Depends(get_db)):
     email = payload.email.lower().strip()
     user = get_user_by_email(db, email)
@@ -200,7 +203,7 @@ def login(request: Request, response: Response, payload: LoginIn, db: Session = 
     return TokenOut(session_token=token)
 
 
-@router.get("/auth/me", response_model=MeOut)
+@router.get("/auth/me", response_model=MeOut, tags=["auth"])
 def me(user: User = Depends(require_user)):
     return MeOut(
         id=user.id,
@@ -214,7 +217,7 @@ def me(user: User = Depends(require_user)):
     )
 
 
-@router.patch("/me", response_model=MeOut)
+@router.patch("/me", response_model=MeOut, tags=["profile"])
 def update_my_profile(
     payload: UpdateProfileIn,
     db: Session = Depends(get_db),
@@ -242,7 +245,7 @@ def update_my_profile(
     )
 
 
-@router.delete("/auth/logout")
+@router.delete("/auth/logout", tags=["auth"])
 def logout(
     response: Response,
     db: Session = Depends(get_db),
@@ -259,7 +262,7 @@ def logout(
     return {"ok": True}
 
 
-@router.post("/devices", response_model=DeviceCreateOut)
+@router.post("/devices", response_model=DeviceCreateOut, tags=["devices"])
 def create_device(payload: DeviceCreateIn, db: Session = Depends(get_db), user: User = Depends(require_user)):
     device_uid = payload.device_uid.strip()
     name = payload.name.strip()
@@ -287,7 +290,7 @@ def create_device(payload: DeviceCreateIn, db: Session = Depends(get_db), user: 
     return _device_to_out(device)
 
 
-@router.get("/devices", response_model=list[DeviceOut])
+@router.get("/devices", response_model=list[DeviceOut], tags=["devices"])
 def list_devices(db: Session = Depends(get_db), user: User = Depends(require_user)):
     rows = db.execute(select(Device).where(Device.owner_id == user.id).order_by(Device.id.desc())).scalars().all()
     return [_device_to_out(d) for d in rows]
@@ -305,7 +308,7 @@ def list_devices(db: Session = Depends(get_db), user: User = Depends(require_use
 #      care invalideaza tokenul vechi si emite unul nou. Scan-urile istorice
 #      raman atasate de device.
 
-@router.get("/devices/by-uid/{device_uid}", response_model=DeviceOut)
+@router.get("/devices/by-uid/{device_uid}", response_model=DeviceOut, tags=["devices"])
 def get_device_by_uid(
     device_uid: str,
     db: Session = Depends(get_db),
@@ -321,7 +324,7 @@ def get_device_by_uid(
     return _device_to_out(device)
 
 
-@router.post("/devices/{device_uid}/relink", response_model=DeviceOut)
+@router.post("/devices/{device_uid}/relink", response_model=DeviceOut, tags=["devices"])
 def relink_device(
     device_uid: str,
     payload: DeviceRelinkIn,
@@ -344,7 +347,7 @@ def relink_device(
     return _device_to_out(device)
 
 
-@router.post("/scans", response_model=ScanCreateOut)
+@router.post("/scans", response_model=ScanCreateOut, tags=["scans"])
 def create_scan(
     payload: ScanIn,
     x_device_token: str | None = Header(default=None),
@@ -408,7 +411,7 @@ def create_scan(
     )
 
 
-@router.delete("/devices/{device_uid}", status_code=204)
+@router.delete("/devices/{device_uid}", status_code=204, tags=["devices"])
 def delete_device(device_uid: str, db: Session = Depends(get_db), user: User = Depends(require_user)):
     device = db.execute(
         select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
@@ -420,7 +423,7 @@ def delete_device(device_uid: str, db: Session = Depends(get_db), user: User = D
     db.commit()
 
 
-@router.get("/devices/{device_uid}/scans", response_model=list[DeviceScanListItem])
+@router.get("/devices/{device_uid}/scans", response_model=list[DeviceScanListItem], tags=["scans"])
 def list_scans_for_device(device_uid: str, db: Session = Depends(get_db), user: User = Depends(require_user)):
     device = db.execute(
         select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
@@ -445,7 +448,7 @@ def list_scans_for_device(device_uid: str, db: Session = Depends(get_db), user: 
     ]
 
 
-@router.get("/devices/{device_uid}/score-trend", response_model=list[ScoreTrendPoint])
+@router.get("/devices/{device_uid}/score-trend", response_model=list[ScoreTrendPoint], tags=["scans"])
 def device_score_trend(
     device_uid: str,
     days: int = 30,
@@ -480,7 +483,7 @@ def device_score_trend(
     ]
 
 
-@router.get("/scans/{scan_id}/diff", response_model=ScanDiffOut)
+@router.get("/scans/{scan_id}/diff", response_model=ScanDiffOut, tags=["scans"])
 def scan_diff(
     scan_id: int,
     previous: int | None = None,
@@ -536,7 +539,7 @@ def scan_diff(
     )
 
 
-@router.get("/scans/{scan_id}", response_model=ScanDetailOut)
+@router.get("/scans/{scan_id}", response_model=ScanDetailOut, tags=["scans"])
 def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
     scan = db.get(Scan, scan_id)
     if not scan:
@@ -569,7 +572,7 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db), user: User = De
     )
 
 
-@router.get("/scans/{scan_id}/report.pdf")
+@router.get("/scans/{scan_id}/report.pdf", tags=["scans"])
 def download_scan_report(scan_id: int, db: Session = Depends(get_db),
                         user: User = Depends(require_user)):
     """Genereaza si returneaza un PDF report pentru un scan. Owner-ul scan-ului
@@ -609,7 +612,7 @@ def download_scan_report(scan_id: int, db: Session = Depends(get_db),
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-@router.get("/devices/{device_uid}/scan-jobs/preview")
+@router.get("/devices/{device_uid}/scan-jobs/preview", tags=["scan-jobs"])
 def scan_jobs_preview(
     device_uid: str,
     user: User = Depends(require_user),
@@ -637,7 +640,7 @@ def scan_jobs_preview(
     }
 
 
-@router.post("/devices/{device_uid}/scan-jobs", response_model=ScanJobOut)
+@router.post("/devices/{device_uid}/scan-jobs", response_model=ScanJobOut, tags=["scan-jobs"])
 def create_scan_job(
     device_uid: str,
     payload: ScanJobCreateIn = Body(default_factory=ScanJobCreateIn),
@@ -689,7 +692,7 @@ def create_scan_job(
     return _scan_job_to_out(job, device)
 
 
-@router.get("/scan-jobs/{job_id}", response_model=ScanJobOut)
+@router.get("/scan-jobs/{job_id}", response_model=ScanJobOut, tags=["scan-jobs"])
 def get_scan_job(
     job_id: int,
     db: Session = Depends(get_db),
@@ -705,7 +708,7 @@ def get_scan_job(
     return _scan_job_to_out(job, device)
 
 
-@router.get("/devices/{device_uid}/scan-jobs", response_model=list[ScanJobOut])
+@router.get("/devices/{device_uid}/scan-jobs", response_model=list[ScanJobOut], tags=["scan-jobs"])
 def list_scan_jobs(
     device_uid: str,
     db: Session = Depends(get_db),
@@ -727,7 +730,7 @@ def list_scan_jobs(
 
 # ── Endpoint-uri pentru agent (auth: X-Device-Token) ─────────────────────────
 
-@router.get("/agent/jobs/next", response_model=AgentJobOut | None)
+@router.get("/agent/jobs/next", response_model=AgentJobOut | None, tags=["agent"])
 def agent_get_next_job(
     response: Response,
     db: Session = Depends(get_db),
@@ -758,7 +761,7 @@ def agent_get_next_job(
     return AgentJobOut(job_id=job.id, device_uid=device.device_uid, scan_type=job.scan_type)
 
 
-@router.post("/agent/jobs/{job_id}/result", response_model=ScanJobOut)
+@router.post("/agent/jobs/{job_id}/result", response_model=ScanJobOut, tags=["agent"])
 def agent_submit_result(
     job_id: int,
     payload: JobResultIn,
@@ -820,7 +823,7 @@ def agent_submit_result(
     return _scan_job_to_out(job, device)
 
 
-@router.post("/agent/heartbeat", status_code=204)
+@router.post("/agent/heartbeat", status_code=204, tags=["agent"])
 def agent_heartbeat(
     payload: HeartbeatIn,
     db: Session = Depends(get_db),
@@ -840,7 +843,7 @@ def agent_heartbeat(
     db.commit()
 
 
-@router.post("/agent/jobs/{job_id}/progress", status_code=204)
+@router.post("/agent/jobs/{job_id}/progress", status_code=204, tags=["agent"])
 def agent_update_progress(
     job_id: int,
     payload: JobProgressIn,
@@ -862,7 +865,7 @@ def agent_update_progress(
     db.commit()
 
 
-@router.post("/agent/jobs/{job_id}/fail", response_model=ScanJobOut)
+@router.post("/agent/jobs/{job_id}/fail", response_model=ScanJobOut, tags=["agent"])
 def agent_submit_failure(
     job_id: int,
     payload: JobFailureIn,
@@ -915,7 +918,7 @@ def _find_agent_artifact(filename: str) -> Path | None:
     return None
 
 
-@router.get("/agent/download/windows")
+@router.get("/agent/download/windows", tags=["agent"])
 def download_agent_windows(_user: User = Depends(require_user)):
     """Serveste VulnWatchAgent.exe pentru user-ii autentificati. 404 daca
     nu a fost build-uit (vezi `agent/build.ps1`)."""
@@ -935,7 +938,7 @@ def download_agent_windows(_user: User = Depends(require_user)):
     )
 
 
-@router.get("/agent/download/info")
+@router.get("/agent/download/info", tags=["agent"])
 def download_agent_info(_user: User = Depends(require_user)):
     """Indica daca un build de agent este disponibil. UI-ul afiseaza/ascunde
     butonul de descarcare in functie de raspuns."""
@@ -957,7 +960,7 @@ def download_agent_info(_user: User = Depends(require_user)):
 # existent), seteaza cookie sesiune, redirect catre frontend /dashboard.
 
 
-@router.get("/auth/google/url", response_model=GoogleAuthUrlOut)
+@router.get("/auth/google/url", response_model=GoogleAuthUrlOut, tags=["auth"])
 def google_auth_url():
     """Frontend ia URL-ul si redirect-uieste user-ul catre Google."""
     if not config.GOOGLE_CLIENT_ID_WEB:
@@ -972,7 +975,7 @@ def google_auth_url():
     return GoogleAuthUrlOut(auth_url=url, state=state)
 
 
-@router.get("/auth/google/callback")
+@router.get("/auth/google/callback", tags=["auth"])
 async def google_auth_callback(
     code: str,
     state: str,
@@ -1048,7 +1051,7 @@ def _upsert_google_user(db: Session, email: str, google_sub: str, picture: str |
     return user
 
 
-@router.post("/agent/google-enroll", response_model=GoogleAgentEnrollOut)
+@router.post("/agent/google-enroll", response_model=GoogleAgentEnrollOut, tags=["agent"])
 def agent_google_enroll(payload: GoogleAgentEnrollIn, db: Session = Depends(get_db)):
     """Agent trimite id_token (deja obtinut prin loopback OAuth) + device info.
     Backend verifica tokenul, creeaza/gaseste User + Device, returneaza device_token."""
@@ -1102,7 +1105,7 @@ def agent_google_enroll(payload: GoogleAgentEnrollIn, db: Session = Depends(get_
 # ── Admin endpoints ──────────────────────────────────────────────────────────
 
 
-@router.get("/admin/users", response_model=list[AdminUserOut])
+@router.get("/admin/users", response_model=list[AdminUserOut], tags=["admin"])
 def admin_list_users(
     _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
@@ -1118,7 +1121,7 @@ def admin_list_users(
     return out
 
 
-@router.delete("/admin/users/{user_id}", status_code=204)
+@router.delete("/admin/users/{user_id}", status_code=204, tags=["admin"])
 def admin_delete_user(
     user_id: int,
     admin: User = Depends(require_admin),
@@ -1133,7 +1136,7 @@ def admin_delete_user(
     db.commit()
 
 
-@router.post("/admin/users/{user_id}/role", response_model=AdminUserOut)
+@router.post("/admin/users/{user_id}/role", response_model=AdminUserOut, tags=["admin"])
 def admin_change_role(
     user_id: int,
     body: AdminRoleChangeIn,
@@ -1156,7 +1159,7 @@ def admin_change_role(
     )
 
 
-@router.post("/admin/users/{user_id}/reset-password")
+@router.post("/admin/users/{user_id}/reset-password", tags=["admin"])
 def admin_reset_password(
     user_id: int,
     body: AdminResetPasswordIn,
@@ -1175,7 +1178,7 @@ def admin_reset_password(
     return {"ok": True}
 
 
-@router.get("/admin/devices", response_model=list[AdminDeviceOut])
+@router.get("/admin/devices", response_model=list[AdminDeviceOut], tags=["admin"])
 def admin_list_devices(
     _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
@@ -1195,7 +1198,7 @@ def admin_list_devices(
     return out
 
 
-@router.get("/admin/scans", response_model=AdminScansPage)
+@router.get("/admin/scans", response_model=AdminScansPage, tags=["admin"])
 def admin_list_scans(
     limit: int = 50,
     offset: int = 0,
@@ -1226,7 +1229,7 @@ def admin_list_scans(
 # ── Scheduler endpoints ──────────────────────────────────────────────────────
 
 
-@router.post("/devices/{device_uid}/schedules", response_model=ScheduleOut)
+@router.post("/devices/{device_uid}/schedules", response_model=ScheduleOut, tags=["scheduler"])
 def create_schedule(
     device_uid: str,
     body: ScheduleIn,
@@ -1274,7 +1277,7 @@ def create_schedule(
     return sched
 
 
-@router.get("/devices/{device_uid}/schedules",
+@router.get("/devices/{device_uid}/schedules", tags=["scheduler"],
             response_model=list[ScheduleOut])
 def list_schedules(
     device_uid: str,
@@ -1292,7 +1295,7 @@ def list_schedules(
     ).order_by(ScanSchedule.created_at.desc()).all()
 
 
-@router.patch("/schedules/{schedule_id}", response_model=ScheduleOut)
+@router.patch("/schedules/{schedule_id}", response_model=ScheduleOut, tags=["scheduler"])
 def update_schedule(
     schedule_id: int,
     body: ScheduleUpdateIn,
@@ -1321,7 +1324,7 @@ def update_schedule(
     return sched
 
 
-@router.delete("/schedules/{schedule_id}", status_code=204)
+@router.delete("/schedules/{schedule_id}", status_code=204, tags=["scheduler"])
 def delete_schedule(
     schedule_id: int,
     user: User = Depends(require_user),
@@ -1342,7 +1345,7 @@ def delete_schedule(
 # ── Profile endpoints (/me/*) ────────────────────────────────────────────────
 
 
-@router.get("/me/stats", response_model=UserStatsOut)
+@router.get("/me/stats", response_model=UserStatsOut, tags=["profile"])
 def me_stats(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
@@ -1379,7 +1382,7 @@ def me_stats(
     )
 
 
-@router.get("/me/sessions", response_model=list[SessionOut])
+@router.get("/me/sessions", response_model=list[SessionOut], tags=["profile"])
 def me_sessions(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
@@ -1402,7 +1405,7 @@ def me_sessions(
     return out
 
 
-@router.delete("/me/sessions/{session_id}", status_code=204)
+@router.delete("/me/sessions/{session_id}", status_code=204, tags=["profile"])
 def me_revoke_session(
     session_id: int,
     user: User = Depends(require_user),
@@ -1420,7 +1423,7 @@ def me_revoke_session(
     db.commit()
 
 
-@router.post("/me/password")
+@router.post("/me/password", tags=["profile"])
 def me_change_password(
     body: ChangePasswordIn,
     user: User = Depends(require_user),
@@ -1444,7 +1447,7 @@ def me_change_password(
 
 # ── Admin platform stats ─────────────────────────────────────────────────────
 
-@router.get("/admin/stats", response_model=AdminPlatformStatsOut)
+@router.get("/admin/stats", response_model=AdminPlatformStatsOut, tags=["admin"])
 def admin_platform_stats(
     _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),

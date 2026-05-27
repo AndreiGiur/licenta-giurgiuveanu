@@ -12,6 +12,10 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_db_file.name}"
 # Dezactiveaza scheduler-ul background in teste — nu vrem joburi auto-create.
 os.environ["DISABLE_SCHEDULER"] = "true"
 
+# Dezactiveaza rate limiting in teste — altfel testele cu multe requesturi
+# rapide ar atinge limita 5/minut si ar primi 429.
+os.environ["DISABLE_RATELIMIT"] = "true"
+
 # Env vars pentru testele Google OAuth. `setdefault` ca sa nu suprascriem
 # valorile reale daca cumva sunt setate in environment.
 os.environ.setdefault("GOOGLE_CLIENT_ID_WEB", "test-client-id-web")
