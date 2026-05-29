@@ -1010,16 +1010,20 @@ button:focus-visible {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+  border: 1px solid var(--text-primary);
+  background: var(--text-primary);
+  color: var(--bg-elevated);
   cursor: pointer;
-  transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease,
+              border-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 .theme-toggle:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
+  background: var(--accent);
+  color: var(--plum-deep, #2d1b3d);
+  border-color: var(--accent);
   transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
 .theme-toggle:active { transform: translateY(0); }
 

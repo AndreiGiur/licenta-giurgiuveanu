@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { apiGet } from "../api/http";
 import { getScan, listDeviceScans, listScanJobs } from "../api/exposure";
 import type { DeviceScanListItem, ScanDetailResponse, ScanJobResponse } from "../api/types";
@@ -326,7 +326,12 @@ export default function Dashboard() {
           className="dashboard-grid">
 
           {/* Scan list */}
-          <div className="card">
+          <motion.div
+            className="card"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+          >
             <div className="card-header">
               <span className="card-title">Scanări</span>
               <span className="card-badge">{scans.length}</span>
@@ -338,9 +343,15 @@ export default function Dashboard() {
                   <span style={{ fontSize: 12 }}>Caută un dispozitiv mai sus.</span>
                 </div>
               )}
-              {scans.map((s) => (
-                <div
+              {scans.map((s, i) => (
+                <motion.div
                   key={s.scan_id}
+                  layout
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.25, delay: 0.3 + Math.min(i, 12) * 0.03 }}
+                  whileHover={{ x: 2 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => setSelectedScanId(s.scan_id)}
                   className={`scan-item ${selectedScanId === s.scan_id ? "active" : ""}`}
                 >
@@ -351,13 +362,18 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <div className="scan-date">{formatDate(s.created_at)}</div>
-                </div>
+                </motion.div>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           {/* Findings detail */}
-          <div className="card">
+          <motion.div
+            className="card"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.3 }}
+          >
             <div className="card-header">
               <span className="card-title">Detalii Scanare</span>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -383,7 +399,14 @@ export default function Dashboard() {
               )}
 
               {detail && (
-                <>
+                <AnimatePresence mode="wait">
+                <motion.div
+                  key={detail.scan_id}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.25 }}
+                >
                   {/* Meta */}
                   <div style={{
                     padding: "10px 12px",
@@ -421,9 +444,14 @@ export default function Dashboard() {
                         ✓ Nicio vulnerabilitate detectată
                       </div>
                     )}
-                    {detail.findings.map((f) => (
-                      <div
+                    {detail.findings.map((f, i) => (
+                      <motion.div
                         key={`${detail.scan_id}:${f.rule_id}:${f.title}`}
+                        layout
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: Math.min(i, 10) * 0.04 }}
+                        whileHover={{ y: -2 }}
                         className={`finding-card ${f.severity.toLowerCase()}`}
                       >
                         <div className="finding-header">
@@ -441,13 +469,14 @@ export default function Dashboard() {
                           </div>
                         </div>
                         <div className="finding-rec">{f.recommendation}</div>
-                      </div>
+                      </motion.div>
                     ))}
                   </div>
-                </>
+                </motion.div>
+                </AnimatePresence>
               )}
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     </div>
