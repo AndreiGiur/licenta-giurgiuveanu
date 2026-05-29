@@ -39,6 +39,10 @@ def _print_log(msg: str, severity: str = "info") -> None:
     print(msg)
 
 
+# Tine lock-ul de instanta unica viu pe durata procesului GUI (vezi cmd_gui).
+_INSTANCE_GUARD = None
+
+
 # ── Subcomenzi CLI ────────────────────────────────────────────────────────────
 
 def cmd_enroll(args: argparse.Namespace) -> int:
@@ -174,12 +178,46 @@ def cmd_daemon(args: argparse.Namespace) -> int:
 
 
 def cmd_gui(_args: argparse.Namespace) -> int:
-    """Deschide modul grafic. Fail soft daca Tkinter lipseste."""
+    """Deschide modul grafic. Fail soft daca Tkinter lipseste.
+
+    Single-instance: daca o alta fereastra VulnWatch ruleaza deja, nu pornim a
+    doua — afisam un mesaj si iesim. Lock-ul e tinut viu prin `_INSTANCE_GUARD`
+    (global) pe toata durata procesului si eliberat la iesire.
+    """
+    try:
+        from . import single_instance
+    except ImportError:
+        from agent import single_instance  # type: ignore[no-redef]
+
+    global _INSTANCE_GUARD
+    _INSTANCE_GUARD = single_instance.SingleInstance("VulnWatchAgent")
+    if not _INSTANCE_GUARD.acquire():
+        _notify_already_running()
+        return 0
+
     try:
         from . import gui
     except ImportError:
         from agent import gui  # type: ignore[no-redef]
-    return gui.run_gui()
+    try:
+        return gui.run_gui()
+    finally:
+        _INSTANCE_GUARD.release()
+
+
+def _notify_already_running() -> None:
+    """Anunta userul ca o instanta ruleaza deja (messagebox daca exista GUI,
+    altfel print pe consola)."""
+    msg = "VulnWatch ruleaza deja. O singura instanta poate fi deschisa odata."
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()  # ascunde fereastra goala
+        messagebox.showinfo("VulnWatch", msg)
+        root.destroy()
+    except Exception:
+        print(msg)
 
 
 def cmd_logout(_args: argparse.Namespace) -> int:

@@ -38,10 +38,13 @@ a = Analysis(
         "agent.ipc",
         "agent.nmap_runner",
         "agent.nmap_parser",
-        # pywin32 — necesar pentru Service framework
+        "agent.single_instance",
+        # pywin32 — necesar pentru Service framework + single-instance mutex
         "win32serviceutil",
         "win32service",
         "win32event",
+        "win32api",
+        "winerror",
         "servicemanager",
         "pywintypes",
         # pystray are backend-uri specifice per platforma — le includem pe
