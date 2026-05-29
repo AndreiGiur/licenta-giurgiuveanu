@@ -2,6 +2,7 @@
 import pytest
 from agent.nmap_runner import (
     build_nmap_args, validate_cidr, validate_lan_target, NmapRunnerError,
+    NMAP_PROFILES,
 )
 
 
@@ -52,3 +53,97 @@ def test_validate_lan_target_rejects_huge():
 def test_validate_cidr_rejects_invalid_syntax():
     with pytest.raises(NmapRunnerError, match="invalid"):
         validate_cidr("not.a.cidr")
+
+
+# ─── Profile-specific tests (advanced + deep) ────────────────────────────
+
+
+def test_nmap_profiles_exist():
+    """NMAP_PROFILES expune advanced + deep cu chei obligatorii."""
+    assert "advanced" in NMAP_PROFILES
+    assert "deep" in NMAP_PROFILES
+    for name, prof in NMAP_PROFILES.items():
+        assert "base_args" in prof, f"{name} missing base_args"
+        assert "scripts" in prof, f"{name} missing scripts"
+        assert "top_ports" in prof, f"{name} missing top_ports"
+        assert "timeout_sec" in prof, f"{name} missing timeout_sec"
+
+
+def test_profile_advanced_moderate_args():
+    """Profilul advanced foloseste -sV moderat, fara -A, top 5000."""
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                           profile="advanced")
+    assert "-sV" in args
+    assert "-A" not in args, "advanced nu trebuie sa fie aggressive (-A)"
+    assert "--top-ports" in args
+    assert "5000" in args
+    assert "-T4" in args
+    assert "vulnwatch-audit" in " ".join(args)
+    # advanced foloseste DOAR vulnwatch-audit, fara vuln/default scripts
+    assert "vuln,default" not in " ".join(args)
+
+
+def test_profile_deep_aggressive_args():
+    """Profilul deep foloseste -A + -Pn + vuln + version-intensity 9 + top 5000."""
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                           profile="deep")
+    assert "-A" in args, "deep trebuie sa includa -A (aggressive)"
+    assert "-Pn" in args, "deep trebuie sa includa -Pn (skip host discovery)"
+    assert "-T4" in args
+    assert "--version-intensity" in args
+    assert "9" in args
+    assert "--top-ports" in args
+    assert "5000" in args
+    # Scripturi extinse: vulnwatch-audit + vuln (CVE) + default + auth + banner
+    script_str = " ".join(args)
+    assert "vulnwatch-audit" in script_str
+    assert "vuln" in script_str
+    assert "default" in script_str
+    assert "auth" in script_str
+    assert "banner" in script_str
+
+
+def test_profile_deep_more_aggressive_than_advanced():
+    """Comparativ: deep are mai multe scripturi si flag-uri decat advanced."""
+    adv = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                          profile="advanced")
+    deep = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                           profile="deep")
+    # deep are -A si -Pn pe care advanced NU le are
+    assert "-A" not in adv and "-A" in deep
+    assert "-Pn" not in adv and "-Pn" in deep
+    # scripturile deep includ toate cele advanced + mai multe
+    adv_scripts = NMAP_PROFILES["advanced"]["scripts"]
+    deep_scripts = NMAP_PROFILES["deep"]["scripts"]
+    assert adv_scripts in deep_scripts
+
+
+def test_profile_legacy_backwards_compat():
+    """Fara profile, build_nmap_args pastreaza comportamentul vechi (-sV -O)."""
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml")  # no profile
+    assert "-sV" in args
+    assert "-O" in args
+    assert "-A" not in args
+    # Doar vulnwatch-audit, fara vuln/default
+    assert "vuln,default" not in " ".join(args)
+
+
+def test_profile_unknown_falls_back_to_legacy():
+    """Profile invalid trece pe legacy path fara eroare."""
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                           profile="unknown_xyz")
+    assert "-sV" in args
+    assert "-O" in args  # legacy include -O
+
+
+def test_profile_advanced_timeout_shorter_than_deep():
+    """Advanced are timeout mai mic (e mai rapid)."""
+    assert NMAP_PROFILES["advanced"]["timeout_sec"] < NMAP_PROFILES["deep"]["timeout_sec"]
+
+
+def test_profile_all_ports_overrides_top_ports():
+    """Daca all_ports=True, -p- inlocuieste --top-ports din profil."""
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                           profile="deep", all_ports=True)
+    assert "-p-" in args
+    assert "--top-ports" not in args

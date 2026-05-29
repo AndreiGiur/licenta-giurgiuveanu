@@ -294,20 +294,27 @@ def deploy_nse_script(log: LogFn = _noop_log) -> bool:
     return True
 
 
-def _run_nmap_if_deep(
+def _run_nmap_if_needed(
     job: dict,
     log: LogFn = _noop_log,
     progress_cb: Callable[[int, str], None] | None = None,
 ) -> dict | None:
-    """Ruleaza nmap pentru scan deep. Intoarce dict cu schema nmap pentru payload,
-    sau None daca scan_type != deep. Daca nmap lipseste, intoarce {error: nmap_missing}."""
-    if job.get("scan_type") != "deep":
+    """Ruleaza nmap pentru scan advanced (moderat) sau deep (agresiv).
+
+    Profilul nmap (args, scripturi, top_ports, timeout) este preluat din
+    `nmap_runner.NMAP_PROFILES[scan_type]`. Intoarce dict cu schema nmap pentru
+    payload, sau None pentru scan_type='standard'. Daca nmap lipseste,
+    intoarce {error: nmap_missing} (advanced il sare silentios cu warn,
+    deep il marcheaza explicit ca eroare).
+    """
+    scan_type = job.get("scan_type")
+    if scan_type not in ("advanced", "deep"):
         return None
     from . import nmap_runner, nmap_parser
 
     nmap = _nmap_path()
     if not nmap:
-        log("nmap.exe nu e instalat — sarim faza nmap pentru deep scan", "warn")
+        log(f"nmap.exe nu e instalat — sarim faza nmap pentru {scan_type} scan", "warn")
         return {"error": "nmap_missing"}
 
     targets = ["127.0.0.1"]
@@ -323,14 +330,14 @@ def _run_nmap_if_deep(
     with tempfile.TemporaryDirectory() as tmp:
         xml_out = Path(tmp) / "nmap_result.xml"
         if progress_cb:
-            progress_cb(80, "Nmap ruleaza...")
+            phase = "Nmap moderat..." if scan_type == "advanced" else "Nmap agresiv..."
+            progress_cb(80, phase)
         t0 = time.time()
         try:
             exit_code, stderr = nmap_runner.run_nmap(
                 targets=targets,
                 xml_out=xml_out,
-                top_ports=1000,
-                timeout_sec=1800,
+                profile=scan_type,
                 log=log,
             )
         except nmap_runner.NmapRunnerError as e:
@@ -348,13 +355,18 @@ def _run_nmap_if_deep(
         parsed["targets"] = targets
         parsed["scan_time_sec"] = round(elapsed, 1)
         parsed["lan_opt_in"] = bool(nmap_target)
+        parsed["profile"] = scan_type
         parsed["lua_errors"] = []
         if stderr:
             for line in stderr.splitlines():
                 if "vulnwatch-audit" in line.lower():
                     parsed["lua_errors"].append(line.strip())
-        log(f"nmap: {len(parsed.get('hosts', []))} hosts in {elapsed:.0f}s", "ok")
+        log(f"nmap [{scan_type}]: {len(parsed.get('hosts', []))} hosts in {elapsed:.0f}s", "ok")
         return parsed
+
+
+# Alias backwards-compat pentru cod / teste vechi
+_run_nmap_if_deep = _run_nmap_if_needed
 
 
 def agent_capabilities() -> list[str]:
@@ -793,7 +805,7 @@ def run_one_job(api_base: str, device_uid: str, device_token: str,
 
     try:
         data = collect_system_data(device_uid, scan_type=scan_type, progress_cb=progress_cb)
-        nmap_result = _run_nmap_if_deep(job, log=log, progress_cb=progress_cb)
+        nmap_result = _run_nmap_if_needed(job, log=log, progress_cb=progress_cb)
         if nmap_result is not None:
             data["nmap"] = nmap_result
         result = api_submit_job_result(api_base, device_token, job_id, data)

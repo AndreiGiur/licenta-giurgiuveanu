@@ -28,11 +28,11 @@ Write-Host "==> Instalare dependente (poate dura 1-2 minute prima data)..." -For
 & $venvPython -m pip install --quiet -r .\agent\requirements-dev.txt
 
 Write-Host "==> Build cu PyInstaller..." -ForegroundColor Cyan
-& $venvPython -m PyInstaller --clean .\agent\VulnWatchAgent.spec
+& $venvPython -m PyInstaller --clean --noconfirm .\agent\VulnWatchAgent.spec
 
 $exe = ".\dist\VulnWatchAgent.exe"
 if (-not (Test-Path $exe)) {
-    Write-Error "Build esuat — nu s-a produs $exe"
+    Write-Error "Build esuat - nu s-a produs $exe"
     exit 2
 }
 
