@@ -15,7 +15,10 @@ from .scheduler import scheduler_loop
 
 logger = logging.getLogger(__name__)
 
-# In dev este ok sa cream tabelele la pornire. In productie ar trebui Alembic.
+# In dev + teste cream tabelele la pornire (rapid, fara pasi manuali).
+# In productie se foloseste Alembic: `alembic upgrade head` (vezi server/alembic/).
+# Migrarile sunt sursa de adevar pentru schema; create_all ramane convenabil
+# pentru SQLite-ul din teste si pentru pornirea locala rapida.
 Base.metadata.create_all(bind=engine)
 
 

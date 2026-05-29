@@ -29,6 +29,11 @@ server/static/agent/*.exe
 # Logs locale
 *.log
 
+# Baze SQLite locale / temporare (ex: rulari alembic autogenerate)
+*.db
+*.sqlite
+*.sqlite3
+
 # OS
 .DS_Store
 Thumbs.db

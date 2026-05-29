@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiGet } from "../api/http";
-import { getScan, listDeviceScans, listScanJobs } from "../api/exposure";
-import type { DeviceScanListItem, ScanDetailResponse, ScanJobResponse } from "../api/types";
+import { listDeviceScans } from "../api/exposure";
+import type { DeviceScanListItem } from "../api/types";
 import Navbar from "../components/Navbar";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { ScoreBreakdownBars } from "../components/ScoreBreakdownBars";
+import { useScanDetail } from "../hooks/useScanDetail";
+import { useScanJobPolling } from "../hooks/useScanJobPolling";
 
 type DeviceListItem = {
   id: number;
@@ -52,10 +54,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [scans, setScans] = useState<DeviceScanListItem[]>([]);
   const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<ScanDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Job activ (pending/running) pentru device-ul selectat — pentru progress bar.
-  const [activeJob, setActiveJob] = useState<ScanJobResponse | null>(null);
+
+  // Detaliul scan-ului selectat + polling job activ — logica extrasa in hooks.
+  const { detail, error: detailError } = useScanDetail(selectedScanId);
+  const activeJob = useScanJobPolling(deviceId, load);
 
   const canLoad = useMemo(() => deviceId.trim().length > 0, [deviceId]);
 
@@ -94,7 +97,6 @@ export default function Dashboard() {
   async function load() {
     setError(null);
     setLoading(true);
-    setDetail(null);
     setSelectedScanId(null);
     try {
       const items = await listDeviceScans(deviceId.trim());
@@ -107,53 +109,6 @@ export default function Dashboard() {
       setLoading(false);
     }
   }
-
-  useEffect(() => {
-    if (!selectedScanId) return;
-    let cancel = false;
-    (async () => {
-      try {
-        const d = await getScan(selectedScanId);
-        if (!cancel) setDetail(d);
-      } catch (e) {
-        if (!cancel) setError(e instanceof Error ? e.message : "Eroare necunoscută");
-      }
-    })();
-    return () => { cancel = true; };
-  }, [selectedScanId]);
-
-  // Polling job activ — afisat ca progress bar live (Advanced/Deep dureaza minute).
-  useEffect(() => {
-    const uid = deviceId.trim();
-    if (!uid) {
-      setActiveJob(null);
-      return;
-    }
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const lastDoneId = { current: null as number | null };
-
-    async function tick() {
-      try {
-        const jobs = await listScanJobs(uid);
-        if (cancelled) return;
-        const active = jobs.find(j => j.status === "running" || j.status === "pending");
-        setActiveJob(active ?? null);
-        // Daca tocmai a terminat un job, reincarca lista de scanari pentru a vedea noul rezultat.
-        const newest = jobs.find(j => j.status === "done");
-        if (!active && newest && newest.scan_id && newest.scan_id !== lastDoneId.current) {
-          lastDoneId.current = newest.scan_id;
-          load();
-        }
-      } catch {
-        if (!cancelled) setActiveJob(null);
-      }
-      if (!cancelled) timer = setTimeout(tick, 2000);
-    }
-    tick();
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceId]);
 
   const criticalCount = detail?.findings.filter(f => f.severity.toLowerCase() === "critical").length ?? 0;
   const highCount     = detail?.findings.filter(f => f.severity.toLowerCase() === "high").length     ?? 0;
@@ -245,10 +200,10 @@ export default function Dashboard() {
         )}
 
         {/* ── Error ── */}
-        {error && (
+        {(error || detailError) && (
           <div className="alert alert-error" style={{ marginBottom: 20 }}>
             <div className="alert-title">Eroare</div>
-            <div style={{ fontSize: 12, marginTop: 2, whiteSpace: "pre-wrap" }}>{error}</div>
+            <div style={{ fontSize: 12, marginTop: 2, whiteSpace: "pre-wrap" }}>{error || detailError}</div>
           </div>
         )}
 

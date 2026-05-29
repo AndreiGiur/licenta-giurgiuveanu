@@ -1,0 +1,33 @@
+{
+  "_comment": "Semnaturi de software vulnerabil / EOL si sisteme de operare EOL. Incarcat la runtime de rules.py (_load_vuln_signatures). Match prin substring case-insensitive pe numele software-ului, respectiv pe system+release pentru OS. Acest fisier e sursa unica de adevar editabila fara modificari de cod; vezi _refresh_from_feed() in rules.py pentru hook-ul de feed live (NVD/OSV).",
+  "version": "2026-05-29",
+  "vulnerable_software": [
+    {"name_contains": "Adobe Flash",        "severity": "critical", "cve": "multiple",       "note": "EOL din 2020, nu mai primeste patch-uri"},
+    {"name_contains": "Adobe Shockwave",    "severity": "high",     "cve": "multiple",       "note": "EOL din 2019, vulnerabilitati nepatched"},
+    {"name_contains": "QuickTime",          "severity": "high",     "cve": "CVE-2016-1846",  "note": "Apple a oprit suportul pe Windows in 2016"},
+    {"name_contains": "Internet Explorer",  "severity": "high",     "cve": "multiple",       "note": "EOL din 2022, vulnerabilitati nepatched"},
+    {"name_contains": "Java 6",             "severity": "high",     "cve": "multiple",       "note": "EOL, versiune nesupportata"},
+    {"name_contains": "Java 7",             "severity": "high",     "cve": "multiple",       "note": "EOL, versiune nesupportata"},
+    {"name_contains": "OpenSSL 1.0",        "severity": "high",     "cve": "CVE-2022-0778",  "note": "Versiune vulnerabila (DoS / infinite loop)"},
+    {"name_contains": "OpenSSL 1.1",        "severity": "medium",   "cve": "multiple",       "note": "EOL din septembrie 2023, fara patch-uri"},
+    {"name_contains": "log4j",              "severity": "critical", "cve": "CVE-2021-44228", "note": "Log4Shell - executie remote de cod (RCE)"},
+    {"name_contains": "Apache Struts 2",    "severity": "critical", "cve": "CVE-2017-5638",  "note": "RCE prin Content-Type header"},
+    {"name_contains": "WinRAR 5",           "severity": "medium",   "cve": "CVE-2023-38831", "note": "Executie de cod la deschiderea unei arhive"},
+    {"name_contains": "7-Zip 2",            "severity": "low",      "cve": "CVE-2023-31102", "note": "Versiune mai veche, vulnerabilitate la parsare"},
+    {"name_contains": "Python 2",           "severity": "medium",   "cve": "multiple",       "note": "EOL din ianuarie 2020, fara patch-uri de securitate"},
+    {"name_contains": "Node.js 12",         "severity": "medium",   "cve": "multiple",       "note": "EOL, versiune nesupportata"},
+    {"name_contains": "Node.js 14",         "severity": "medium",   "cve": "multiple",       "note": "EOL, versiune nesupportata"},
+    {"name_contains": "Microsoft Office 2007", "severity": "high",  "cve": "multiple",       "note": "EOL din 2017, fara patch-uri"},
+    {"name_contains": "Microsoft Office 2010", "severity": "high",  "cve": "multiple",       "note": "EOL din octombrie 2020, fara patch-uri"},
+    {"name_contains": "VLC media player 2", "severity": "low",      "cve": "multiple",       "note": "Versiune mai veche; actualizeaza la cea mai recenta"}
+  ],
+  "eol_operating_systems": [
+    {"system": "Windows", "rel": "XP",    "severity": "critical", "note": "EOL din 2014"},
+    {"system": "Windows", "rel": "Vista", "severity": "critical", "note": "EOL din 2017"},
+    {"system": "Windows", "rel": "7",     "severity": "high",     "note": "EOL din ianuarie 2020"},
+    {"system": "Windows", "rel": "8.0",   "severity": "high",     "note": "EOL din 2016"},
+    {"system": "Windows", "rel": "8.1",   "severity": "high",     "note": "EOL din ianuarie 2023"},
+    {"system": "Windows", "rel": "10",    "severity": "medium",   "note": "End of support 14 octombrie 2025"},
+    {"system": "Linux",   "rel": "2.6",   "severity": "high",     "note": "Kernel EOL, vulnerabilitati cunoscute"}
+  ]
+}

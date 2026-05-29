@@ -16,9 +16,10 @@ job queue pentru scan-on-demand, motor de reguli pentru calculul scorului.
 
 | Fisier / folder       | Rol                                                                  |
 | --------------------- | -------------------------------------------------------------------- |
-| `app/`                | Cod aplicatie (FastAPI app). Vezi `app/memory.md`.                   |
+| `app/`                | Cod aplicatie (FastAPI app). Vezi `app/memory.md`. **`routes/` e pachet** (sub-routere pe domeniu), nu mai e `routes.py` monolitic. |
 | `tests/`              | Pytest end-to-end (TestClient). Vezi `tests/memory.md`.              |
-| `requirements.txt`    | Dependencies de runtime + dev: `fastapi`, `uvicorn[standard]`, `sqlalchemy`, `psycopg[binary]`, `pydantic[email]`, `google-auth`, `requests` (transport HTTP pentru google-auth), `httpx`, `pytest`. |
+| `alembic/` + `alembic.ini` | **Migrari DB** (additiv, pentru productie). `env.py` citeste `DATABASE_URL` + `Base.metadata`; `versions/` contine migrarea initiala (7 tabele). `alembic upgrade head` in productie; dev/teste raman pe `create_all`. |
+| `requirements.txt`    | Dependencies de runtime + dev: `fastapi`, `uvicorn[standard]`, `sqlalchemy`, `alembic`, `psycopg[binary]`, `pydantic[email]`, `google-auth`, `requests` (transport HTTP pentru google-auth), `httpx`, `reportlab`, `slowapi`, `pytest`. |
 | `.env.example`        | Template pentru `.env`. Variabile: `DATABASE_URL`, `SESSION_EXPIRE_HOURS`, `CORS_ORIGINS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `GOOGLE_CLIENT_ID_WEB`, `GOOGLE_CLIENT_SECRET_WEB`, `GOOGLE_REDIRECT_URI_WEB`, `GOOGLE_CLIENT_ID_DESKTOP`, `FRONTEND_BASE_URL`. |
 
 ## Rulare

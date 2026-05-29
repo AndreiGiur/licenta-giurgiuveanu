@@ -5,6 +5,7 @@ Acoperim fiecare regula in parte si verificam ca:
 - severitatea e corecta
 - exposure_score este in [0, 100] si non-zero cand exista findings
 """
+from server.app import rules
 from server.app.rules import evaluate
 
 
@@ -135,3 +136,69 @@ def test_score_saturates_below_100():
     # Findings pe toate cele 4 dimensiuni → scorul agregat trebuie sa fie ridicat.
     assert all(breakdown[c] > 0 for c in breakdown), f"all cats > 0; got {breakdown}"
     assert score >= 60, f"expected >=60 with broad coverage; got {score} from {breakdown}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Semnaturi externalizate (data file JSON) — incarcare + extindere + hot-reload
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_vuln_signatures_loaded_from_data_file():
+    """Datele vin din JSON, nu din fallback: setul extins include intrari noi
+    (log4j, Office) absente din fallback-ul minimal embedded."""
+    names = {s["name_contains"] for s in rules.VULNERABLE_SOFTWARE}
+    assert "log4j" in names
+    assert "Microsoft Office 2010" in names
+    # Fallback-ul embedded e mai mic decat setul din data file
+    assert len(rules.VULNERABLE_SOFTWARE) > len(rules._FALLBACK_VULNERABLE_SOFTWARE)
+
+
+def test_new_signature_log4j_detected_as_critical():
+    """Log4Shell: un software care contine 'log4j' → finding critical."""
+    scan = _empty_scan()
+    scan["software"] = [{"name": "apache-log4j-core 2.14.1", "version": "2.14.1"}]
+    _, _, findings = evaluate(scan)
+    vuln = [f for f in findings if f["rule_id"] == "SW-VULNERABLE-1"]
+    assert any(f["severity"] == "critical" for f in vuln)
+    assert any("log4j" in f["evidence"]["software"].lower() for f in vuln)
+
+
+def test_windows_81_detected_as_eol():
+    """Windows 8.1 (EOL ianuarie 2023) → finding OS-EOL high."""
+    scan = _empty_scan()
+    scan["os"]["release"] = "8.1"
+    _, _, findings = evaluate(scan)
+    eol = [f for f in findings if f["rule_id"] == "OS-EOL-1"]
+    assert len(eol) == 1
+    assert eol[0]["severity"] == "high"
+
+
+def test_fallback_signatures_used_when_data_file_missing(monkeypatch):
+    """Daca data file-ul lipseste, _load_vuln_signatures cade pe fallback embedded."""
+    from pathlib import Path
+    monkeypatch.setattr(rules, "_VULN_SIGNATURES_FILE", Path("nonexistent-xyz.json"))
+    sw, eol = rules._load_vuln_signatures()
+    assert sw == rules._FALLBACK_VULNERABLE_SOFTWARE
+    assert eol == rules._FALLBACK_EOL_OS
+
+
+def test_refresh_from_feed_hot_reloads_signatures():
+    """Hook-ul _refresh_from_feed inlocuieste semnaturile in memorie (hot-reload)."""
+    original_sw = rules.VULNERABLE_SOFTWARE
+    original_eol = rules.EOL_OPERATING_SYSTEMS
+    try:
+        rules._refresh_from_feed({
+            "vulnerable_software": [
+                {"name_contains": "FooBarVuln", "severity": "high", "cve": "CVE-9999-0001", "note": "test"}
+            ],
+            "eol_operating_systems": [
+                {"system": "Windows", "rel": "95", "severity": "critical"}
+            ],
+        })
+        scan = _empty_scan()
+        scan["software"] = [{"name": "FooBarVuln 1.0"}]
+        _, _, findings = evaluate(scan)
+        assert any(f["rule_id"] == "SW-VULNERABLE-1" for f in findings)
+    finally:
+        # Restore globals ca sa nu contaminam alte teste
+        rules.VULNERABLE_SOFTWARE = original_sw
+        rules.EOL_OPERATING_SYSTEMS = original_eol

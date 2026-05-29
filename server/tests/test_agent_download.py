@@ -18,8 +18,8 @@ def _make_user_client(suffix: str) -> TestClient:
 def test_download_info_when_artifact_missing(tmp_path, monkeypatch):
     """Daca .exe nu exista, info raporteaza available=False."""
     # Pointam spre o locatie goala temporara
-    from server.app import routes
-    monkeypatch.setattr(routes, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
+    from server.app.routes import _helpers
+    monkeypatch.setattr(_helpers, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
 
     c = _make_user_client("info-empty")
     r = c.get("/api/v1/agent/download/info")
@@ -30,8 +30,8 @@ def test_download_info_when_artifact_missing(tmp_path, monkeypatch):
 
 
 def test_download_404_when_artifact_missing(tmp_path, monkeypatch):
-    from server.app import routes
-    monkeypatch.setattr(routes, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
+    from server.app.routes import _helpers
+    monkeypatch.setattr(_helpers, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
 
     c = _make_user_client("dl-empty")
     r = c.get("/api/v1/agent/download/windows")
@@ -41,10 +41,10 @@ def test_download_404_when_artifact_missing(tmp_path, monkeypatch):
 
 def test_download_serves_file_when_present(tmp_path, monkeypatch):
     """Cand artifactul exista, endpoint-ul il serveste cu mime corect."""
-    from server.app import routes
+    from server.app.routes import _helpers
     artifact = tmp_path / "VulnWatchAgent.exe"
     artifact.write_bytes(b"MZ\x90\x00fake-pe-binary-content")
-    monkeypatch.setattr(routes, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
+    monkeypatch.setattr(_helpers, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
 
     c = _make_user_client("dl-ok")
 

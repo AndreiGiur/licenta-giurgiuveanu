@@ -75,25 +75,63 @@ SUSPICIOUS_PROCESSES: dict[str, str] = {
     "rawcap.exe":       "RawCap – captare pachete",
 }
 
-# Software vulnerabil cunoscut. Match prin substring case-insensitive.
-VULNERABLE_SOFTWARE: tuple[dict, ...] = (
+# ─────────────────────────────────────────────────────────────────────────────
+# Semnaturi de software vulnerabil / OS EOL — incarcate dintr-un data file JSON
+# ─────────────────────────────────────────────────────────────────────────────
+# Sursa de adevar editabila fara modificari de cod: `app/data/vuln_signatures.json`.
+# Daca fisierul lipseste sau e corupt, cadem pe un set minimal embedded (engine-ul
+# nu crapa niciodata). Vezi `_refresh_from_feed()` pentru hook-ul de feed live.
+import json
+from pathlib import Path
+
+_DATA_DIR = Path(__file__).resolve().parent / "data"
+_VULN_SIGNATURES_FILE = _DATA_DIR / "vuln_signatures.json"
+
+# Fallback minimal embedded — folosit DOAR daca data file-ul lipseste/e corupt.
+_FALLBACK_VULNERABLE_SOFTWARE: tuple[dict, ...] = (
     {"name_contains": "Adobe Flash",        "severity": "critical", "cve": "multiple",       "note": "EOL din 2020, nu mai primeste patch-uri"},
     {"name_contains": "Internet Explorer",  "severity": "high",     "cve": "multiple",       "note": "EOL din 2022, vulnerabilitati nepatched"},
     {"name_contains": "Java 6",             "severity": "high",     "cve": "multiple",       "note": "EOL, versiune nesupportata"},
-    {"name_contains": "Java 7",             "severity": "high",     "cve": "multiple",       "note": "EOL, versiune nesupportata"},
     {"name_contains": "OpenSSL 1.0",        "severity": "high",     "cve": "CVE-2022-0778",  "note": "Versiune vulnerabila"},
     {"name_contains": "WinRAR 5",           "severity": "medium",   "cve": "CVE-2023-38831", "note": "Versiune vulnerabila la executie de cod"},
-    {"name_contains": "7-Zip 2",            "severity": "low",      "cve": "CVE-2023-31102", "note": "Versiune mai veche"},
 )
-
-# Sisteme de operare EOL (End-of-Life) — fara mai primesc actualizari de securitate.
-EOL_OPERATING_SYSTEMS: tuple[dict, ...] = (
+_FALLBACK_EOL_OS: tuple[dict, ...] = (
     {"system": "Windows", "rel": "XP",    "severity": "critical"},
     {"system": "Windows", "rel": "Vista", "severity": "critical"},
     {"system": "Windows", "rel": "7",     "severity": "high"},
     {"system": "Windows", "rel": "8.0",   "severity": "high"},
     {"system": "Linux",   "rel": "2.6",   "severity": "high"},
 )
+
+
+def _load_vuln_signatures() -> tuple[tuple[dict, ...], tuple[dict, ...]]:
+    """Incarca semnaturile din JSON. Fallback la setul embedded la orice eroare."""
+    try:
+        data = json.loads(_VULN_SIGNATURES_FILE.read_text(encoding="utf-8"))
+        sw = tuple(data.get("vulnerable_software", []))
+        eol = tuple(data.get("eol_operating_systems", []))
+        if sw and eol:
+            return sw, eol
+    except (OSError, json.JSONDecodeError, ValueError):
+        pass
+    return _FALLBACK_VULNERABLE_SOFTWARE, _FALLBACK_EOL_OS
+
+
+# Software vulnerabil cunoscut + OS EOL. Match prin substring case-insensitive.
+VULNERABLE_SOFTWARE, EOL_OPERATING_SYSTEMS = _load_vuln_signatures()
+
+
+def _refresh_from_feed(signatures: dict) -> None:
+    """Hook pentru un feed live de semnaturi (ex: NVD / OSV / vendor advisories).
+
+    Productie: un job periodic ar descarca semnaturi proaspete, le-ar valida si
+    le-ar scrie in `vuln_signatures.json`, apoi ar apela aceasta functie pentru
+    hot-reload fara restart. Pentru lucrare ramane offline (data file curat),
+    dar punctul de extindere e definit explicit.
+    """
+    global VULNERABLE_SOFTWARE, EOL_OPERATING_SYSTEMS
+    VULNERABLE_SOFTWARE = tuple(signatures.get("vulnerable_software", VULNERABLE_SOFTWARE))
+    EOL_OPERATING_SYSTEMS = tuple(signatures.get("eol_operating_systems", EOL_OPERATING_SYSTEMS))
 
 # Path-uri suspecte pentru startup entries (executabile in directoare scrise de
 # user, frecvent folosite de malware pentru persistenta).
