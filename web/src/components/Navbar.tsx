@@ -51,12 +51,6 @@ export default function Navbar() {
             Dashboard
           </button>
           <button
-            onClick={() => navigate("/devices")}
-            className={`navbar-link ${isActive("/devices") ? "active" : ""}`}
-          >
-            Dispozitive
-          </button>
-          <button
             onClick={() => navigate("/profile")}
             className={`navbar-link ${isActive("/profile") ? "active" : ""}`}
           >
