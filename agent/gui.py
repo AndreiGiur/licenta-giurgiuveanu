@@ -834,7 +834,15 @@ class AgentApp:
         # Autostart checkbox
         self._var_autostart = tk.BooleanVar(value=True)
         ttk.Checkbutton(wrap, text="Pornește automat la pornirea Windows (recomandat)",
-                        variable=self._var_autostart).pack(anchor="w", pady=(0, 18))
+                        variable=self._var_autostart).pack(anchor="w", pady=(0, 8))
+
+        # Install nmap checkbox (opt-in, default debifat) — necesar pentru deep scan
+        self._var_install_nmap = tk.BooleanVar(value=False)
+        ttk.Checkbutton(wrap, text="Instalează nmap (necesar pentru scanări deep)",
+                        variable=self._var_install_nmap).pack(anchor="w", pady=(0, 0))
+        ttk.Label(wrap, text="necesită drepturi de administrator/root",
+                  foreground=p["muted"], background=p["bg"],
+                  font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 18))
 
         # Mesaj eroare
         self._enroll_msg = tk.StringVar()
@@ -965,6 +973,9 @@ class AgentApp:
             except Exception:
                 pass
 
+        # Instaleaza nmap daca userul a bifat optiunea la enrollment (opt-in).
+        self._maybe_install_nmap()
+
         try:
             core.api_logout(self._api_base, self._session_token)
         except Exception:
@@ -1008,6 +1019,29 @@ class AgentApp:
                 self._append_log("Install Service: lansat cu UAC", "ok")
         except Exception as e:
             self._append_log(f"Install Service: {e}", "error")
+
+    def _maybe_install_nmap(self) -> None:
+        """Daca userul a bifat 'Instaleaza nmap' la enrollment, porneste
+        instalarea pe un thread separat (poate dura). Log live in UI."""
+        var = getattr(self, "_var_install_nmap", None)
+        if var is None or not var.get():
+            return
+        self._run_nmap_install()
+
+    def _on_install_nmap(self) -> None:
+        """Handler pentru butonul fallback 'Instaleaza nmap' din Status."""
+        self._run_nmap_install()
+
+    def _run_nmap_install(self) -> None:
+        # Logging thread-safe prin coada (drenata pe main thread de _poll_log_queue).
+        def log_cb(msg: str, severity: str = "info") -> None:
+            self.log_queue.put((msg, severity))
+
+        def worker():
+            log_cb("Pornesc instalarea nmap...", "info")
+            ok, msg = core.install_nmap(log=log_cb)
+            log_cb(msg, "ok" if ok else "warn")
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_enroll_failure(self, error: str) -> None:
         self._enroll_btn.configure(state="normal")
@@ -1188,6 +1222,16 @@ class AgentApp:
         tk.Label(info_box, text=f"API: {api_base}",
                  bg=p["surface"], fg=p["text_dim"],
                  font=("Consolas", 9)).pack(anchor="w", padx=10, pady=(0, 8))
+
+        # Buton fallback: instaleaza nmap daca lipseste (deep indisponibil).
+        if core._nmap_path() is None:
+            nmap_box = ttk.Frame(parent, style="TFrame")
+            nmap_box.pack(fill="x", pady=(0, 8))
+            ttk.Label(nmap_box, text="nmap nu e instalat — scanările deep indisponibile",
+                      foreground=p["amber"], background=p["bg"],
+                      font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 4))
+            ttk.Button(nmap_box, text="Instalează nmap", style="Secondary.TButton",
+                       command=self._on_install_nmap).pack(anchor="w")
 
         ttk.Label(parent, text="ACTIVITATE", style="Dim.TLabel").pack(anchor="w",
                                                                        pady=(4, 4))
