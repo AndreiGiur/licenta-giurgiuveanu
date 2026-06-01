@@ -139,6 +139,31 @@ def test_scan_submission_happy_path(auth_client):
     assert any(f["rule_id"] == "NET-OPEN-PORTS-1" for f in body["findings"])
 
 
+def test_scan_submission_persists_linux_payload_and_fires_rules(auth_client):
+    """Regresie: campul `linux` din ScanIn trebuie sa ajunga in evaluate()
+    (altfel regulile os='linux' primesc payload gol → 0 findings)."""
+    client, headers = auth_client["client"], auth_client["headers"]
+    created = _enroll_device(client, headers, device_uid="kali-host")
+    token = created["device_token"]
+
+    payload = {
+        "device_uid": "kali-host",
+        "scan_type": "deep",
+        "os": {"system": "Linux", "release": "6.5", "is_admin": False},
+        "network": {"open_ports": []},
+        "processes": [], "software": [],
+        "linux": {
+            "ssh": {"permit_root_login": "yes"},
+            "users": {"uid0_accounts": ["root", "backdoor"]},
+        },
+    }
+    r = client.post("/api/v1/scans", headers={"X-Device-Token": token}, json=payload)
+    assert r.status_code == 200, r.text
+    ids = {f["rule_id"] for f in r.json()["findings"]}
+    assert "LNX-SSH-ROOT-LOGIN-1" in ids
+    assert "LNX-UIDZERO-1" in ids
+
+
 def test_scan_submission_rejects_missing_token(auth_client):
     client, headers = auth_client["client"], auth_client["headers"]
     _enroll_device(client, headers, device_uid="needs-token")

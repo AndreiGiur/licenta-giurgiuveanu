@@ -320,6 +320,47 @@ def deploy_nse_script(log: LogFn = _noop_log) -> bool:
     return True
 
 
+def _detect_local_subnet() -> str | None:
+    """Detecteaza subnetul local al interfetei active, plafonat la /24.
+
+    Cauta o interfata up, non-loopback, cu o adresa IPv4 privata + netmask.
+    Intoarce CIDR-ul (ex. '192.168.1.0/24') sau None daca nu gaseste nimic.
+    Daca masca interfetei e mai larga decat /24, restrange la /24 in jurul
+    IP-ului host-ului (ca sa nu scanam zeci de mii de adrese).
+    """
+    import ipaddress
+    try:
+        stats = psutil.net_if_stats()
+        addrs = psutil.net_if_addrs()
+    except Exception:
+        return None
+    for name, snics in addrs.items():
+        st = stats.get(name)
+        if st is None or not st.isup:
+            continue
+        if name.lower().startswith(("lo", "loopback")):
+            continue
+        for snic in snics:
+            if snic.family != socket.AF_INET:
+                continue
+            ip = snic.address
+            netmask = snic.netmask
+            if not ip or not netmask or ip.startswith("127."):
+                continue
+            try:
+                iface = ipaddress.ip_interface(f"{ip}/{netmask}")
+                net = iface.network
+            except (ValueError, TypeError):
+                continue
+            if not net.is_private or net.is_loopback:
+                continue
+            # Plafonare la /24 ca sa nu explodeze numarul de host-uri.
+            if net.prefixlen < 24:
+                net = ipaddress.ip_network(f"{ip}/24", strict=False)
+            return str(net)
+    return None
+
+
 def _run_nmap_if_needed(
     job: dict,
     log: LogFn = _noop_log,
@@ -343,14 +384,28 @@ def _run_nmap_if_needed(
         log(f"nmap.exe nu e instalat — sarim faza nmap pentru {scan_type} scan", "warn")
         return {"error": "nmap_missing"}
 
-    targets = ["127.0.0.1"]
+    # Tinta: prioritate la nmap_target explicit din job; altfel auto-detectie
+    # subnet local /24; fallback la localhost. subnet_scan controleaza -Pn.
+    subnet_scan = False
     nmap_target = job.get("nmap_target")
     if nmap_target:
         try:
             nmap_runner.validate_lan_target(nmap_target)
-            targets.append(nmap_target)
+            targets = [nmap_target]
+            net = __import__("ipaddress").ip_network(nmap_target, strict=False)
+            subnet_scan = net.num_addresses > 1
         except nmap_runner.NmapRunnerError as e:
-            log(f"nmap_target invalid: {e}; continui cu localhost only", "warn")
+            log(f"nmap_target invalid: {e}; incerc auto-detectie subnet", "warn")
+            nmap_target = None
+    if not nmap_target:
+        auto = _detect_local_subnet()
+        if auto:
+            targets = [auto]
+            subnet_scan = True
+            log(f"nmap: subnet local auto-detectat {auto}", "info")
+        else:
+            targets = ["127.0.0.1"]
+            log("nmap: subnet nedetectat, folosesc localhost", "warn")
 
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
@@ -378,6 +433,7 @@ def _run_nmap_if_needed(
                 profile=scan_type,
                 progress_cb=_nmap_progress,
                 nse_script_path=nse_path,
+                subnet_scan=subnet_scan,
                 log=log,
             )
         except nmap_runner.NmapRunnerError as e:
@@ -395,6 +451,7 @@ def _run_nmap_if_needed(
         parsed["targets"] = targets
         parsed["scan_time_sec"] = round(elapsed, 1)
         parsed["lan_opt_in"] = bool(nmap_target)
+        parsed["subnet_scan"] = subnet_scan
         parsed["profile"] = scan_type
         parsed["lua_errors"] = []
         if stderr:

@@ -112,17 +112,43 @@ def test_nmap_profiles_exist():
 
 
 def test_profile_advanced_moderate_args():
-    """Profilul advanced foloseste -sV moderat, fara -A, top 5000."""
+    """Profilul advanced foloseste -sV moderat, fara -A/-O, top 1000."""
     args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
                            profile="advanced")
     assert "-sV" in args
     assert "-A" not in args, "advanced nu trebuie sa fie aggressive (-A)"
+    assert "-O" not in args, "advanced nu face OS detection (-O)"
     assert "--top-ports" in args
-    assert "5000" in args
+    assert "1000" in args
     assert "-T4" in args
     assert "vulnwatch-audit" in " ".join(args)
     # advanced foloseste DOAR vulnwatch-audit, fara vuln/default scripts
     assert "vuln,default" not in " ".join(args)
+
+
+def test_deep_subnet_scan_drops_pn():
+    """Pe subnet, deep NU foloseste -Pn (lasa nmap sa descopere host-urile vii)."""
+    args = build_nmap_args(targets=["192.168.1.0/24"], xml_out="x.xml",
+                           profile="deep", subnet_scan=True)
+    assert "-A" in args
+    assert "-Pn" not in args, "deep pe subnet nu trebuie sa sara discovery-ul"
+
+
+def test_deep_single_host_keeps_pn():
+    """Pe un singur host, deep pastreaza -Pn (host-ul e mereu considerat up)."""
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                           profile="deep", subnet_scan=False)
+    assert "-Pn" in args
+
+
+def test_advanced_never_uses_pn():
+    """advanced nu foloseste -Pn nici pe host, nici pe subnet."""
+    single = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                             profile="advanced", subnet_scan=False)
+    subnet = build_nmap_args(targets=["192.168.1.0/24"], xml_out="x.xml",
+                             profile="advanced", subnet_scan=True)
+    assert "-Pn" not in single
+    assert "-Pn" not in subnet
 
 
 def test_profile_deep_aggressive_args():

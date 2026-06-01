@@ -94,6 +94,7 @@ def agent_submit_result(
         "persistence": payload.persistence,
         "forensics": payload.forensics,
         "nmap": payload.nmap,
+        "linux": payload.linux,
     }
     score, breakdown, findings = evaluate(scan_dict)
 

@@ -103,6 +103,82 @@ def test_pdf_report_admin_bypass(fresh_db_client):
     assert r.content.startswith(b"%PDF-")
 
 
+def test_pdf_nmap_table_with_mac(auth_client):
+    """Host nmap cu MAC+vendor+porturi detaliate+finding → PDF generat, mai mare."""
+    c, headers = auth_client["client"], auth_client["headers"]
+    token = _enroll(c, headers, uid="rpt-mac")
+    base_id = _submit_scan(c, token, uid="rpt-mac", with_nmap=False)
+
+    rich = {
+        "device_uid": "rpt-mac",
+        "os": {"system": "Windows", "release": "10", "hostname": "test-pc", "is_admin": False},
+        "network": {"open_ports": [445]},
+        "processes": [], "software": [],
+        "nmap": {
+            "version": "7.99", "scan_time_sec": 240.0,
+            "targets": ["192.168.1.0/24"], "subnet_scan": True, "lua_errors": [],
+            "hosts": [{
+                "ip": "192.168.1.50", "mac": "AA:BB:CC:DD:EE:FF",
+                "vendor": "Intel Corporate", "hostname": "printer.lan",
+                "state": "up", "os_guess": "Linux 5.x (95% confidence)",
+                "ports": [{"port": 9100, "proto": "tcp", "state": "open",
+                           "service": "jetdirect", "version": "HP 2.1",
+                           "cpe": "cpe:/h:hp:printer"}],
+                "vulnwatch_findings": [{
+                    "rule_id": "NMAP-X", "severity": "high",
+                    "title": "Serviciu expus",
+                    "evidence": {"port": 9100},
+                    "recommendation": "Restrictioneaza accesul",
+                }],
+                "topology": {},
+            }],
+        },
+    }
+    r = c.post("/api/v1/scans", headers={"X-Device-Token": token}, json=rich)
+    assert r.status_code == 200, r.text
+    rich_id = r.json()["scan_id"]
+
+    r_base = c.get(f"/api/v1/scans/{base_id}/report.pdf", headers=headers)
+    r_rich = c.get(f"/api/v1/scans/{rich_id}/report.pdf", headers=headers)
+    assert r_rich.status_code == 200
+    assert r_rich.content.startswith(b"%PDF-")
+    assert len(r_rich.content) > len(r_base.content)
+
+
+def test_pdf_linux_audit_section(auth_client):
+    """Scan Linux cu payload linux → sectiunea de audit creste PDF-ul."""
+    c, headers = auth_client["client"], auth_client["headers"]
+    token = _enroll(c, headers, uid="rpt-lnx")
+
+    base = {
+        "device_uid": "rpt-lnx",
+        "os": {"system": "Linux", "release": "6.5", "hostname": "kali", "is_admin": False},
+        "network": {"open_ports": [22]}, "processes": [], "software": [],
+    }
+    r0 = c.post("/api/v1/scans", headers={"X-Device-Token": token}, json=base)
+    assert r0.status_code == 200, r0.text
+    base_id = r0.json()["scan_id"]
+
+    withlnx = dict(base)
+    withlnx["linux"] = {
+        "ssh": {"permit_root_login": "yes", "password_auth": "yes"},
+        "firewall": {"tool": "ufw", "active": False},
+        "users": {"uid0_accounts": ["root", "backdoor"],
+                  "empty_password_accounts": ["guest"], "sudo_nopasswd": ["x ALL"]},
+        "sysctl": {"ip_forward": "1", "aslr": "0"},
+        "suid": ["/usr/bin/weird"], "kernel": "6.5.0",
+    }
+    r1 = c.post("/api/v1/scans", headers={"X-Device-Token": token}, json=withlnx)
+    assert r1.status_code == 200, r1.text
+    lnx_id = r1.json()["scan_id"]
+
+    r_base = c.get(f"/api/v1/scans/{base_id}/report.pdf", headers=headers)
+    r_lnx = c.get(f"/api/v1/scans/{lnx_id}/report.pdf", headers=headers)
+    assert r_lnx.status_code == 200
+    assert r_lnx.content.startswith(b"%PDF-")
+    assert len(r_lnx.content) > len(r_base.content)
+
+
 def test_pdf_report_includes_nmap_section_when_present(auth_client):
     c, headers = auth_client["client"], auth_client["headers"]
     token = _enroll(c, headers, uid="rpt-nmap")

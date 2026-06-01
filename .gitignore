@@ -37,3 +37,8 @@ server/static/agent/*.exe
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code + superpowers (artefacte locale, nu fac parte din proiect)
+.claude/
+.superpowers/
+.pytmp/

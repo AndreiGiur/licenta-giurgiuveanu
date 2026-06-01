@@ -67,26 +67,30 @@ def validate_lan_target(value: str) -> None:
 # ─── Nmap profiles per scan_type ────────────────────────────────────────────
 # Args nmap variaza in functie de scan_type. Numarul de porturi si scripturile
 # difera intentionat: advanced ramane rapid (~1-3 min), deep e exhaustiv.
+# `host_discovery_only_args` (ex. -Pn) se aplica DOAR pe tinta single-host;
+# pe un subnet le omitem ca nmap sa descopere host-urile vii intai (altfel ar
+# incerca scan complet pe toate cele 256 adrese, inclusiv cele moarte).
 NMAP_PROFILES: dict[str, dict] = {
-    # MODERAT — pornit doar la cerere, ~1-3 min pe localhost
+    # USOR — discovery + porturi + versiuni pe subnet, fara -O/-A. ~2-5 min /24.
     "advanced": {
         "base_args": [
             "-sV",                          # version detection
             "-T4",                          # aggressive timing
             "--version-intensity", "5",     # intensitate medie
         ],
+        "single_host_args": [],             # advanced nu foloseste -Pn
         "scripts": "vulnwatch-audit",
-        "top_ports": 5000,
-        "timeout_sec": 600,                 # 10 min
+        "top_ports": 1000,
+        "timeout_sec": 900,                 # 15 min
     },
-    # AGRESIV — full power, ~5-20 min pe localhost + LAN /24
+    # AGRESIV — full -A + vuln. Pe subnet: discovery intai. ~10-30 min /24.
     "deep": {
         "base_args": [
             "-A",                           # = -sV -O --script=default --traceroute
             "-T4",                          # aggressive timing
-            "-Pn",                          # skip host discovery
             "--version-intensity", "9",     # intensitate maxima
         ],
+        "single_host_args": ["-Pn"],        # skip discovery DOAR pe single-host
         # vulnwatch-audit + scripts default + vuln (CVE detection) + auth + banner grab
         "scripts": "vulnwatch-audit,vuln,default,auth,banner",
         "top_ports": 5000,
@@ -103,6 +107,7 @@ def build_nmap_args(
     extra_script_args: Optional[str] = None,
     profile: str = "legacy",
     nse_script_path: Optional[str] = None,
+    subnet_scan: bool = False,
 ) -> list[str]:
     """Construieste argumentele CLI pentru nmap (fara exe-ul in sine).
 
@@ -122,6 +127,9 @@ def build_nmap_args(
     if profile in NMAP_PROFILES:
         prof = NMAP_PROFILES[profile]
         args: list[str] = list(prof["base_args"])
+        # Argumente single-host (ex. -Pn) doar cand NU scanam un subnet.
+        if not subnet_scan:
+            args.extend(prof.get("single_host_args", []))
         # all_ports overrides top_ports din profil
         if all_ports:
             args.append("-p-")
@@ -154,6 +162,7 @@ def run_nmap(
     profile: str = "legacy",
     progress_cb: Optional[Callable[[float, str], None]] = None,
     nse_script_path: Optional[str] = None,
+    subnet_scan: bool = False,
     log=None,
 ) -> tuple[int, str]:
     """Ruleaza nmap. Intoarce (exit_code, output_text). XML va fi scris la xml_out.
@@ -170,7 +179,8 @@ def run_nmap(
         timeout_sec = NMAP_PROFILES[profile]["timeout_sec"]
     args = build_nmap_args(targets=targets, xml_out=str(xml_out),
                            top_ports=top_ports, all_ports=all_ports,
-                           profile=profile, nse_script_path=nse_script_path)
+                           profile=profile, nse_script_path=nse_script_path,
+                           subnet_scan=subnet_scan)
     cmd = [str(nmap)] + args
     if log:
         log(f"nmap: {' '.join(cmd)}", "info")

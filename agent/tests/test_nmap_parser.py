@@ -31,6 +31,33 @@ def test_parse_localhost():
     assert host["topology"]["risk_score"] == 65
 
 
+def test_parse_extracts_mac_and_vendor():
+    """Host cu adresa MAC (acelasi segment L2) → mac + vendor in payload."""
+    xml = """<?xml version="1.0"?><nmaprun version="7.94" start="1">
+<host><status state="up"/>
+<address addr="192.168.1.50" addrtype="ipv4"/>
+<address addr="AA:BB:CC:DD:EE:FF" addrtype="mac" vendor="Intel Corporate"/>
+<hostnames><hostname name="printer.lan"/></hostnames>
+<distance value="1"/>
+<ports></ports></host></nmaprun>"""
+    host = parse_nmap_xml(xml)["hosts"][0]
+    assert host["ip"] == "192.168.1.50"
+    assert host["mac"] == "AA:BB:CC:DD:EE:FF"
+    assert host["vendor"] == "Intel Corporate"
+    assert host["distance"] == 1
+
+
+def test_parse_no_mac_keeps_empty():
+    """Host fara MAC (ex. localhost) → mac/vendor goale, fara crash."""
+    xml = """<?xml version="1.0"?><nmaprun version="7.94" start="1">
+<host><status state="up"/><address addr="10.0.0.1" addrtype="ipv4"/>
+<ports></ports></host></nmaprun>"""
+    host = parse_nmap_xml(xml)["hosts"][0]
+    assert host["mac"] == ""
+    assert host["vendor"] == ""
+    assert host["distance"] is None
+
+
 def test_parse_invalid_xml_raises():
     with pytest.raises(NmapParseError):
         parse_nmap_xml("not xml at all")

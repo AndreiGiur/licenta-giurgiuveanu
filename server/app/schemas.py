@@ -79,6 +79,7 @@ class ScanIn(BaseModel):
     persistence: Dict[str, Any] | None = None
     forensics: Dict[str, Any] | None = None
     nmap: Dict[str, Any] | None = None
+    linux: Dict[str, Any] | None = None
 
 
 class ScoreBreakdown(BaseModel):
@@ -179,6 +180,7 @@ class JobResultIn(BaseModel):
     persistence: Dict[str, Any] | None = None
     forensics: Dict[str, Any] | None = None
     nmap: Dict[str, Any] | None = None
+    linux: Dict[str, Any] | None = None
 
 
 class JobFailureIn(BaseModel):

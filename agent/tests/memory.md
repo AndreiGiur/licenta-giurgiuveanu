@@ -34,4 +34,4 @@ Toate testele sunt **fara network**:
 
 Testele de end-to-end (cu HTTP real catre backend) sunt in `server/tests/`.
 
-**Total: 107 teste** (include +8 `test_linux_audit.py` 2026-06-01).
+**Total: 115 teste** (include +8 `test_linux_audit.py` + 2026-06-01: 3 `_detect_local_subnet` in test_core, 2 MAC in test_nmap_parser, 3 subnet/-Pn in test_nmap_runner).

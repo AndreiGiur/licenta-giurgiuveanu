@@ -7,12 +7,53 @@ Verificam ca refactor-ul nu a stricat partile pure (fara network):
 """
 import configparser
 import os
+import socket
+import types
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from agent import core
+
+
+def _snic(address, netmask, family=socket.AF_INET):
+    return types.SimpleNamespace(family=family, address=address,
+                                 netmask=netmask, broadcast=None, ptp=None)
+
+
+def _stats(isup=True):
+    return types.SimpleNamespace(isup=isup, duplex=0, speed=0, mtu=1500, flags="")
+
+
+def test_detect_local_subnet_returns_24(monkeypatch):
+    monkeypatch.setattr(core.psutil, "net_if_stats",
+                        lambda: {"lo": _stats(), "eth0": _stats()})
+    monkeypatch.setattr(core.psutil, "net_if_addrs", lambda: {
+        "lo": [_snic("127.0.0.1", "255.0.0.0")],
+        "eth0": [_snic("192.168.1.141", "255.255.255.0")],
+    })
+    assert core._detect_local_subnet() == "192.168.1.0/24"
+
+
+def test_detect_local_subnet_caps_wide_mask_to_24(monkeypatch):
+    """Masca /16 e restransa la /24 in jurul IP-ului host-ului."""
+    monkeypatch.setattr(core.psutil, "net_if_stats", lambda: {"eth0": _stats()})
+    monkeypatch.setattr(core.psutil, "net_if_addrs", lambda: {
+        "eth0": [_snic("10.0.5.7", "255.255.0.0")],
+    })
+    assert core._detect_local_subnet() == "10.0.5.0/24"
+
+
+def test_detect_local_subnet_skips_down_and_loopback(monkeypatch):
+    """Interfata down sau doar loopback → None (fallback la localhost)."""
+    monkeypatch.setattr(core.psutil, "net_if_stats",
+                        lambda: {"lo": _stats(), "eth0": _stats(isup=False)})
+    monkeypatch.setattr(core.psutil, "net_if_addrs", lambda: {
+        "lo": [_snic("127.0.0.1", "255.0.0.0")],
+        "eth0": [_snic("192.168.1.141", "255.255.255.0")],
+    })
+    assert core._detect_local_subnet() is None
 
 
 @pytest.fixture

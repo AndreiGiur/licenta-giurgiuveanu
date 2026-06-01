@@ -61,6 +61,9 @@ def parse_nmap_xml(xml_text: str) -> dict:
 def _parse_host(host_el: ET.Element) -> dict:
     host: dict = {
         "ip": "",
+        "mac": "",
+        "vendor": "",
+        "distance": None,
         "hostname": "",
         "state": "",
         "os_guess": "",
@@ -74,6 +77,18 @@ def _parse_host(host_el: ET.Element) -> dict:
         addr = host_el.find("address[@addrtype='ipv6']")
     if addr is not None:
         host["ip"] = addr.get("addr", "")
+    # MAC + vendor (apare doar pe acelasi segment L2; necesita root pe Linux)
+    mac = host_el.find("address[@addrtype='mac']")
+    if mac is not None:
+        host["mac"] = mac.get("addr", "")
+        host["vendor"] = mac.get("vendor", "")
+    # Distanta (hop count) — utila pentru tabelul de retea
+    dist = host_el.find("distance")
+    if dist is not None and dist.get("value"):
+        try:
+            host["distance"] = int(dist.get("value"))
+        except ValueError:
+            pass
     # State
     status = host_el.find("status")
     if status is not None:

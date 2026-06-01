@@ -325,42 +325,135 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
             f"Network scan (nmap {nmap.get('version', '?')})", h2_style))
         targets = ", ".join(nmap.get("targets", []) or [])
         elements.append(Paragraph(f"<b>Targets:</b> {_escape_html(targets)}", small_style))
+        scope = "subnet local" if nmap.get("subnet_scan") else "host"
         elements.append(Paragraph(
             f"<b>Durata:</b> {nmap.get('scan_time_sec', '?')}s - "
-            f"{len(nmap['hosts'])} host-uri descoperite", small_style))
+            f"{len(nmap['hosts'])} host-uri descoperite ({scope})", small_style))
         elements.append(Spacer(1, 0.4 * cm))
 
+        # ── Tabel retea: IP / MAC / Vendor / Hostname / OS / #porturi ──
+        net_rows = [["IP", "MAC", "Vendor", "Hostname", "OS", "Porturi"]]
+        for host in nmap["hosts"]:
+            open_ports = [p for p in (host.get("ports") or []) if p.get("state") == "open"]
+            os_short = (host.get("os_guess") or "").split(" (")[0]
+            net_rows.append([
+                _ascii(host.get("ip", "?")),
+                _ascii(host.get("mac", "") or "-"),
+                _ascii((host.get("vendor", "") or "-")[:22]),
+                _ascii((host.get("hostname", "") or "-")[:18]),
+                _ascii(os_short[:22] or "-"),
+                str(len(open_ports)),
+            ])
+        net_tbl = Table(net_rows, colWidths=[3 * cm, 3.2 * cm, 3.3 * cm, 2.5 * cm, 2.5 * cm, 1.5 * cm])
+        net_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), PLUM),
+            ("TEXTCOLOR", (0, 0), (-1, 0), CREAM),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("ALIGN", (5, 0), (5, -1), "CENTER"),
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [CREAM, CREAM_ALT]),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(net_tbl)
+        elements.append(Spacer(1, 0.6 * cm))
+
+        # ── Detaliu per host ──
         for host in nmap["hosts"]:
             ip = _escape_html(host.get("ip", "?"))
             hostname = _escape_html(host.get("hostname", "n/a"))
+            mac = host.get("mac", "")
+            mac_txt = f" - MAC {_escape_html(mac)}" if mac else ""
+            vendor = host.get("vendor", "")
+            vendor_txt = f" ({_escape_html(vendor)})" if vendor else ""
             elements.append(Paragraph(
                 f"<b>{ip}</b> "
-                f"<font size=9 color='{MUTED.hexval()}'>({hostname})</font>",
+                f"<font size=9 color='{MUTED.hexval()}'>({hostname}){mac_txt}{vendor_txt}</font>",
                 body_style,
             ))
             if host.get("os_guess"):
                 elements.append(Paragraph(
                     f"OS: {_escape_html(host['os_guess'])}", small_style))
             open_ports = [p for p in (host.get("ports") or []) if p.get("state") == "open"]
-            if open_ports:
-                ports_str = ", ".join(
-                    f"{p.get('port')}/{p.get('proto', '?')} "
-                    f"({p.get('service', '?')})"
-                    for p in open_ports[:20]
-                )
+            for p in open_ports:
+                version = (p.get("version") or "").strip()
+                cpe = (p.get("cpe") or "").strip()
+                line = (f"{p.get('port')}/{p.get('proto', '?')} "
+                        f"{p.get('service', '?')}")
+                if version:
+                    line += f" - {version}"
+                if cpe:
+                    line += f" [{cpe}]"
                 elements.append(Paragraph(
-                    f"Porturi open: {_escape_html(ports_str)}", small_style))
+                    f"<font face='Courier' size=8>{_escape_html(line)}</font>", small_style))
             vuln_findings = host.get("vulnwatch_findings") or []
-            if vuln_findings:
-                for vf in vuln_findings:
-                    sev = (vf.get("severity") or "info").lower()
-                    color = SEVERITY_COLOR.get(sev, MUTED)
+            for vf in vuln_findings:
+                sev = (vf.get("severity") or "info").lower()
+                color = SEVERITY_COLOR.get(sev, MUTED)
+                elements.append(Paragraph(
+                    f"<font color='{color.hexval()}'><b>[{sev.upper()}]</b></font> "
+                    f"{_escape_html(vf.get('title', '?'))}",
+                    small_style,
+                ))
+                ev = vf.get("evidence") or vf.get("description")
+                if ev:
+                    ev_safe = _escape_html(_ev_str(ev) if isinstance(ev, (dict, list)) else str(ev))
+                    ev_safe = ev_safe.replace("\n", "<br/>")
                     elements.append(Paragraph(
-                        f"<font color='{color.hexval()}'><b>[{sev.upper()}]</b></font> "
-                        f"{_escape_html(vf.get('title', '?'))}",
-                        small_style,
-                    ))
-            elements.append(Spacer(1, 0.35 * cm))
+                        f"<font face='Courier' size=7 color='{MUTED.hexval()}'>{ev_safe}</font>",
+                        small_style))
+                if vf.get("recommendation"):
+                    elements.append(Paragraph(
+                        f"<i>Recomandare:</i> {_escape_html(vf['recommendation'])}", small_style))
+            elements.append(Spacer(1, 0.4 * cm))
+
+    # ── Sectiune audit Linux ──
+    linux = payload.get("linux") if payload else None
+    is_linux = str(os_info.get("system", "")).lower().startswith("linux")
+    if is_linux and linux:
+        elements.append(PageBreak())
+        elements.append(Paragraph("Audit Linux (date colectate)", h2_style))
+
+        ssh = linux.get("ssh") or {}
+        if ssh:
+            ssh_line = ", ".join(f"{k}={v}" for k, v in ssh.items())
+            elements.append(Paragraph(f"<b>SSH:</b> {_escape_html(ssh_line)}", small_style))
+
+        fw = linux.get("firewall") or {}
+        if fw:
+            elements.append(Paragraph(
+                f"<b>Firewall:</b> {_escape_html(fw.get('tool', '?'))} - "
+                f"{'activ' if fw.get('active') else 'inactiv'}", small_style))
+
+        users = linux.get("users") or {}
+        uid0 = users.get("uid0_accounts") or []
+        empty = users.get("empty_password_accounts") or []
+        nopw = users.get("sudo_nopasswd") or []
+        if uid0:
+            elements.append(Paragraph(f"<b>Conturi UID 0:</b> {_escape_html(', '.join(uid0))}", small_style))
+        if empty:
+            elements.append(Paragraph(f"<b>Conturi cu parola goala:</b> {_escape_html(', '.join(empty))}", small_style))
+        if nopw:
+            elements.append(Paragraph(f"<b>sudo NOPASSWD:</b> {len(nopw)} reguli", small_style))
+
+        sysctl = linux.get("sysctl") or {}
+        if sysctl:
+            sc_line = ", ".join(f"{k}={v}" for k, v in sysctl.items())
+            elements.append(Paragraph(f"<b>sysctl:</b> {_escape_html(sc_line)}", small_style))
+
+        for label, key in [("SUID neobisnuite", "suid"), ("SGID neobisnuite", "sgid"),
+                           ("World-writable", "world_writable")]:
+            items = linux.get(key) or []
+            if items:
+                elements.append(Paragraph(
+                    f"<b>{label}:</b> {_escape_html(', '.join(items[:15]))}"
+                    + (" ..." if len(items) > 15 else ""), small_style))
+
+        if linux.get("kernel"):
+            elements.append(Paragraph(f"<b>Kernel:</b> {_escape_html(linux['kernel'])}", small_style))
+        elements.append(Spacer(1, 0.4 * cm))
 
     # ── Footer ──
     elements.append(Spacer(1, 0.6 * cm))
