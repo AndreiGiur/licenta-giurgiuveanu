@@ -75,6 +75,11 @@ class ScanProfile:
     include_arp_dns: bool = False
     include_recent_files: bool = False
 
+    # Linux audit (ruleaza doar pe Linux — vezi collectors/linux_audit.py)
+    include_linux_basic: bool = False   # ssh, firewall, useri, kernel, sysctl, pachete, login.defs, mounts
+    include_linux_jobs: bool = False    # cron, servicii systemd (advanced+)
+    include_linux_files: bool = False   # suid, sgid, world-writable (deep, lente)
+
 
 SCAN_PROFILES: dict[str, ScanProfile] = {
     "standard": ScanProfile(
@@ -83,6 +88,7 @@ SCAN_PROFILES: dict[str, ScanProfile] = {
         include_software=True,
         include_users=True,
         include_firewall=True,
+        include_linux_basic=True,
     ),
     "advanced": ScanProfile(
         process_limit=None,
@@ -99,6 +105,8 @@ SCAN_PROFILES: dict[str, ScanProfile] = {
         include_tasks=True,
         include_shares=True,
         include_ps_policy=True,
+        include_linux_basic=True,
+        include_linux_jobs=True,
     ),
     "deep": ScanProfile(
         process_limit=None,
@@ -125,6 +133,9 @@ SCAN_PROFILES: dict[str, ScanProfile] = {
         include_certs=True,
         include_arp_dns=True,
         include_recent_files=True,
+        include_linux_basic=True,
+        include_linux_jobs=True,
+        include_linux_files=True,
     ),
 }
 
