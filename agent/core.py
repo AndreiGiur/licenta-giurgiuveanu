@@ -618,6 +618,9 @@ def collect_system_data(device_uid: str, scan_type: str = "standard",
         step(85, "Forensics")
         forensics = collectors.collect_forensics(cfg)
 
+    # Audit Linux (ruleaza doar pe Linux — pe Windows intoarce {}).
+    linux = collectors.collect_linux_audit(cfg)
+
     step(95, "Finalizare")
 
     os_keys = ("system", "release", "version", "machine", "hostname",
@@ -634,6 +637,7 @@ def collect_system_data(device_uid: str, scan_type: str = "standard",
         "software": software,
         "persistence": persistence,
         "forensics": forensics,
+        "linux": linux,
     }
 
 
