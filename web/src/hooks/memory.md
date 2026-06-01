@@ -9,6 +9,7 @@ a face logica testabila independent.
 | ------------------------- | -------------------------------------------------------------------- |
 | `useScanJobPolling.ts`    | Polleaza `listScanJobs(deviceUid)` la 2s. Intoarce job-ul activ (running/pending) pentru progress bar, sau null. Cand un job tocmai s-a finalizat, apeleaza `onJobDone()` (callback tinut intr-un `ref` ca sa nu re-declanseze effect-ul). Cleanup la unmount/schimbare device. Extras din `Dashboard.tsx`. |
 | `useScanDetail.ts`        | Incarca detaliul unui scan dupa `scanId` (sau null), cu anulare la schimbarea id-ului / unmount (fara setState pe componenta demontata). Intoarce `{ detail, error }`. Extras din `Dashboard.tsx`. |
+| `useNetworkTraffic.ts`    | **(2026-06-01)** Polleaza `GET /devices/{uid}/net-traffic` la 10s; intoarce seria `NetTrafficPoint[]` (ultimele ~10 min). Gol cand uid lipseste sau agent offline. Best-effort (erorile nu arunca). Folosit de `NetworkTrafficChart`. Test: `useNetworkTraffic.test.ts` (4 teste). |
 
 ## Teste
 
