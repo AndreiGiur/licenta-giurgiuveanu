@@ -247,6 +247,19 @@ def test_run_one_job_caps_collection_progress_for_deep(monkeypatch):
     assert captured["max_progress"] == 65
 
 
+import pytest
+
+
+@pytest.mark.parametrize("st", ["standard", "advanced", "deep"])
+def test_collect_system_data_never_raises(st):
+    """Pe orice OS (relevant pe Linux), colectarea nu arunca pentru niciun
+    scan_type — colectorii Windows-only degradeaza gratios la gol."""
+    from agent import core
+    data = core.collect_system_data("uid", scan_type=st)
+    for key in ("os", "network", "processes", "software"):
+        assert key in data
+
+
 def test_build_heartbeat_payload_includes_net():
     """Payload-ul heartbeat include contoarele de trafic net."""
     from agent import core
