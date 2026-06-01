@@ -1,6 +1,7 @@
 import { apiGet, apiPost, apiDelete, API_BASE_URL } from "./client";
 import type {
   DeviceScanListItem,
+  NetTrafficPoint,
   Schedule,
   ScheduleFrequency,
   ScanDetailResponse,
@@ -10,6 +11,12 @@ import type {
   ScoreTrendPoint,
   ScanDiff,
 } from "./types";
+
+export function getNetTraffic(deviceUid: string) {
+  return apiGet<NetTrafficPoint[]>(
+    `/devices/${encodeURIComponent(deviceUid)}/net-traffic`,
+  );
+}
 
 export function getDeviceScoreTrend(deviceUid: string, days = 30) {
   return apiGet<ScoreTrendPoint[]>(

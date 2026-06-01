@@ -8,8 +8,19 @@ vi.mock("../api/exposure", () => ({
   listDeviceScans: vi.fn(),
   listScanJobs: vi.fn(),
   getScan: vi.fn(),
+  getNetTraffic: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("../components/Navbar", () => ({ default: () => <nav data-testid="navbar" /> }));
+
+// Recharts (NetworkTrafficChart) foloseste ResizeObserver — absent in jsdom.
+class ResizeObserverMock {
+  constructor(_cb: ResizeObserverCallback) { /* mock */ }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).ResizeObserver = ResizeObserverMock;
 
 import Dashboard from "./Dashboard";
 import { apiGet } from "../api/http";

@@ -9,12 +9,16 @@ import { ScoreGauge } from "../components/ScoreGauge";
 import { ScoreBreakdownBars } from "../components/ScoreBreakdownBars";
 import { useScanDetail } from "../hooks/useScanDetail";
 import { useScanJobPolling } from "../hooks/useScanJobPolling";
+import { ConnectionTopology } from "../components/ConnectionTopology";
+import { NetworkTrafficChart } from "../components/NetworkTrafficChart";
 
 type DeviceListItem = {
   id: number;
   device_uid: string;
   name: string;
   created_at: string;
+  is_online?: boolean;
+  last_heartbeat?: string | null;
 };
 
 /* ── helpers ── */
@@ -204,6 +208,29 @@ export default function Dashboard() {
           <div className="alert alert-error" style={{ marginBottom: 20 }}>
             <div className="alert-title">Eroare</div>
             <div style={{ fontSize: 12, marginTop: 2, whiteSpace: "pre-wrap" }}>{error || detailError}</div>
+          </div>
+        )}
+
+        {/* ── Conectivitate + trafic live ── */}
+        {canLoad && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}
+            className="dashboard-grid">
+            <div className="card">
+              <div className="card-header"><span className="card-title">Conexiune</span></div>
+              <div className="card-body">
+                <ConnectionTopology
+                  online={!!selectedDevice?.is_online}
+                  lastHeartbeat={selectedDevice?.last_heartbeat ?? null}
+                  scanActive={!!activeJob && (activeJob.status === "running" || activeJob.status === "pending")}
+                />
+              </div>
+            </div>
+            <div className="card">
+              <div className="card-header"><span className="card-title">Trafic de retea (live)</span></div>
+              <div className="card-body">
+                <NetworkTrafficChart deviceUid={deviceId} />
+              </div>
+            </div>
           </div>
         )}
 

@@ -67,6 +67,13 @@ export type Device = {
   capabilities?: string[];
 };
 
+export type NetTrafficPoint = {
+  ts: number;
+  sent_rate_kbps: number;
+  recv_rate_kbps: number;
+  conn_count: number;
+};
+
 export type ScanPayload = {
   scan_type?: ScanType;
   os?: {
