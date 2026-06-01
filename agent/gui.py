@@ -851,7 +851,7 @@ class AgentApp:
         ttk.Checkbutton(wrap, text="Instalează nmap (necesar pentru scanări deep)",
                         variable=self._var_install_nmap).pack(anchor="w", pady=(0, 0))
         ttk.Label(wrap, text="necesită drepturi de administrator/root",
-                  foreground=p["muted"], background=p["bg"],
+                  foreground=p["text_muted"], background=p["bg"],
                   font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 18))
 
         # Mesaj eroare
