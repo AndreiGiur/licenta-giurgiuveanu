@@ -30,7 +30,7 @@ export default function UnifiedDashboard() {
 
   const sidebarDevices: SidebarDevice[] = devices.map((d) => ({
     id: d.id, device_uid: d.device_uid, name: d.name, is_online: d.is_online,
-    lastScore: null, scanCount: 0,
+    lastScore: d.last_score ?? null, scanCount: d.scan_count ?? 0,
   }));
   const selected = devices.find((d) => d.device_uid === selectedUid) ?? null;
 

@@ -65,6 +65,8 @@ export type Device = {
   last_heartbeat?: string | null;
   agent_version?: string | null;
   capabilities?: string[];
+  scan_count?: number;
+  last_score?: number | null;
 };
 
 export type NetTrafficPoint = {

@@ -82,6 +82,45 @@ def test_delete_device_cascades(auth_client):
     assert r.status_code == 404
 
 
+def test_device_list_includes_scan_count_and_last_score(auth_client):
+    client, headers = auth_client["client"], auth_client["headers"]
+    created = _enroll_device(client, headers, device_uid="counter-dev")
+    token = created["device_token"]
+    for _ in range(2):
+        r = client.post("/api/v1/scans", headers={"X-Device-Token": token},
+                        json=_sample_scan_payload("counter-dev"))
+        assert r.status_code == 200
+    r = client.get("/api/v1/devices", headers=headers)
+    dev = next(d for d in r.json() if d["device_uid"] == "counter-dev")
+    assert dev["scan_count"] == 2
+    assert dev["last_score"] is not None
+
+
+def test_scan_diff_auto_previous_same_type_only(auth_client):
+    """Diff-ul automat compara doar scanari de ACELASI tip (nu deep cu advanced)."""
+    client, headers = auth_client["client"], auth_client["headers"]
+    created = _enroll_device(client, headers, device_uid="diff-dev")
+    token = created["device_token"]
+
+    def post(scan_type):
+        p = _sample_scan_payload("diff-dev")
+        p["scan_type"] = scan_type
+        r = client.post("/api/v1/scans", headers={"X-Device-Token": token}, json=p)
+        assert r.status_code == 200, r.text
+        return r.json()["scan_id"]
+
+    standard_id = post("standard")
+    deep_a = post("deep")        # intercalat: advanced intre cele doua deep
+    post("advanced")
+    deep_b = post("deep")
+
+    # diff automat pe deep_b → trebuie sa aleaga deep_a (acelasi tip), NU advanced-ul
+    r = client.get(f"/api/v1/scans/{deep_b}/diff", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["from_scan_id"] == deep_a
+    assert r.json()["from_scan_id"] != standard_id
+
+
 # ── Scan submission ──────────────────────────────────────────────────────────
 
 def test_scan_submission_happy_path(auth_client):

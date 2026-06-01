@@ -28,8 +28,10 @@ def _utcnow() -> datetime:
 
 # ── Serializatori ─────────────────────────────────────────────────────────────
 
-def _device_to_out(device: Device) -> DeviceOut:
-    """Serializeaza un Device cu campurile de online + agent meta."""
+def _device_to_out(device: Device, scan_count: int = 0,
+                   last_score: int | None = None) -> DeviceOut:
+    """Serializeaza un Device cu campurile de online + agent meta. `scan_count`
+    + `last_score` sunt populate de `list_devices` (default 0/None in rest)."""
     caps = device.capabilities if isinstance(device.capabilities, list) else []
     return DeviceOut(
         id=device.id,
@@ -40,6 +42,8 @@ def _device_to_out(device: Device) -> DeviceOut:
         last_heartbeat=device.last_heartbeat.isoformat() if device.last_heartbeat else None,
         agent_version=device.agent_version,
         capabilities=caps,
+        scan_count=scan_count,
+        last_score=last_score,
     )
 
 

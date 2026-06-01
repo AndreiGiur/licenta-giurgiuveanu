@@ -1133,7 +1133,7 @@ button:focus-visible {
 /* Scanari (lista) + findings — findings primeste tot restul. */
 .workspace-scans { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
 .workspace-scans > .card { display: flex; flex-direction: column; }
-.workspace-scans .card-body { max-height: 460px; overflow-y: auto; }
+/* Fara scroll individual pe celule — continutul apare in totalitate, pagina deruleaza. */
 
 .job-progress { margin: 8px 0 16px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }

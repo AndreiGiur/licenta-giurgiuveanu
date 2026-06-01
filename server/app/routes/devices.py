@@ -6,11 +6,11 @@ doar listare + stergere.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_db, require_user
-from ..models import Device, User
+from ..models import Device, Scan, User
 from ..schemas import (
     DeviceCreateIn,
     DeviceCreateOut,
@@ -53,7 +53,17 @@ def create_device(payload: DeviceCreateIn, db: Session = Depends(get_db), user: 
 @router.get("/devices", response_model=list[DeviceOut], tags=["devices"])
 def list_devices(db: Session = Depends(get_db), user: User = Depends(require_user)):
     rows = db.execute(select(Device).where(Device.owner_id == user.id).order_by(Device.id.desc())).scalars().all()
-    return [_device_to_out(d) for d in rows]
+    out: list[DeviceOut] = []
+    for d in rows:
+        scan_count = db.execute(
+            select(func.count(Scan.id)).where(Scan.device_id == d.id)
+        ).scalar_one()
+        last_score = db.execute(
+            select(Scan.exposure_score).where(Scan.device_id == d.id)
+            .order_by(Scan.id.desc()).limit(1)
+        ).scalar_one_or_none()
+        out.append(_device_to_out(d, scan_count=scan_count, last_score=last_score))
+    return out
 
 
 # ── Smart re-link ────────────────────────────────────────────────────────────

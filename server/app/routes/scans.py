@@ -163,20 +163,36 @@ def scan_diff(
     if not device or device.owner_id != user.id:
         raise HTTPException(status_code=404, detail="scan not found")
 
+    cur_type = (scan.payload or {}).get("scan_type", "standard")
+
     if previous is not None:
         prev = db.get(Scan, previous)
         if not prev or prev.device_id != scan.device_id:
             raise HTTPException(status_code=404, detail="previous scan not found on same device")
+        # Nu comparam tipuri diferite (deep cu advanced etc.).
+        prev_type = (prev.payload or {}).get("scan_type", "standard")
+        if prev_type != cur_type:
+            raise HTTPException(
+                status_code=400,
+                detail=f"cannot compare '{cur_type}' scan with '{prev_type}' scan",
+            )
     else:
-        # Cauta automat scan-ul anterior pe acelasi device.
-        prev = db.execute(
+        # Cauta automat scan-ul anterior DE ACELASI TIP pe acelasi device.
+        candidates = db.execute(
             select(Scan)
             .where(Scan.device_id == scan.device_id, Scan.id < scan.id)
             .order_by(Scan.id.desc())
-            .limit(1)
-        ).scalar_one_or_none()
+        ).scalars().all()
+        prev = next(
+            (c for c in candidates
+             if (c.payload or {}).get("scan_type", "standard") == cur_type),
+            None,
+        )
         if not prev:
-            raise HTTPException(status_code=404, detail="no previous scan exists for this device")
+            raise HTTPException(
+                status_code=404,
+                detail=f"no previous '{cur_type}' scan exists for this device",
+            )
 
     def _key(f):
         return f.rule_id

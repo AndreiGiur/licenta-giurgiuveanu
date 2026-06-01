@@ -50,6 +50,8 @@ class DeviceOut(BaseModel):
     last_heartbeat: str | None = None
     agent_version: str | None = None
     capabilities: List[str] = []
+    scan_count: int = 0
+    last_score: int | None = None
 
 
 # DeviceCreateOut: identic cu DeviceOut — backend nu mai returneaza tokenul plain.
@@ -68,6 +70,7 @@ class ScanIn(BaseModel):
     iar autentificarea se face prin header-ul X-Device-Token.
     """
     device_uid: str = Field(min_length=1, max_length=128)
+    scan_type: Literal["standard", "advanced", "deep"] = "standard"
     os: Dict[str, Any]
     network: Dict[str, Any] = {}
     processes: List[Dict[str, Any]] = []
