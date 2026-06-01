@@ -35,12 +35,13 @@ describe("Navbar", () => {
     expect(screen.getByText("VulnWatch")).toBeInTheDocument();
   });
 
-  it("afiseaza link-urile Dashboard, Dispozitive, Profil", async () => {
+  it("afiseaza link-urile Dashboard si Profil (Dispozitive unificat in Dashboard)", async () => {
     (fetchMe as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 1, email: "u@test.com" });
     renderNav();
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
-    expect(screen.getByText("Dispozitive")).toBeInTheDocument();
     expect(screen.getByText("Profil")).toBeInTheDocument();
+    // "Dispozitive" a fost scos — totul e in Dashboard acum
+    expect(screen.queryByText("Dispozitive")).not.toBeInTheDocument();
   });
 
   it("NU afiseaza butonul Admin pentru user normal", async () => {
