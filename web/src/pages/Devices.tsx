@@ -11,6 +11,7 @@ import type {
   Device, ScanJobPreview, ScanJobResponse, ScanType, Schedule,
 } from "../api/types";
 import ScheduleForm from "../components/ScheduleForm";
+import { detectOS } from "../api/os";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -62,14 +63,17 @@ export default function Devices() {
   // Tinem ref-uri ca sa anulam polling-urile la unmount.
   const pollTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // Disponibilitatea agent-ului pentru download (depinde daca a fost build-uit pe server).
-  const [agentInfo, setAgentInfo] = useState<{ available: boolean; size_bytes: number | null } | null>(null);
+  // Disponibilitatea agent-ului pentru download, per OS (depinde de build-urile de pe server).
+  type OsBuild = { available: boolean; size_bytes: number | null };
+  const [agentInfo, setAgentInfo] = useState<{ windows: OsBuild; linux: OsBuild } | null>(null);
+  const clientOS = detectOS();
 
   useEffect(() => {
     loadDevices();
+    const empty: OsBuild = { available: false, size_bytes: null };
     getAgentDownloadInfo()
-      .then(info => setAgentInfo({ available: info.available, size_bytes: info.size_bytes }))
-      .catch(() => setAgentInfo({ available: false, size_bytes: null }));
+      .then(info => setAgentInfo({ windows: info.windows, linux: info.linux }))
+      .catch(() => setAgentInfo({ windows: empty, linux: empty }));
 
     // Refresh online status la 15s (heartbeat = 10s, prag offline = 30s).
     const refresh = setInterval(loadDevices, 15_000);
@@ -260,25 +264,46 @@ export default function Devices() {
         }}>
           <div style={{ flex: 1, minWidth: 240 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
-              Instaleaza VulnWatch Agent (Windows)
+              Instaleaza VulnWatch Agent
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              Descarca, dublu-click, completeaza email-ul si parola in fereastra. Zero terminal.
+              Descarca, ruleaza, completeaza email-ul si parola in fereastra. Zero terminal.
             </div>
           </div>
-          {agentInfo?.available ? (
-            <a
-              href={`${API_BASE_URL}/agent/download/windows`}
-              className="btn btn-accent"
-              style={{ textDecoration: "none" }}
-            >
-              ↓ Descarca .exe {agentInfo.size_bytes ? `(${(agentInfo.size_bytes / (1024 * 1024)).toFixed(1)} MB)` : ""}
-            </a>
-          ) : (
-            <span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-              Build indisponibil — ruleaza <code>agent/build.ps1</code> pe serverul backend.
-            </span>
-          )}
+          {(() => {
+            const mb = (b: number | null) => (b ? `(${(b / (1024 * 1024)).toFixed(1)} MB)` : "");
+            const win = agentInfo?.windows;
+            const lin = agentInfo?.linux;
+            // OS detectat → buton principal; celalalt → link secundar.
+            const primaryOS: "windows" | "linux" = clientOS === "linux" ? "linux" : "windows";
+            const otherOS = primaryOS === "windows" ? "linux" : "windows";
+            const build = (os: "windows" | "linux") => (os === "windows" ? win : lin);
+            const label = (os: "windows" | "linux") =>
+              os === "windows" ? `↓ Descarca .exe (Windows) ${mb(win?.size_bytes ?? null)}`
+                                : `↓ Descarca binar (Linux) ${mb(lin?.size_bytes ?? null)}`;
+            const primary = build(primaryOS);
+            const other = build(otherOS);
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                {primary?.available ? (
+                  <a href={`${API_BASE_URL}/agent/download/${primaryOS}`}
+                     className="btn btn-accent" style={{ textDecoration: "none" }}>
+                    {label(primaryOS)}
+                  </a>
+                ) : (
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                    Build {primaryOS} indisponibil pe server.
+                  </span>
+                )}
+                {other?.available && (
+                  <a href={`${API_BASE_URL}/agent/download/${otherOS}`}
+                     style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                    Alt sistem de operare: {label(otherOS)}
+                  </a>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {error && (
@@ -317,15 +342,19 @@ export default function Devices() {
                   Pentru a conecta primul dispozitiv, descarcă agentul VulnWatch și
                   autentifică-te din aplicație.
                 </div>
-                {agentInfo?.available && (
-                  <a
-                    href={`${API_BASE_URL}/agent/download/windows`}
-                    className="btn btn-accent"
-                    style={{ textDecoration: "none" }}
-                  >
-                    ↓ Descarcă VulnWatch Agent
-                  </a>
-                )}
+                {(() => {
+                  const os: "windows" | "linux" = clientOS === "linux" ? "linux" : "windows";
+                  const avail = os === "windows" ? agentInfo?.windows.available : agentInfo?.linux.available;
+                  return avail ? (
+                    <a
+                      href={`${API_BASE_URL}/agent/download/${os}`}
+                      className="btn btn-accent"
+                      style={{ textDecoration: "none" }}
+                    >
+                      ↓ Descarcă VulnWatch Agent ({os === "windows" ? "Windows" : "Linux"})
+                    </a>
+                  ) : null;
+                })()}
               </div>
             )}
 

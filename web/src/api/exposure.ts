@@ -107,11 +107,13 @@ export function deleteSchedule(scheduleId: number) {
 }
 
 
-/** Verifica daca un build de agent este disponibil pe server. */
+/** Verifica disponibilitatea build-urilor de agent pe server, per OS. */
 export function getAgentDownloadInfo() {
   return apiGet<{
-    available: boolean;
+    available: boolean;            // backward-compat (Windows)
     platform: string;
     size_bytes: number | null;
+    windows: { available: boolean; size_bytes: number | null };
+    linux: { available: boolean; size_bytes: number | null };
   }>("/agent/download/info");
 }
