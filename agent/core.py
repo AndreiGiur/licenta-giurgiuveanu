@@ -390,6 +390,68 @@ def agent_capabilities() -> list[str]:
     return caps
 
 
+# ── Instalare nmap (OS-aware) ──────────────────────────────────────────────────
+
+def detect_package_manager() -> str | None:
+    """Intoarce primul package manager Linux gasit in PATH, sau None."""
+    for pm in ("apt-get", "dnf", "pacman", "zypper"):
+        if shutil.which(pm):
+            return pm
+    return None
+
+
+_PM_INSTALL = {
+    "apt-get": ["apt-get", "install", "-y", "nmap"],
+    "dnf": ["dnf", "install", "-y", "nmap"],
+    "pacman": ["pacman", "-S", "--noconfirm", "nmap"],
+    "zypper": ["zypper", "install", "-y", "nmap"],
+}
+
+
+def build_nmap_install_command() -> list[str] | None:
+    """Comanda de instalare nmap pentru OS-ul curent (fara escaladare de
+    privilegii). None daca nu stim cum sa instalam."""
+    if sys.platform == "win32":
+        return ["winget", "install", "-e", "--id", "Insecure.Nmap", "--silent"]
+    pm = detect_package_manager()
+    if pm:
+        return _PM_INSTALL[pm]
+    return None
+
+
+def install_nmap(log: LogFn = _noop_log) -> tuple[bool, str]:
+    """Instaleaza nmap pe OS-ul curent. Intoarce (succes, mesaj).
+
+    Windows: winget (gestioneaza UAC). Linux: prefixeaza cu pkexec (prompt grafic
+    PolicyKit) sau sudo; daca niciunul nu exista, intoarce comanda manuala."""
+    cmd = build_nmap_install_command()
+    if cmd is None:
+        return False, ("Nu pot detecta cum sa instalez nmap pe acest sistem. "
+                       "Descarca-l manual de pe https://nmap.org/download.html")
+
+    if sys.platform == "win32":
+        full = cmd
+    else:
+        if shutil.which("pkexec"):
+            full = ["pkexec"] + cmd
+        elif shutil.which("sudo"):
+            full = ["sudo"] + cmd
+        else:
+            manual = " ".join(["sudo"] + cmd)
+            return False, f"Ruleaza manual (necesita root): {manual}"
+
+    log(f"Instalez nmap: {' '.join(full)}", "info")
+    try:
+        result = subprocess.run(full, capture_output=True, text=True, timeout=300)
+    except (subprocess.SubprocessError, OSError) as e:
+        return False, f"Instalare esuata: {e}"
+    if result.returncode != 0:
+        return False, f"Instalare esuata (cod {result.returncode}): {(result.stderr or '')[:300]}"
+    if _nmap_path():
+        return True, "nmap a fost instalat cu succes."
+    return True, "Comanda de instalare a rulat. Reporneste agentul daca nmap nu e detectat inca."
+
+
 # ── Colectare date sistem ─────────────────────────────────────────────────────
 
 def is_admin() -> bool:
