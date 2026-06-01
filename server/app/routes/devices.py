@@ -107,6 +107,19 @@ def relink_device(
     return _device_to_out(device)
 
 
+@router.get("/devices/{device_uid}/net-traffic", tags=["devices"])
+def device_net_traffic(device_uid: str, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    """Serie de trafic live (ultimele ~10 min) pentru graficul de retea.
+    Date in-memory din ring-buffer (livestate), alimentate de heartbeat."""
+    from ..livestate import get_series
+    device = db.execute(
+        select(Device).where(Device.owner_id == user.id, Device.device_uid == device_uid)
+    ).scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="device not found")
+    return get_series(device.id)
+
+
 @router.delete("/devices/{device_uid}", status_code=204, tags=["devices"])
 def delete_device(device_uid: str, db: Session = Depends(get_db), user: User = Depends(require_user)):
     device = db.execute(

@@ -192,6 +192,10 @@ class HeartbeatIn(BaseModel):
     capabilities: List[str] = Field(default_factory=list)
     os_version: str = Field(max_length=128)
     local_subnet: str | None = None
+    # Contoare trafic de retea (cumulativ de la boot) pentru graficul live.
+    net_bytes_sent: int | None = None
+    net_bytes_recv: int | None = None
+    net_conn_count: int | None = None
 
 
 class ScanJobCreateIn(BaseModel):

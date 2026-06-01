@@ -143,6 +143,18 @@ def agent_heartbeat(
         device.nmap_installed = False
     db.commit()
 
+    # Alimenteaza ring-buffer-ul de trafic live (in-memory) daca agentul a
+    # trimis contoarele de retea.
+    if payload.net_bytes_sent is not None and payload.net_bytes_recv is not None:
+        from ..livestate import record_sample
+        record_sample(
+            device_id=device.id,
+            ts=_utcnow().timestamp(),
+            sent=payload.net_bytes_sent,
+            recv=payload.net_bytes_recv,
+            conn_count=payload.net_conn_count or 0,
+        )
+
 
 @router.post("/agent/jobs/{job_id}/progress", status_code=204, tags=["agent"])
 def agent_update_progress(
