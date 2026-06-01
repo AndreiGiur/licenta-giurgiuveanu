@@ -1089,6 +1089,48 @@ button:focus-visible {
 .theme-toggle:active { transform: translateY(0); }
 
 /* ============================================================
+   SCAN TYPE EXPLAINER
+   ============================================================ */
+.scan-explainer {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 10px 0 16px;
+  font-size: clamp(0.78rem, 1.6vw, 0.9rem);
+}
+.scan-explainer-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.scan-explainer-title { font-weight: 700; color: var(--text-primary); }
+.scan-explainer-meta { font-size: 0.78em; color: var(--text-muted); font-family: "JetBrains Mono", monospace; }
+.scan-explainer-sub { margin-top: 6px; color: var(--text-secondary); }
+.scan-explainer-list { margin: 4px 0 0; padding-left: 18px; color: var(--text-secondary); }
+.scan-explainer-list li { margin: 2px 0; }
+.scan-explainer-nmap { margin-top: 8px; color: var(--accent); font-weight: 600; }
+
+/* ============================================================
+   UNIFIED DASHBOARD (master-detail)
+   ============================================================ */
+.unified-grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+.device-sidebar-name {
+  display: inline-flex; align-items: center;
+  max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 600;
+}
+.workspace-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.workspace-title { margin: 0; font-size: clamp(1.1rem, 2.6vw, 1.6rem); display: flex; align-items: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.workspace-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.monitor-row { display: grid; grid-template-columns: auto 1fr 1fr; gap: 16px; align-items: stretch; margin-bottom: 16px; }
+.monitor-gauge { display: flex; align-items: center; justify-content: center; min-width: 160px; }
+.workspace-scans { display: grid; grid-template-columns: 260px 1fr; gap: 16px; }
+.job-progress { margin: 8px 0 16px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+@media (max-width: 900px) {
+  .unified-grid { grid-template-columns: 1fr; }
+  .monitor-row { grid-template-columns: 1fr; }
+  .workspace-scans { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
    GOOGLE BUTTON + USER AVATAR
    ============================================================ */
 .google-button {
