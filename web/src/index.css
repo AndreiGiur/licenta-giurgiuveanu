@@ -1110,22 +1110,44 @@ button:focus-visible {
 /* ============================================================
    UNIFIED DASHBOARD (master-detail)
    ============================================================ */
-.unified-grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+/* Container mai lat DOAR pentru dashboard — valorifica spatiul pe ecrane mari. */
+.dashboard-container { max-width: min(1640px, 96vw); }
+
+.unified-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start; }
 .device-sidebar-name {
   display: inline-flex; align-items: center;
-  max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-weight: 600;
 }
+.workspace { display: flex; flex-direction: column; }
 .workspace-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
-.workspace-title { margin: 0; font-size: clamp(1.1rem, 2.6vw, 1.6rem); display: flex; align-items: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.workspace-title { margin: 0; font-size: clamp(1.1rem, 2.6vw, 1.6rem); display: flex; align-items: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.monitor-row { display: grid; grid-template-columns: auto 1fr 1fr; gap: 16px; align-items: stretch; margin-bottom: 16px; }
-.monitor-gauge { display: flex; align-items: center; justify-content: center; min-width: 160px; }
-.workspace-scans { display: grid; grid-template-columns: 260px 1fr; gap: 16px; }
+
+/* Monitor row: scor (card) + conexiune + trafic. Trafic primeste mai mult spatiu. */
+.monitor-row { display: grid; grid-template-columns: 240px 1fr 1.4fr; gap: 16px; align-items: stretch; margin-bottom: 16px; }
+.monitor-row > .card { display: flex; flex-direction: column; }
+.monitor-row > .card > .card-body { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.monitor-gauge { display: flex; align-items: center; justify-content: center; min-height: 170px; }
+
+/* Scanari (lista) + findings — findings primeste tot restul. */
+.workspace-scans { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+.workspace-scans > .card { display: flex; flex-direction: column; }
+.workspace-scans .card-body { max-height: 460px; overflow-y: auto; }
+
 .job-progress { margin: 8px 0 16px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+
+/* Sidebar full-height, lista scrollabila daca sunt multe device-uri. */
+.device-sidebar { position: sticky; top: 16px; }
+
+@media (max-width: 1100px) {
+  .monitor-row { grid-template-columns: 220px 1fr; }
+  .monitor-row > .card:last-child { grid-column: 1 / -1; }
+}
 @media (max-width: 900px) {
   .unified-grid { grid-template-columns: 1fr; }
+  .device-sidebar { position: static; }
   .monitor-row { grid-template-columns: 1fr; }
   .workspace-scans { grid-template-columns: 1fr; }
 }

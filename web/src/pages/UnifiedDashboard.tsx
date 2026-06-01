@@ -37,7 +37,7 @@ export default function UnifiedDashboard() {
   return (
     <div className="page">
       <Navbar />
-      <div className="container" style={{ paddingTop: 24, paddingBottom: 48 }}>
+      <div className="container dashboard-container" style={{ paddingTop: 24, paddingBottom: 48 }}>
         <div className="page-header">
           <h1 className="page-title" style={{ fontSize: "clamp(1.4rem, 3vw, 2rem)" }}>Dashboard</h1>
           <p className="page-subtitle">Dispozitivele tale, monitorizare si scanari intr-un singur loc</p>

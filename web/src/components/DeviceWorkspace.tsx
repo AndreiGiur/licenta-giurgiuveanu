@@ -90,9 +90,12 @@ export function DeviceWorkspace({ device, onDeleted }:
       )}
 
       <div className="monitor-row">
-        <div className="monitor-gauge">
-          {detail ? <ScoreGauge value={detail.exposure_score} size={150} />
-                  : <div className="empty-state">Nicio scanare inca.</div>}
+        <div className="card">
+          <div className="card-header"><span className="card-title">Scor expunere</span></div>
+          <div className="card-body monitor-gauge">
+            {detail ? <ScoreGauge value={detail.exposure_score} size={160} />
+                    : <div className="empty-state">Nicio scanare inca.</div>}
+          </div>
         </div>
         <div className="card">
           <div className="card-header"><span className="card-title">Conexiune</span></div>
