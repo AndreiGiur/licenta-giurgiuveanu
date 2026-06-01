@@ -131,37 +131,38 @@ class DaemonRunner:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Sistem de teme — Honey & Plum (dark + light)
+# Sistem de teme — Ocean (albastru + teal; dark + light), oglindeste FE
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Paleta Ocean (oglindeste FE — web/src/index.css) — albastru + teal.
 THEME_DARK = {
-    "bg":            "#1a0e22",  # plum profund — fundal principal
-    "surface":       "#2d1b3d",  # plum elevat — card-uri, input-uri
-    "elevated":      "#3a2450",  # plum mai deschis — hover
-    "border":        "#4a2d5f",
-    "accent":        "#f4c95d",  # honey — primary
-    "accent_hover":  "#f7d572",
-    "text":          "#fff8e6",  # cream — text principal
-    "text_dim":      "#b8a8b8",
-    "text_muted":    "#6b5b6e",
-    "green":         "#6fb96a",
-    "amber":         "#f4c95d",
-    "red":           "#e07090",  # rose in loc de rosu strident
+    "bg":            "#0b1220",  # navy profund — fundal principal
+    "surface":       "#1c2942",  # navy elevat — card-uri, input-uri
+    "elevated":      "#243349",  # mai deschis — hover
+    "border":        "#35496a",
+    "accent":        "#3b82f6",  # albastru — primary
+    "accent_hover":  "#60a5fa",
+    "text":          "#e8eef6",  # aproape alb — text principal
+    "text_dim":      "#b8c6d8",
+    "text_muted":    "#7e92aa",
+    "green":         "#34d399",
+    "amber":         "#fbbf24",
+    "red":           "#f87171",
 }
 
 THEME_LIGHT = {
-    "bg":            "#fefaf2",  # cream — fundal principal
-    "surface":       "#fff8e6",
-    "elevated":      "#f4e8c8",
-    "border":        "#e8dccd",
-    "accent":        "#f4c95d",  # honey (constant cross-mode)
-    "accent_hover":  "#e8b840",
-    "text":          "#2d1b3d",  # plum text
-    "text_dim":      "#6b5b6e",
-    "text_muted":    "#b8a8b8",
-    "green":         "#3d8a3a",
-    "amber":         "#c18a30",
-    "red":           "#8a3a52",
+    "bg":            "#f6f9fc",  # alb-albastrui — fundal principal
+    "surface":       "#ffffff",
+    "elevated":      "#eef4fb",
+    "border":        "#d8e3f0",
+    "accent":        "#2563eb",  # albastru — primary
+    "accent_hover":  "#1d4ed8",
+    "text":          "#0f2942",  # navy text
+    "text_dim":      "#3b5a78",
+    "text_muted":    "#6b8299",
+    "green":         "#16a34a",
+    "amber":         "#f59e0b",
+    "red":           "#dc2626",
 }
 
 
@@ -297,7 +298,7 @@ class AgentApp:
         style.map("TEntry", bordercolor=[("focus", p["accent"])])
 
         style.configure("Accent.TButton", background=p["accent"],
-                        foreground=p["surface"] if self.theme.is_dark else "#2d1b3d",
+                        foreground="#ffffff",  # text alb pe butonul albastru (ambele moduri)
                         font=("Segoe UI", 11, "bold"),
                         padding=(14, 10), borderwidth=0)
         style.map("Accent.TButton",
@@ -450,7 +451,7 @@ class AgentApp:
                   foreground=p["amber"], background=p["bg"],
                   wraplength=560, font=("Segoe UI", 10)).pack(anchor="w", pady=(0, 8))
 
-        # Buton submit principal (honey)
+        # Buton submit principal (albastru accent)
         self._login_submit_btn = ttk.Button(
             wrap, text="Autentificare", style="Accent.TButton",
             command=self._submit_login,
