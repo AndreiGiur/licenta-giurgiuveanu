@@ -559,7 +559,7 @@ def check_eol_os(scan: dict) -> dict | None:
 
 
 @rule("FW-DISABLED-1", min_level="standard", category="hygiene", weight=1.2,
-       compliance=["CIS-4.4", "CIS-4.5", "NIST-PR.IR-01", "NIST-PR.PS-01"])
+       compliance=["CIS-4.4", "CIS-4.5", "NIST-PR.IR-01", "NIST-PR.PS-01"], os="windows")
 def check_firewall_disabled(scan: dict) -> dict | None:
     profiles = (scan.get("system_info", {}) or {}).get("firewall", {}).get("profiles", {})
     disabled = [p for p in ("domain", "public") if profiles.get(p) is False]
@@ -577,7 +577,7 @@ def check_firewall_disabled(scan: dict) -> dict | None:
 
 
 @rule("USER-ADMIN-1", min_level="standard", category="hygiene", weight=1.0,
-       compliance=["CIS-5.4", "CIS-6.2", "NIST-PR.AA-05"])
+       compliance=["CIS-5.4", "CIS-6.2", "NIST-PR.AA-05"], os="windows")
 def check_extra_admins(scan: dict) -> dict | None:
     users = (scan.get("system_info", {}) or {}).get("local_users", []) or []
     current = (scan.get("os", {}) or {}).get("username", "").lower()
@@ -601,7 +601,7 @@ def check_extra_admins(scan: dict) -> dict | None:
 
 
 @rule("STARTUP-SUSPICIOUS-1", min_level="advanced", category="activity", weight=0.7, confidence=0.7,
-       compliance=["CIS-10.1", "CIS-2.3", "NIST-DE.AE-02", "NIST-PR.PS-04"])
+       compliance=["CIS-10.1", "CIS-2.3", "NIST-DE.AE-02", "NIST-PR.PS-04"], os="windows")
 def check_suspicious_startup(scan: dict) -> dict | None:
     startup = (scan.get("persistence", {}) or {}).get("startup", []) or []
     suspicious = [
@@ -622,7 +622,7 @@ def check_suspicious_startup(scan: dict) -> dict | None:
 
 
 @rule("TASK-SUSPICIOUS-1", min_level="advanced", category="activity", weight=1.0,
-       compliance=["CIS-8.5", "CIS-10.7", "NIST-DE.AE-02"])
+       compliance=["CIS-8.5", "CIS-10.7", "NIST-DE.AE-02"], os="windows")
 def check_suspicious_tasks(scan: dict) -> dict | None:
     tasks = (scan.get("persistence", {}) or {}).get("tasks", []) or []
     suspicious = [
@@ -644,7 +644,7 @@ def check_suspicious_tasks(scan: dict) -> dict | None:
 
 
 @rule("SVC-SUSPICIOUS-1", min_level="advanced", category="activity", weight=0.8,
-       compliance=["CIS-2.3", "CIS-10.1", "NIST-DE.CM-09"])
+       compliance=["CIS-2.3", "CIS-10.1", "NIST-DE.CM-09"], os="windows")
 def check_suspicious_services(scan: dict) -> dict | None:
     services = (scan.get("persistence", {}) or {}).get("services", []) or []
     suspicious = [
@@ -667,7 +667,7 @@ def check_suspicious_services(scan: dict) -> dict | None:
 
 
 @rule("NET-SHARE-1", min_level="advanced", category="network_exposure", weight=1.0,
-       compliance=["CIS-3.3", "CIS-12.2", "NIST-PR.DS-01", "NIST-PR.AA-05"])
+       compliance=["CIS-3.3", "CIS-12.2", "NIST-PR.DS-01", "NIST-PR.AA-05"], os="windows")
 def check_network_shares(scan: dict) -> dict | None:
     shares = (scan.get("network", {}) or {}).get("shares", []) or []
     non_default = [s for s in shares if s.get("name", "").lower() not in DEFAULT_WINDOWS_SHARES]
@@ -685,7 +685,7 @@ def check_network_shares(scan: dict) -> dict | None:
 
 
 @rule("PS-POLICY-1", min_level="advanced", category="activity", weight=0.8,
-       compliance=["CIS-2.7", "CIS-4.8", "NIST-PR.PS-01"])
+       compliance=["CIS-2.7", "CIS-4.8", "NIST-PR.PS-01"], os="windows")
 def check_ps_policy(scan: dict) -> dict | None:
     policy = (scan.get("persistence", {}) or {}).get("ps_policy", "")
     if not policy or policy.lower() not in ("bypass", "unrestricted"):
@@ -743,7 +743,7 @@ def _is_winlogon_default(values: dict) -> bool:
 
 
 @rule("REG-HIJACK-1", min_level="deep", category="critical_risk", weight=2.0,
-       compliance=["CIS-10.1", "CIS-10.7", "NIST-DE.AE-02", "NIST-DE.CM-09"])
+       compliance=["CIS-10.1", "CIS-10.7", "NIST-DE.AE-02", "NIST-DE.CM-09"], os="windows")
 def check_registry_hijack(scan: dict) -> dict | None:
     reg = (scan.get("persistence", {}) or {}).get("reg_persistence", {}) or {}
     # Pastram doar entry-uri non-default + non-empty.
@@ -769,7 +769,7 @@ def check_registry_hijack(scan: dict) -> dict | None:
 
 
 @rule("WMI-PERSIST-1", min_level="deep", category="critical_risk", weight=2.0,
-       compliance=["CIS-10.1", "CIS-10.7", "NIST-DE.AE-02", "NIST-DE.CM-09"])
+       compliance=["CIS-10.1", "CIS-10.7", "NIST-DE.AE-02", "NIST-DE.CM-09"], os="windows")
 def check_wmi_persistence(scan: dict) -> dict | None:
     subs = (scan.get("persistence", {}) or {}).get("wmi_subscriptions", []) or []
     suspicious = []
@@ -794,7 +794,7 @@ def check_wmi_persistence(scan: dict) -> dict | None:
 
 
 @rule("CERT-UNTRUSTED-1", min_level="deep", category="hygiene", weight=1.0,
-       compliance=["CIS-3.10", "CIS-12.2", "NIST-PR.DS-02", "NIST-PR.IR-01"])
+       compliance=["CIS-3.10", "CIS-12.2", "NIST-PR.DS-02", "NIST-PR.IR-01"], os="windows")
 def check_untrusted_certs(scan: dict) -> dict | None:
     certs = (scan.get("forensics", {}) or {}).get("certificates", []) or []
     suspicious = [
@@ -820,7 +820,7 @@ def check_untrusted_certs(scan: dict) -> dict | None:
 
 
 @rule("AV-DISABLED-1", min_level="deep", category="hygiene", weight=1.2,
-       compliance=["CIS-10.1", "CIS-10.6", "NIST-PR.PS-05", "NIST-DE.CM-09"])
+       compliance=["CIS-10.1", "CIS-10.6", "NIST-PR.PS-05", "NIST-DE.CM-09"], os="windows")
 def check_av_disabled(scan: dict) -> dict | None:
     defender = (scan.get("system_info", {}) or {}).get("defender", {})
     if not defender:
@@ -852,7 +852,7 @@ def check_av_disabled(scan: dict) -> dict | None:
 
 
 @rule("EVENTLOG-BRUTEFORCE-1", min_level="deep", category="activity", weight=1.2,
-       compliance=["CIS-6.5", "CIS-8.5", "NIST-DE.AE-02", "NIST-PR.AA-03"])
+       compliance=["CIS-6.5", "CIS-8.5", "NIST-DE.AE-02", "NIST-PR.AA-03"], os="windows")
 def check_brute_force(scan: dict) -> dict | None:
     events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
     failures = [e for e in events if e.get("event_id") == 4625]
@@ -871,7 +871,7 @@ def check_brute_force(scan: dict) -> dict | None:
 
 
 @rule("EVENTLOG-PRIVESC-1", min_level="deep", category="activity", weight=1.0,
-       compliance=["CIS-5.4", "CIS-8.5", "NIST-PR.AA-05", "NIST-DE.AE-02"])
+       compliance=["CIS-5.4", "CIS-8.5", "NIST-PR.AA-05", "NIST-DE.AE-02"], os="windows")
 def check_privesc(scan: dict) -> dict | None:
     events = (scan.get("forensics", {}) or {}).get("event_log", []) or []
     suspicious = [
@@ -908,7 +908,7 @@ def _is_clean_hosts_entry(h: dict) -> bool:
 
 
 @rule("HOSTS-TAMPERED-1", min_level="deep", category="activity", weight=1.0,
-       compliance=["CIS-10.1", "NIST-DE.AE-02", "NIST-PR.DS-06"])
+       compliance=["CIS-10.1", "NIST-DE.AE-02", "NIST-PR.DS-06"], os="windows")
 def check_hosts_tampered(scan: dict) -> dict | None:
     entries = (scan.get("forensics", {}) or {}).get("hosts", []) or []
     suspicious = [
@@ -931,7 +931,7 @@ def check_hosts_tampered(scan: dict) -> dict | None:
 
 
 @rule("BITLOCKER-OFF-1", min_level="deep", category="hygiene", weight=1.0,
-       compliance=["CIS-3.6", "CIS-3.11", "NIST-PR.DS-01"])
+       compliance=["CIS-3.6", "CIS-3.11", "NIST-PR.DS-01"], os="windows")
 def check_bitlocker_off(scan: dict) -> dict | None:
     volumes = (scan.get("system_info", {}) or {}).get("bitlocker", []) or []
     sys_vols = [
