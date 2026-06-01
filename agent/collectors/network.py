@@ -1,7 +1,9 @@
 """Colectare network: porturi LISTEN + (opt) port→proces, conexiuni ESTABLISHED, share-uri, adaptoare."""
 from __future__ import annotations
 
+import ipaddress
 import platform
+import socket
 import subprocess
 
 import psutil
@@ -13,6 +15,12 @@ def collect_network(cfg: ScanProfile) -> dict:
     ports, bindings = _listen_ports_with_bindings()
     out: dict = {"open_ports": ports, "port_bindings": bindings}
 
+    # Identitatea de retea a dispozitivului (IP + MAC interfata principala).
+    # Date cu caracter personal — colectam DOAR interfata activa (minimizare).
+    identity = collect_network_identity()
+    if identity:
+        out["identity"] = identity
+
     if cfg.include_port_process:
         out["port_processes"] = _port_processes()
     if cfg.include_connections:
@@ -23,6 +31,45 @@ def collect_network(cfg: ScanProfile) -> dict:
         out["adapters"] = _adapters()
 
     return out
+
+
+def collect_network_identity() -> dict:
+    """IP + MAC ale interfetei active principale (up, non-loopback, IPv4 privata).
+
+    Intoarce `{iface, local_ip, mac}` sau `{}` daca nu gaseste. Colectam doar o
+    singura interfata (minimizarea datelor cu caracter personal — IP/MAC).
+    MAC-ul provine din adresa AF_LINK (psutil) a aceleiasi interfete.
+    """
+    try:
+        stats = psutil.net_if_stats()
+        addrs = psutil.net_if_addrs()
+    except Exception:
+        return {}
+    for name, snics in addrs.items():
+        st = stats.get(name)
+        if st is None or not st.isup:
+            continue
+        if name.lower().startswith(("lo", "loopback")):
+            continue
+        local_ip = ""
+        for snic in snics:
+            if snic.family == socket.AF_INET and snic.address and not snic.address.startswith("127."):
+                try:
+                    if ipaddress.ip_address(snic.address).is_private:
+                        local_ip = snic.address
+                        break
+                except ValueError:
+                    continue
+        if not local_ip:
+            continue
+        mac = ""
+        for snic in snics:
+            # AF_LINK / AF_PACKET = adresa MAC (numele difera intre OS-uri).
+            if snic.family == getattr(psutil, "AF_LINK", -1) and snic.address:
+                mac = snic.address
+                break
+        return {"iface": name, "local_ip": local_ip, "mac": mac}
+    return {}
 
 
 def _listen_ports_with_bindings() -> tuple[list[int], list[dict]]:

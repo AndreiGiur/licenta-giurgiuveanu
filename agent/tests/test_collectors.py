@@ -4,13 +4,49 @@ Note: testele ruleaza pe Windows (dev machine); pe non-Windows, colectorii
 Windows-only returneaza dict/list goala — sectiunile relevante sunt protejate
 cu `if platform.system() == 'Windows'`."""
 import platform
+import socket
 import sys
+import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from agent.core import ScanProfile, SCAN_PROFILES, collect_system_data  # noqa: E402
 from agent import collectors  # noqa: E402
+from agent.collectors import network as net_collector  # noqa: E402
+
+
+def _snic(family, address, netmask=None):
+    return types.SimpleNamespace(family=family, address=address,
+                                 netmask=netmask, broadcast=None, ptp=None)
+
+
+def _stats(isup=True):
+    return types.SimpleNamespace(isup=isup, duplex=0, speed=0, mtu=1500, flags="")
+
+
+def test_network_identity_returns_ip_and_mac(monkeypatch):
+    import psutil
+    af_link = getattr(psutil, "AF_LINK")
+    monkeypatch.setattr(net_collector.psutil, "net_if_stats",
+                        lambda: {"lo": _stats(), "eth0": _stats()})
+    monkeypatch.setattr(net_collector.psutil, "net_if_addrs", lambda: {
+        "lo": [_snic(socket.AF_INET, "127.0.0.1", "255.0.0.0")],
+        "eth0": [_snic(socket.AF_INET, "192.168.1.141", "255.255.255.0"),
+                 _snic(af_link, "08:00:27:ab:cd:ef")],
+    })
+    ident = net_collector.collect_network_identity()
+    assert ident["iface"] == "eth0"
+    assert ident["local_ip"] == "192.168.1.141"
+    assert ident["mac"] == "08:00:27:ab:cd:ef"
+
+
+def test_network_identity_empty_when_only_loopback(monkeypatch):
+    monkeypatch.setattr(net_collector.psutil, "net_if_stats", lambda: {"lo": _stats()})
+    monkeypatch.setattr(net_collector.psutil, "net_if_addrs", lambda: {
+        "lo": [_snic(socket.AF_INET, "127.0.0.1", "255.0.0.0")],
+    })
+    assert net_collector.collect_network_identity() == {}
 
 
 def test_scan_profiles_have_three_levels():

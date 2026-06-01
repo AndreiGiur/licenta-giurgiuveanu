@@ -109,15 +109,33 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
     elements.append(Paragraph("VulnWatch", title_style))
     elements.append(Paragraph("Raport de scanare securitate", subtitle_style))
 
-    # ── Meta tabel ──
+    # ── Banda de clasificare (contine date cu caracter personal) ──
+    classif_style = ParagraphStyle(
+        "Classif", parent=styles["BodyText"],
+        fontSize=8, textColor=colors.white, alignment=1,
+        backColor=PLUM_DEEP, borderPadding=4, spaceAfter=14,
+    )
+    elements.append(Paragraph(
+        "CONFIDENTIAL - contine identificatori de retea (IP / MAC)", classif_style))
+
+    # ── Identitate dispozitiv ──
     payload = scan.payload or {}
     os_info = payload.get("os", {}) or {}
+    identity = (payload.get("network", {}) or {}).get("identity", {}) or {}
     meta_data = [
         ["Device", _ascii(device.name)],
         ["UID", _ascii(device.device_uid)],
         ["Owner", _ascii(owner_email)],
         ["OS", _ascii(f"{os_info.get('system', '?')} {os_info.get('release', '')}".strip())],
         ["Hostname", _ascii(os_info.get("hostname", "?"))],
+    ]
+    if identity.get("local_ip"):
+        meta_data.append(["IP local", _ascii(identity["local_ip"])])
+    if identity.get("mac"):
+        meta_data.append(["MAC", _ascii(identity["mac"])])
+    if identity.get("iface"):
+        meta_data.append(["Interfata", _ascii(identity["iface"])])
+    meta_data += [
         ["Scan type", (payload.get("scan_type") or "standard").upper()],
         ["Data", scan.created_at.strftime("%d %b %Y, %H:%M")],
         ["Scan ID", f"#{scan.id}"],
@@ -455,8 +473,20 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
             elements.append(Paragraph(f"<b>Kernel:</b> {_escape_html(linux['kernel'])}", small_style))
         elements.append(Spacer(1, 0.4 * cm))
 
-    # ── Footer ──
+    # ── Footer + nota de confidentialitate & retentie ──
     elements.append(Spacer(1, 0.6 * cm))
+    notice = (
+        "Confidentialitate: acest raport contine date cu caracter personal "
+        "(adresa IP si adresa MAC). Accesul este restrictionat la proprietarul "
+        "dispozitivului si la administrator. Datele sunt pastrate cat timp "
+        "dispozitivul este inrolat si pot fi sterse oricand prin stergerea "
+        "scanarii sau a dispozitivului."
+    )
+    elements.append(Paragraph(
+        f"<font size=7 color='{MUTED.hexval()}'>{_escape_html(notice)}</font>",
+        small_style,
+    ))
+    elements.append(Spacer(1, 0.3 * cm))
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     elements.append(Paragraph(
         f"<font size=8 color='{MUTED.hexval()}'>"

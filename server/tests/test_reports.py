@@ -103,6 +103,39 @@ def test_pdf_report_admin_bypass(fresh_db_client):
     assert r.content.startswith(b"%PDF-")
 
 
+def test_pdf_device_identity_ip_mac(auth_client):
+    """Scan cu network.identity (IP+MAC dispozitiv) → PDF generat, mai mare."""
+    c, headers = auth_client["client"], auth_client["headers"]
+    token = _enroll(c, headers, uid="rpt-ident")
+
+    base = {
+        "device_uid": "rpt-ident",
+        "os": {"system": "Linux", "release": "6.5", "hostname": "kali", "is_admin": False},
+        "network": {"open_ports": [22]}, "processes": [], "software": [],
+    }
+    r0 = c.post("/api/v1/scans", headers={"X-Device-Token": token}, json=base)
+    assert r0.status_code == 200, r0.text
+    base_id = r0.json()["scan_id"]
+
+    withid = {
+        "device_uid": "rpt-ident",
+        "os": {"system": "Linux", "release": "6.5", "hostname": "kali", "is_admin": False},
+        "network": {"open_ports": [22],
+                    "identity": {"iface": "eth0", "local_ip": "192.168.1.141",
+                                 "mac": "08:00:27:ab:cd:ef"}},
+        "processes": [], "software": [],
+    }
+    r1 = c.post("/api/v1/scans", headers={"X-Device-Token": token}, json=withid)
+    assert r1.status_code == 200, r1.text
+    id_with = r1.json()["scan_id"]
+
+    r_base = c.get(f"/api/v1/scans/{base_id}/report.pdf", headers=headers)
+    r_id = c.get(f"/api/v1/scans/{id_with}/report.pdf", headers=headers)
+    assert r_id.status_code == 200
+    assert r_id.content.startswith(b"%PDF-")
+    assert len(r_id.content) > len(r_base.content)
+
+
 def test_pdf_nmap_table_with_mac(auth_client):
     """Host nmap cu MAC+vendor+porturi detaliate+finding → PDF generat, mai mare."""
     c, headers = auth_client["client"], auth_client["headers"]
