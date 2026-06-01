@@ -26,7 +26,7 @@ export function AgentDownloadBanner() {
   const label = (os: OsKey) =>
     os === "windows"
       ? `↓ Descarca .exe (Windows) ${mb(info?.windows.size_bytes ?? null)}`
-      : `↓ Descarca binar (Linux) ${mb(info?.linux.size_bytes ?? null)}`;
+      : `↓ Descarca installer (Linux .sh)`;
 
   const primary = build(primaryOS);
   const other = build(otherOS);

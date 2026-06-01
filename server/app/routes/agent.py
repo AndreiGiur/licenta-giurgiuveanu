@@ -242,21 +242,19 @@ def download_agent_windows(_user: User = Depends(require_user)):
 
 @router.get("/agent/download/linux", tags=["agent"])
 def download_agent_linux(_user: User = Depends(require_user)):
-    """Serveste binarul Linux `vulnwatch-agent` pentru user-ii autentificati.
-    404 daca nu a fost build-uit (vezi `bash agent/build.sh` sau CI)."""
-    artifact = _find_agent_artifact("vulnwatch-agent")
+    """Serveste installer-ul Linux `install.sh` pentru user-ii autentificati.
+    Scriptul instaleaza dependintele (apt + venv + pip) si aduce sursa
+    (checkout local sau git clone). 404 daca lipseste din static."""
+    artifact = _find_agent_artifact("install.sh")
     if not artifact:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Binar Linux indisponibil. Build-eaza-l: bash agent/build.sh\n"
-                "(sau descarca-l din artefactele GitHub Actions)."
-            ),
+            detail="Installer Linux indisponibil pe server (agent/install.sh).",
         )
     return FileResponse(
         path=str(artifact),
-        media_type="application/octet-stream",
-        filename="vulnwatch-agent",
+        media_type="text/x-shellscript",
+        filename="install.sh",
     )
 
 
@@ -266,7 +264,7 @@ def download_agent_info(_user: User = Depends(require_user)):
     ascunde butoanele de descarcare in functie de raspuns. Campurile top-level
     (`available`/`platform`/`size_bytes`) sunt pastrate pentru compatibilitate."""
     win = _find_agent_artifact("VulnWatchAgent.exe")
-    lin = _find_agent_artifact("vulnwatch-agent")
+    lin = _find_agent_artifact("install.sh")
     return {
         # backward-compat (Windows la nivel top)
         "available": win is not None,

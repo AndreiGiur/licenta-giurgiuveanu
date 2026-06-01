@@ -67,19 +67,19 @@ def test_download_linux_404_when_missing(tmp_path, monkeypatch):
     assert r.status_code == 404
 
 
-def test_download_linux_serves_when_present(tmp_path, monkeypatch):
+def test_download_linux_serves_install_script(tmp_path, monkeypatch):
     from server.app.routes import _helpers
-    (tmp_path / "vulnwatch-agent").write_bytes(b"\x7fELF fake-binary")
+    (tmp_path / "install.sh").write_text("#!/usr/bin/env bash\necho hi\n")
     monkeypatch.setattr(_helpers, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
     c = _make_user_client("linux-ok")
     r = c.get("/api/v1/agent/download/linux")
     assert r.status_code == 200
-    assert r.content.startswith(b"\x7fELF")
+    assert r.content.startswith(b"#!/usr/bin/env bash")
 
 
 def test_download_info_reports_per_os(tmp_path, monkeypatch):
     from server.app.routes import _helpers
-    (tmp_path / "vulnwatch-agent").write_bytes(b"\x7fELF fake")
+    (tmp_path / "install.sh").write_text("#!/usr/bin/env bash\n")
     monkeypatch.setattr(_helpers, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
     c = _make_user_client("info-peros")
     body = c.get("/api/v1/agent/download/info").json()
