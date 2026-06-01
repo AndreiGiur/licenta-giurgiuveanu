@@ -152,7 +152,7 @@ def test_advanced_never_uses_pn():
 
 
 def test_profile_deep_aggressive_args():
-    """Profilul deep foloseste -A + -Pn + vuln + version-intensity 9 + top 5000."""
+    """Profilul deep foloseste -A + -Pn + vuln + version-intensity 9 + toate porturile (-p-)."""
     args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
                            profile="deep")
     assert "-A" in args, "deep trebuie sa includa -A (aggressive)"
@@ -160,8 +160,9 @@ def test_profile_deep_aggressive_args():
     assert "-T4" in args
     assert "--version-intensity" in args
     assert "9" in args
-    assert "--top-ports" in args
-    assert "5000" in args
+    # deep scaneaza TOATE porturile (-p-), nu doar top-N
+    assert "-p-" in args, "deep trebuie sa scaneze toate porturile (-p-)"
+    assert "--top-ports" not in args, "deep nu mai limiteaza la top-ports"
     # Scripturi extinse: vulnwatch-audit + vuln (CVE) + default + auth + banner
     script_str = " ".join(args)
     assert "vulnwatch-audit" in script_str

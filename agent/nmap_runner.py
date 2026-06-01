@@ -83,7 +83,8 @@ NMAP_PROFILES: dict[str, dict] = {
         "top_ports": 1000,
         "timeout_sec": 900,                 # 15 min
     },
-    # AGRESIV — full -A + vuln. Pe subnet: discovery intai. ~10-30 min /24.
+    # AGRESIV — full -A + vuln pe TOATE porturile (-p-). Pe subnet: discovery
+    # intai (fara -Pn), deci -p-/-A ruleaza doar pe host-urile vii → fezabil.
     "deep": {
         "base_args": [
             "-A",                           # = -sV -O --script=default --traceroute
@@ -93,8 +94,9 @@ NMAP_PROFILES: dict[str, dict] = {
         "single_host_args": ["-Pn"],        # skip discovery DOAR pe single-host
         # vulnwatch-audit + scripts default + vuln (CVE detection) + auth + banner grab
         "scripts": "vulnwatch-audit,vuln,default,auth,banner",
-        "top_ports": 5000,
-        "timeout_sec": 2400,                # 40 min
+        "all_ports": True,                  # -p- : scaneaza toate cele 65535 porturi
+        "top_ports": 5000,                  # ignorat cand all_ports=True (fallback)
+        "timeout_sec": 3600,                # 60 min (full port scan dureaza mai mult)
     },
 }
 
@@ -130,8 +132,8 @@ def build_nmap_args(
         # Argumente single-host (ex. -Pn) doar cand NU scanam un subnet.
         if not subnet_scan:
             args.extend(prof.get("single_host_args", []))
-        # all_ports overrides top_ports din profil
-        if all_ports:
+        # -p- (toate porturile) daca e cerut explicit SAU setat in profil.
+        if all_ports or prof.get("all_ports"):
             args.append("-p-")
         else:
             args.extend(["--top-ports", str(prof["top_ports"])])
