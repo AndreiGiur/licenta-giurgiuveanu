@@ -977,3 +977,11 @@ def collect_nmap_lua_findings(scan: dict) -> list[dict] | None:
                 "source": "nmap-lua",
             })
     return findings or None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Regulile Linux stau intr-un modul dedicat (rules_linux.py) ca sa nu amestece
+# codul Windows cu cel Linux. Importul de mai jos le inregistreaza in _RULES
+# (decoratorul @rule din acest modul le adauga la import).
+# ─────────────────────────────────────────────────────────────────────────────
+from . import rules_linux  # noqa: E402,F401  (trebuie dupa definirea @rule)
