@@ -100,9 +100,16 @@ Helper `_find_agent_artifact` ramane; adaugam constanta pentru numele Linux.
     niciunul, intoarce `(False, "Ruleaza manual: sudo <cmd>")` cu comanda exacta.
   - Dupa instalare reusita, re-verifica `_nmap_path()`.
 
-**GUI (`gui.py`):** cand `_nmap_path()` e None (deep indisponibil), afiseaza un
-buton "Instaleaza nmap" pe pagina Status. La click ruleaza `install_nmap` pe un
-thread, afiseaza log live; la succes re-emite capabilities (include "deep").
+**GUI (`gui.py`) — bifa la enrollment (opt-in):**
+- Pe pagina de Enroll, o bifa **default DEBIFATA**: "Instaleaza nmap (necesar
+  pentru scanari deep)" + nota "necesita drepturi de administrator/root".
+- Daca e bifata la finalizarea enrollment-ului, agentul ruleaza `install_nmap()`
+  pe un thread (log live). Daca nu, nu se intampla nimic.
+- **Fallback manual:** pe pagina Status, cand `_nmap_path()` e None (deep
+  indisponibil), ramane un buton "Instaleaza nmap" pentru cei care au sarit bifa
+  sau s-au razgandit. La click → `install_nmap` pe thread; la succes re-emite
+  capabilities (include "deep").
+- Bifa e pur UI (nu se trimite la backend) — decizia de instalare e locala.
 
 ## G. CI — build Linux
 

@@ -188,39 +188,59 @@ git commit -m "feat(agent): install_nmap cu pkexec/sudo + fallback comanda manua
 
 ---
 
-### Task 3: Buton "Instaleaza nmap" in GUI
+### Task 3: GUI — bifa "Instaleaza nmap" la enrollment (opt-in) + buton fallback
 
 **Files:**
 - Modify: `agent/gui.py`
 
-- [ ] **Step 1: Add button on Status page (cand nmap lipseste)**
+- [ ] **Step 1: Bifa pe pagina Enroll (default debifata)**
 
-In zona de Status, cand `core._nmap_path() is None`, afiseaza un buton "Instaleaza nmap". Handler:
+Adauga un `tk.BooleanVar(value=False)` (ex: `self.install_nmap_var`) si un
+`ttk.Checkbutton` pe pagina de Enroll: text "Instaleaza nmap (necesar pentru
+scanari deep)" + un label mic gri "necesita drepturi de administrator/root".
+
+- [ ] **Step 2: Trigger la finalizarea enrollment-ului**
+
+Dupa ce enrollment-ul reuseste (acolo unde se trece la pagina Status), daca
+`self.install_nmap_var.get()` e True, porneste instalarea pe thread:
+
+```python
+def _maybe_install_nmap(self):
+    if not self.install_nmap_var.get():
+        return
+    def worker():
+        ok, msg = core.install_nmap(log=self._log)
+        self._log(msg, "ok" if ok else "warn")
+    threading.Thread(target=worker, daemon=True).start()
+```
+
+Apeleaza `self._maybe_install_nmap()` imediat dupa tranzitia la Status.
+
+- [ ] **Step 3: Buton fallback pe Status (cand nmap lipseste)**
+
+In zona Status, cand `core._nmap_path() is None`, afiseaza un buton "Instaleaza
+nmap" cu handler:
 
 ```python
 def _on_install_nmap(self):
     def worker():
         ok, msg = core.install_nmap(log=self._log)
         self._log(msg, "ok" if ok else "warn")
-        if ok:
-            # re-emite capabilities (deep devine disponibil)
-            self._refresh_capabilities()
     threading.Thread(target=worker, daemon=True).start()
 ```
 
-(Adapteaza la helper-ele de logging/threading existente in gui.py; `_refresh_capabilities` poate fi un no-op daca nu exista — minim: logheaza succesul.)
+(Adapteaza la helper-ele de logging/threading existente in gui.py.)
 
-- [ ] **Step 2: Manual smoke (fara test automat pentru GUI)**
+- [ ] **Step 4: Manual smoke (fara test automat pentru GUI)**
 
-Verifica `python -c "from agent import gui"` nu arunca la import.
 Run: `python -c "import agent.gui"`
-Expected: fara eroare.
+Expected: fara eroare la import.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add agent/gui.py
-git commit -m "feat(gui): buton Instaleaza nmap cand lipseste (thread + log live)"
+git commit -m "feat(gui): bifa opt-in Instaleaza nmap la enrollment + buton fallback"
 ```
 
 ---
