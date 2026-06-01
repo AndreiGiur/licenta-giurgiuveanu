@@ -3,6 +3,7 @@ import { apiGet } from "../api/http";
 import Navbar from "../components/Navbar";
 import { DeviceSidebar, type SidebarDevice } from "../components/DeviceSidebar";
 import { DeviceWorkspace } from "../components/DeviceWorkspace";
+import { AgentDownloadBanner } from "../components/AgentDownloadBanner";
 import type { Device } from "../api/types";
 
 export default function UnifiedDashboard() {
@@ -42,6 +43,7 @@ export default function UnifiedDashboard() {
           <h1 className="page-title" style={{ fontSize: "clamp(1.4rem, 3vw, 2rem)" }}>Dashboard</h1>
           <p className="page-subtitle">Dispozitivele tale, monitorizare si scanari intr-un singur loc</p>
         </div>
+        <AgentDownloadBanner />
         {loading ? (
           <div className="empty-state">Se incarca...</div>
         ) : (

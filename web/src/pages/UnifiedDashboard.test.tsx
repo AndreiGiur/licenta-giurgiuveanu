@@ -9,6 +9,10 @@ vi.mock("../api/exposure", () => ({
   getScan: vi.fn().mockResolvedValue({ scan_id: 0, findings: [] }),
   getNetTraffic: vi.fn().mockResolvedValue([]),
   requestScan: vi.fn(),
+  getAgentDownloadInfo: vi.fn().mockResolvedValue({
+    windows: { available: false, size_bytes: null },
+    linux: { available: false, size_bytes: null },
+  }),
 }));
 vi.mock("../components/Navbar", () => ({ default: () => <nav /> }));
 class RO { constructor(_: ResizeObserverCallback) {} observe() {} unobserve() {} disconnect() {} }

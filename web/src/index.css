@@ -2136,6 +2136,21 @@ button:focus-visible {
 }
 
 /* ============================================================
+   AGENT DOWNLOAD BANNER
+   ============================================================ */
+.agent-download-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* ============================================================
    CHART (wrapper spirit-shadcn, peste Recharts)
    ============================================================ */
 .chart-tooltip {
