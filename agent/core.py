@@ -329,15 +329,24 @@ def _run_nmap_if_needed(
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         xml_out = Path(tmp) / "nmap_result.xml"
+
+        # nmap ocupa intervalul global 65..95% (colectarea s-a oprit la 65%).
+        def _nmap_progress(pct: float, remaining: str) -> None:
+            global_pct = 65 + round(pct / 100 * 30)
+            eta = f" (ETC {remaining})" if remaining else ""
+            if progress_cb:
+                progress_cb(global_pct, f"Nmap: {pct:.0f}%{eta}")
+
         if progress_cb:
-            phase = "Nmap moderat..." if scan_type == "advanced" else "Nmap agresiv..."
-            progress_cb(80, phase)
+            label = "Nmap moderat pornit..." if scan_type == "advanced" else "Nmap agresiv pornit..."
+            progress_cb(65, label)
         t0 = time.time()
         try:
             exit_code, stderr = nmap_runner.run_nmap(
                 targets=targets,
                 xml_out=xml_out,
                 profile=scan_type,
+                progress_cb=_nmap_progress,
                 log=log,
             )
         except nmap_runner.NmapRunnerError as e:
@@ -472,11 +481,16 @@ class MetricsTracker:
 
 
 def collect_system_data(device_uid: str, scan_type: str = "standard",
-                        progress_cb: Callable[[int, str], None] | None = None) -> dict:
+                        progress_cb: Callable[[int, str], None] | None = None,
+                        max_progress: int = 100) -> dict:
     """Orchestrator: ruleaza colectorii activi pentru `scan_type` ales.
     `progress_cb(percent, phase)` este apelat intre colectori — util pentru
     UI in cazul scanarilor Advanced/Deep care dureaza minute. Default
-    `scan_type="standard"` pentru backward compatibility cu apelantii vechi."""
+    `scan_type="standard"` pentru backward compatibility cu apelantii vechi.
+
+    `max_progress` scaleaza procentele: cand urmeaza o faza nmap (advanced/deep),
+    colectarea ocupa 0..max_progress (ex: 65), lasand restul nmap-ului — asa
+    progresul ramane monoton crescator (fix bug: nmap nu mai 'da inapoi')."""
     from . import collectors  # import tardiv: evita circular cu colectorii
 
     cfg = SCAN_PROFILES.get(scan_type, SCAN_PROFILES["standard"])
@@ -484,7 +498,8 @@ def collect_system_data(device_uid: str, scan_type: str = "standard",
     def step(pct: int, phase: str) -> None:
         if progress_cb is not None:
             try:
-                progress_cb(pct, phase)
+                scaled = round(pct / 100 * max_progress)
+                progress_cb(scaled, phase)
             except Exception:
                 pass
 
@@ -748,8 +763,30 @@ def api_google_enroll(api_base: str, id_token: str, device_uid: str,
     )
 
 
-def api_heartbeat(api_base: str, device_token: str, agent_version: str,
-                  capabilities: list[str], os_version: str) -> None:
+def build_heartbeat_payload(capabilities: list[str]) -> dict:
+    """Construieste payload-ul de heartbeat, inclusiv contoarele de trafic de
+    retea (psutil) — folosite de backend pentru graficul de trafic live."""
+    try:
+        io = psutil.net_io_counters()
+        sent, recv = int(io.bytes_sent), int(io.bytes_recv)
+    except Exception:
+        sent, recv = 0, 0
+    try:
+        conn_count = len([c for c in psutil.net_connections(kind="inet")
+                          if c.status == "ESTABLISHED"])
+    except Exception:
+        conn_count = 0
+    return {
+        "agent_version": AGENT_VERSION,
+        "capabilities": capabilities,
+        "os_version": f"{platform.system()} {platform.release()}",
+        "net_bytes_sent": sent,
+        "net_bytes_recv": recv,
+        "net_conn_count": conn_count,
+    }
+
+
+def api_heartbeat(api_base: str, device_token: str, payload: dict) -> None:
     """Trimite heartbeat la backend (la fiecare ~10s). Best-effort: nu arunca
     daca esueaza — daemon-ul continua sa polleze pentru joburi."""
     # ApiError (network down, 5xx) → best-effort, inghite.
@@ -758,11 +795,7 @@ def api_heartbeat(api_base: str, device_token: str, agent_version: str,
         _request_with_device_token(
             "POST", f"{api_base}/agent/heartbeat",
             device_token=device_token,
-            json={
-                "agent_version": agent_version,
-                "capabilities": capabilities,
-                "os_version": os_version,
-            }, timeout=10,
+            json=payload, timeout=10,
         )
     except ApiError:
         pass
@@ -804,7 +837,12 @@ def run_one_job(api_base: str, device_uid: str, device_token: str,
         api_send_progress(api_base, device_token, job_id, pct, phase)
 
     try:
-        data = collect_system_data(device_uid, scan_type=scan_type, progress_cb=progress_cb)
+        # Pentru advanced/deep urmeaza nmap → colectarea se opreste la 65% ca
+        # progresul sa ramana monoton (nmap ocupa 65..95%, submit = 100%).
+        nmap_will_run = scan_type in ("advanced", "deep")
+        collect_max = 65 if nmap_will_run else 100
+        data = collect_system_data(device_uid, scan_type=scan_type,
+                                   progress_cb=progress_cb, max_progress=collect_max)
         nmap_result = _run_nmap_if_needed(job, log=log, progress_cb=progress_cb)
         if nmap_result is not None:
             data["nmap"] = nmap_result
@@ -860,7 +898,6 @@ def daemon_loop(
     last_heartbeat = 0.0  # forteaza heartbeat la primul tick
 
     capabilities = agent_capabilities()  # dinamic: include "deep" doar dacă nmap e instalat
-    os_version = f"{platform.system()} {platform.release()} {platform.version()}"
     deploy_nse_script(log=log)  # idempotent — copiază scriptul în nmap scripts dir
 
     def _handle_token_invalid(e: DeviceTokenInvalidError) -> None:
@@ -880,7 +917,7 @@ def daemon_loop(
         now = time.monotonic()
         if now - last_heartbeat >= heartbeat_interval:
             try:
-                api_heartbeat(api_base, device_token, AGENT_VERSION, capabilities, os_version)
+                api_heartbeat(api_base, device_token, build_heartbeat_payload(capabilities))
                 if on_heartbeat_ok:
                     try:
                         on_heartbeat_ok()

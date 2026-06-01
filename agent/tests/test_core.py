@@ -215,3 +215,43 @@ def test_run_nmap_if_deep_alias_still_works():
     """_run_nmap_if_deep e alias backwards-compat pentru _run_nmap_if_needed."""
     from agent import core
     assert core._run_nmap_if_deep is core._run_nmap_if_needed
+
+
+def test_collect_system_data_scales_progress_to_max():
+    """Progresul colectarii e scalat la max_progress si ramane monoton."""
+    from agent import core
+    seen = []
+    core.collect_system_data("uid", scan_type="standard",
+                             progress_cb=lambda p, ph: seen.append(p),
+                             max_progress=65)
+    assert seen, "progress_cb trebuie apelat"
+    assert max(seen) <= 65, f"progresul nu trebuie sa depaseasca 65: {seen}"
+    assert seen == sorted(seen), f"progres nemonoton: {seen}"
+
+
+def test_run_one_job_caps_collection_progress_for_deep(monkeypatch):
+    """run_one_job cere max_progress=65 pentru scan deep (lasa loc nmap-ului)."""
+    from agent import core
+    captured = {}
+
+    def fake_collect(uid, scan_type="standard", progress_cb=None, max_progress=100):
+        captured["max_progress"] = max_progress
+        return {"os": {}, "network": {"open_ports": []}, "processes": [], "software": []}
+
+    monkeypatch.setattr(core, "collect_system_data", fake_collect)
+    monkeypatch.setattr(core, "_run_nmap_if_needed", lambda *a, **k: None)
+    monkeypatch.setattr(core, "api_submit_job_result",
+                        lambda *a, **k: {"scan_id": 1, "exposure_score": 0})
+    monkeypatch.setattr(core, "api_send_progress", lambda *a, **k: None)
+    core.run_one_job("http://x", "uid", "tok", {"job_id": 1, "scan_type": "deep"})
+    assert captured["max_progress"] == 65
+
+
+def test_build_heartbeat_payload_includes_net():
+    """Payload-ul heartbeat include contoarele de trafic net."""
+    from agent import core
+    p = core.build_heartbeat_payload(["standard"])
+    assert "net_bytes_sent" in p and "net_bytes_recv" in p
+    assert isinstance(p["net_bytes_sent"], int)
+    assert "net_conn_count" in p
+    assert "os_version" in p and "agent_version" in p
