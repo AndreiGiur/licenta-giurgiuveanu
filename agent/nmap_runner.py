@@ -6,15 +6,38 @@ single-process fallback.
 from __future__ import annotations
 
 import ipaddress
+import re
 import subprocess
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from . import core
 
 
 class NmapRunnerError(Exception):
     """Eroare in pregatire/executie nmap."""
+
+
+# Regex-uri pentru parsarea liniilor de progres nmap (--stats-every).
+_STATS_RE = re.compile(r"About\s+([\d.]+)%\s+done", re.IGNORECASE)
+_REMAINING_RE = re.compile(r"\(([\d:]+)\s+remaining\)", re.IGNORECASE)
+
+
+def parse_nmap_stats_line(line: str) -> tuple[float, str] | None:
+    """Extrage (percent, timp_ramas) dintr-o linie de progres nmap.
+
+    nmap cu --stats-every tipareste periodic linii de forma:
+      'SYN Stealth Scan Timing: About 45.23% done; ETC: 16:32 (0:00:35 remaining)'
+    Intoarce None daca linia nu contine progres.
+    """
+    m = _STATS_RE.search(line or "")
+    if not m:
+        return None
+    pct = float(m.group(1))
+    rem_m = _REMAINING_RE.search(line)
+    remaining = rem_m.group(1) if rem_m else ""
+    return pct, remaining
 
 
 MAX_LAN_HOSTS = 4096  # /20 = 4096 hosts; refuzam mai mult
@@ -95,6 +118,8 @@ def build_nmap_args(
         else:
             args.extend(["--top-ports", str(prof["top_ports"])])
         args.extend(["--script", prof["scripts"]])
+        # Progres periodic pe stdout/stderr pentru afisare real-time in UI.
+        args.extend(["--stats-every", "2s"])
     else:
         # Legacy path — pastram comportamentul vechi pentru testele existente
         args = ["-sV", "-O"]
@@ -117,12 +142,15 @@ def run_nmap(
     all_ports: bool = False,
     timeout_sec: int = 1800,
     profile: str = "legacy",
+    progress_cb: Optional[Callable[[float, str], None]] = None,
     log=None,
 ) -> tuple[int, str]:
-    """Ruleaza nmap. Intoarce (exit_code, stderr_text). XML va fi scris la xml_out.
+    """Ruleaza nmap. Intoarce (exit_code, output_text). XML va fi scris la xml_out.
 
     Daca profile e 'advanced' sau 'deep', timeout_sec din profil are prioritate
-    peste param. Ridica NmapRunnerError daca nmap.exe lipseste.
+    peste param. Daca `progress_cb` e dat, liniile de progres nmap (--stats-every)
+    sunt parsate si raportate live: `progress_cb(percent, timp_ramas)`.
+    Ridica NmapRunnerError daca nmap.exe lipseste.
     """
     nmap = core._nmap_path()
     if not nmap:
@@ -135,11 +163,33 @@ def run_nmap(
     cmd = [str(nmap)] + args
     if log:
         log(f"nmap: {' '.join(cmd)}", "info")
+
+    start = time.time()
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True,
-            timeout=timeout_sec, check=False,
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
         )
-    except subprocess.TimeoutExpired as e:
-        raise NmapRunnerError(f"nmap timeout dupa {timeout_sec}s") from e
-    return result.returncode, (result.stderr or "")
+    except OSError as e:
+        raise NmapRunnerError(f"nmap nu a putut porni: {e}") from e
+
+    output: list[str] = []
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        output.append(line)
+        if progress_cb:
+            parsed = parse_nmap_stats_line(line)
+            if parsed:
+                pct, remaining = parsed
+                try:
+                    progress_cb(pct, remaining)
+                except Exception:
+                    pass
+        if time.time() - start > timeout_sec:
+            proc.kill()
+            raise NmapRunnerError(f"nmap timeout dupa {timeout_sec}s")
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    return proc.returncode or 0, "".join(output)

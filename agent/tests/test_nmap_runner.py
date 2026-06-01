@@ -2,8 +2,29 @@
 import pytest
 from agent.nmap_runner import (
     build_nmap_args, validate_cidr, validate_lan_target, NmapRunnerError,
-    NMAP_PROFILES,
+    NMAP_PROFILES, parse_nmap_stats_line,
 )
+
+
+def test_parse_nmap_stats_line_with_percent_and_eta():
+    line = ("SYN Stealth Scan Timing: About 45.23% done; "
+            "ETC: 16:32 (0:00:35 remaining)")
+    res = parse_nmap_stats_line(line)
+    assert res is not None
+    pct, remaining = res
+    assert abs(pct - 45.23) < 0.01
+    assert remaining == "0:00:35"
+
+
+def test_parse_nmap_stats_line_no_match_returns_none():
+    assert parse_nmap_stats_line("Starting Nmap 7.99") is None
+    assert parse_nmap_stats_line("") is None
+
+
+def test_build_args_include_stats_every_for_profiles():
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml", profile="deep")
+    assert "--stats-every" in args
+    assert "2s" in " ".join(args)
 
 
 def test_build_args_localhost_only():
