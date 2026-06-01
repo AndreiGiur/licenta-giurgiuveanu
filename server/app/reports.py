@@ -19,22 +19,26 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-# ── Paleta Honey & Plum ──────────────────────────────────────────────────────
-PLUM = colors.HexColor("#2d1b3d")
-HONEY = colors.HexColor("#f4c95d")
-CREAM = colors.HexColor("#fefaf2")
-CREAM_ALT = colors.HexColor("#fff8e6")
-RASPBERRY = colors.HexColor("#b8456e")
-LAVENDER = colors.HexColor("#a8639a")
-MUTED = colors.HexColor("#8a7458")
-BORDER = colors.HexColor("#f0e4cc")
-PLUM_DEEP = colors.HexColor("#5a2d6e")
+# ── Paleta Ocean (oglindeste FE — web/src/index.css, valorile light) ─────────
+# Numele istorice (PLUM/HONEY/CREAM...) sunt pastrate ca alias ca sa nu atingem
+# zecile de referinte; valorile sunt acum Ocean (albastru + teal).
+PLUM = colors.HexColor("#0f2942")        # navy — text/headere
+HONEY = colors.HexColor("#2563eb")       # albastru — accent primar
+CREAM = colors.HexColor("#f6f9fc")       # fundal deschis
+CREAM_ALT = colors.HexColor("#eef4fb")   # fundal coloana
+RASPBERRY = colors.HexColor("#ef4444")   # severity high
+LAVENDER = colors.HexColor("#38bdf8")    # severity low (sky)
+MUTED = colors.HexColor("#6b8299")
+BORDER = colors.HexColor("#d8e3f0")
+PLUM_DEEP = colors.HexColor("#b91c1c")   # severity critical (deep red)
+TEAL = colors.HexColor("#0d9488")        # accent secundar
+AMBER = colors.HexColor("#f59e0b")       # severity medium
 
 SEVERITY_COLOR = {
-    "critical": PLUM_DEEP,
-    "high": RASPBERRY,
-    "medium": HONEY,
-    "low": LAVENDER,
+    "critical": PLUM_DEEP,   # #b91c1c
+    "high": RASPBERRY,       # #ef4444
+    "medium": AMBER,         # #f59e0b (HONEY e acum albastru → folosim amber)
+    "low": LAVENDER,         # #38bdf8
     "info": MUTED,
 }
 
