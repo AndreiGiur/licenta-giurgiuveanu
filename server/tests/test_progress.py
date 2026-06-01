@@ -62,6 +62,30 @@ def test_progress_update_flow(auth_client):
     assert body["status"] == "running"
 
 
+def test_progress_keeps_device_online(auth_client):
+    """In timpul unui scan lung (deep), heartbeat-ul agentului e blocat de scan,
+    dar progresul curge — backend-ul trebuie sa trateze progresul ca semn de
+    viata si sa mentina device-ul ONLINE (fix 'fara conexiune' in timpul deep)."""
+    uid, token = _enroll(auth_client)
+    client = auth_client["client"]
+    # Device proaspat enroll-at, fara heartbeat → ar fi offline.
+    r = client.get("/api/v1/devices/by-uid/" + uid, headers=auth_client["headers"])
+    assert r.json()["is_online"] is False
+
+    r = client.post(f"/api/v1/devices/{uid}/scan-jobs", json={"scan_type": "deep"},
+                    headers=auth_client["headers"])
+    job_id = r.json()["job_id"]
+    client.get("/api/v1/agent/jobs/next", headers={"X-Device-Token": token})
+
+    # Agent raporteaza progres (cum face nmap la fiecare 2s) → device devine online.
+    client.post(f"/api/v1/agent/jobs/{job_id}/progress",
+                json={"progress": 70, "phase": "Nmap: 15%"},
+                headers={"X-Device-Token": token})
+
+    r = client.get("/api/v1/devices/by-uid/" + uid, headers=auth_client["headers"])
+    assert r.json()["is_online"] is True
+
+
 def test_progress_rejected_on_done_job(auth_client):
     uid, token = _enroll(auth_client)
     client = auth_client["client"]

@@ -119,6 +119,7 @@ def agent_submit_result(
     job.status = ScanJobStatus.DONE
     job.finished_at = _utcnow()
     job.scan_id = scan.id
+    device.last_heartbeat = _utcnow()  # liveness: scanul tocmai s-a terminat
     db.commit()
     db.refresh(job)
     return _scan_job_to_out(job, device)
@@ -175,6 +176,9 @@ def agent_update_progress(
         )
     job.progress = max(0, min(100, payload.progress))
     job.phase = payload.phase[:128]
+    # Progresul e dovada ca agentul e viu — il tinem ONLINE chiar daca heartbeat-ul
+    # e blocat de scanarea in curs (deep dureaza minute). Fix 'fara conexiune'.
+    device.last_heartbeat = _utcnow()
     db.commit()
 
 
@@ -200,6 +204,7 @@ def agent_submit_failure(
     job.status = ScanJobStatus.FAILED
     job.finished_at = _utcnow()
     job.error_message = payload.error_message[:512]
+    device.last_heartbeat = _utcnow()  # liveness: agentul a raportat esecul
     db.commit()
     db.refresh(job)
     return _scan_job_to_out(job, device)
