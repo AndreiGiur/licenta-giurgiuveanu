@@ -508,6 +508,16 @@ class AgentApp:
             self._toggle_label.set("Nu ai cont?")
             self._toggle_btn_text.set("Înregistrează-te")
 
+    def _safe_grab(self, modal: "tk.Toplevel") -> None:
+        """grab_set() defensiv. Pe X11/Linux fereastra trebuie sa fie 'viewable'
+        inainte de grab — altfel TclError 'grab failed: window not viewable',
+        care lasa modalul gol. Apelam dupa ce continutul e impachetat."""
+        try:
+            modal.wait_visibility()
+            modal.grab_set()
+        except tk.TclError:
+            pass
+
     def _open_api_url_modal(self) -> None:
         """Modal pentru editare API URL — fereastra Toplevel cu input + butoane."""
         p = self.theme.palette
@@ -517,7 +527,6 @@ class AgentApp:
         modal.geometry("460x240")
         modal.resizable(False, False)
         modal.transient(self.root)
-        modal.grab_set()
 
         modal.update_idletasks()
         x = self.root.winfo_rootx() + (self.root.winfo_width() - 460) // 2
@@ -577,6 +586,7 @@ class AgentApp:
 
         modal.bind("<Return>", lambda e: on_save())
         modal.bind("<Escape>", lambda e: modal.destroy())
+        self._safe_grab(modal)  # grab dupa ce continutul e gata (X11 safe)
 
     def _open_about_dialog(self) -> None:
         """Modal Despre — versiune + descriere."""
@@ -587,7 +597,6 @@ class AgentApp:
         modal.geometry("440x300")
         modal.resizable(False, False)
         modal.transient(self.root)
-        modal.grab_set()
 
         modal.update_idletasks()
         x = self.root.winfo_rootx() + (self.root.winfo_width() - 440) // 2
@@ -613,6 +622,7 @@ class AgentApp:
         ttk.Button(wrap, text="Închide", style="Secondary.TButton",
                    command=modal.destroy).pack(side="right", pady=(16, 0))
         modal.bind("<Escape>", lambda e: modal.destroy())
+        self._safe_grab(modal)  # grab dupa continut (X11 safe)
 
     def _refresh_api_short(self) -> None:
         """Actualizeaza afisarea scurta a API URL in footer."""
