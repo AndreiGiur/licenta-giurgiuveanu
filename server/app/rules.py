@@ -266,6 +266,7 @@ def rule(
     weight: float = 1.0,
     confidence: float = 1.0,
     compliance: list[str] | None = None,
+    os: str = "any",
 ) -> Callable[[RuleFn], RuleFn]:
     """Decorator: marcheaza o functie ca regula si o inregistreaza in _RULES.
 
@@ -275,6 +276,8 @@ def rule(
     `compliance`: lista de referinte la standarde de securitate (CIS Controls v8 +
         NIST CSF 2.0). Exemple: ["CIS-9.2", "NIST-PR.AC-4"]. Folosit pentru
         afisare in UI/PDF si calcul de coverage per framework.
+    `os`: "any" (default), "windows" sau "linux" — regula ruleaza doar daca OS-ul
+        scanului se potriveste (vezi `_scan_os` + filtrul din `evaluate`).
     """
     if min_level not in LEVEL_ORDER:
         raise ValueError(f"min_level invalid: {min_level!r}")
@@ -284,6 +287,8 @@ def rule(
         raise ValueError(f"confidence trebuie in [0, 1], dat: {confidence}")
     if weight <= 0:
         raise ValueError(f"weight trebuie > 0, dat: {weight}")
+    if os not in ("any", "windows", "linux"):
+        raise ValueError(f"os invalid: {os!r}, asteptat any|windows|linux")
     compliance_list = list(compliance or [])
     for ref in compliance_list:
         if not isinstance(ref, str) or not ref.strip():
@@ -296,10 +301,21 @@ def rule(
         fn._weight = weight          # type: ignore[attr-defined]
         fn._confidence = confidence  # type: ignore[attr-defined]
         fn._compliance = compliance_list  # type: ignore[attr-defined]
+        fn._os = os                  # type: ignore[attr-defined]
         _RULES.append(fn)
         return fn
 
     return decorator
+
+
+def _scan_os(scan: dict[str, Any]) -> str:
+    """Detecteaza OS-ul scanului din payload: 'linux' | 'windows' | 'other'."""
+    system = str((scan.get("os") or {}).get("system", "")).lower()
+    if system.startswith("linux"):
+        return "linux"
+    if system.startswith("windows"):
+        return "windows"
+    return "other"
 
 
 def evaluate(scan: dict[str, Any]) -> tuple[int, dict[str, int], list[dict[str, Any]]]:
@@ -312,6 +328,7 @@ def evaluate(scan: dict[str, Any]) -> tuple[int, dict[str, int], list[dict[str, 
     """
     scan_type = scan.get("scan_type", "standard")
     level = LEVEL_ORDER.get(scan_type, 0)
+    scan_os = _scan_os(scan)
 
     findings: list[dict[str, Any]] = []
     # Acumulator raw per categorie (inainte de cap).
@@ -319,6 +336,9 @@ def evaluate(scan: dict[str, Any]) -> tuple[int, dict[str, int], list[dict[str, 
 
     for fn in _RULES:
         if LEVEL_ORDER.get(fn._min_level, 0) > level:
+            continue
+        rule_os = getattr(fn, "_os", "any")
+        if rule_os != "any" and rule_os != scan_os:
             continue
         result = fn(scan)
         if result is None:
