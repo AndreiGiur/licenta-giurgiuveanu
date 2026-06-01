@@ -235,15 +235,43 @@ def download_agent_windows(_user: User = Depends(require_user)):
     )
 
 
+@router.get("/agent/download/linux", tags=["agent"])
+def download_agent_linux(_user: User = Depends(require_user)):
+    """Serveste binarul Linux `vulnwatch-agent` pentru user-ii autentificati.
+    404 daca nu a fost build-uit (vezi `bash agent/build.sh` sau CI)."""
+    artifact = _find_agent_artifact("vulnwatch-agent")
+    if not artifact:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Binar Linux indisponibil. Build-eaza-l: bash agent/build.sh\n"
+                "(sau descarca-l din artefactele GitHub Actions)."
+            ),
+        )
+    return FileResponse(
+        path=str(artifact),
+        media_type="application/octet-stream",
+        filename="vulnwatch-agent",
+    )
+
+
 @router.get("/agent/download/info", tags=["agent"])
 def download_agent_info(_user: User = Depends(require_user)):
-    """Indica daca un build de agent este disponibil. UI-ul afiseaza/ascunde
-    butonul de descarcare in functie de raspuns."""
-    artifact = _find_agent_artifact("VulnWatchAgent.exe")
+    """Indica disponibilitatea build-urilor de agent, per OS. UI-ul afiseaza/
+    ascunde butoanele de descarcare in functie de raspuns. Campurile top-level
+    (`available`/`platform`/`size_bytes`) sunt pastrate pentru compatibilitate."""
+    win = _find_agent_artifact("VulnWatchAgent.exe")
+    lin = _find_agent_artifact("vulnwatch-agent")
     return {
-        "available": artifact is not None,
+        # backward-compat (Windows la nivel top)
+        "available": win is not None,
         "platform": "windows",
-        "size_bytes": artifact.stat().st_size if artifact else None,
+        "size_bytes": win.stat().st_size if win else None,
+        # per-OS
+        "windows": {"available": win is not None,
+                    "size_bytes": win.stat().st_size if win else None},
+        "linux": {"available": lin is not None,
+                  "size_bytes": lin.stat().st_size if lin else None},
     }
 
 

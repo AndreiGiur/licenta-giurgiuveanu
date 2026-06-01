@@ -59,6 +59,36 @@ def test_download_serves_file_when_present(tmp_path, monkeypatch):
     assert r.content == artifact.read_bytes()
 
 
+def test_download_linux_404_when_missing(tmp_path, monkeypatch):
+    from server.app.routes import _helpers
+    monkeypatch.setattr(_helpers, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
+    c = _make_user_client("linux-empty")
+    r = c.get("/api/v1/agent/download/linux")
+    assert r.status_code == 404
+
+
+def test_download_linux_serves_when_present(tmp_path, monkeypatch):
+    from server.app.routes import _helpers
+    (tmp_path / "vulnwatch-agent").write_bytes(b"\x7fELF fake-binary")
+    monkeypatch.setattr(_helpers, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
+    c = _make_user_client("linux-ok")
+    r = c.get("/api/v1/agent/download/linux")
+    assert r.status_code == 200
+    assert r.content.startswith(b"\x7fELF")
+
+
+def test_download_info_reports_per_os(tmp_path, monkeypatch):
+    from server.app.routes import _helpers
+    (tmp_path / "vulnwatch-agent").write_bytes(b"\x7fELF fake")
+    monkeypatch.setattr(_helpers, "_AGENT_BUILD_LOCATIONS", (tmp_path,))
+    c = _make_user_client("info-peros")
+    body = c.get("/api/v1/agent/download/info").json()
+    assert body["linux"]["available"] is True
+    assert "windows" in body
+    # backward-compat: campurile top-level (Windows) raman
+    assert "available" in body and "platform" in body
+
+
 def test_download_requires_auth():
     c = TestClient(app)
     c.cookies.clear()
