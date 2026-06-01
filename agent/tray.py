@@ -47,6 +47,22 @@ class TrayState:
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
 
+def _safe_title(text: str) -> str:
+    """Coerce titlul tray la latin-1 (backend-ul pystray X11/Xlib codeaza titlul
+    ferestrei ca latin-1 si crapa pe caractere non-latin1 ex. em-dash U+2014).
+
+    Inlocuim cateva caractere uzuale cu echivalent ASCII, apoi pierdem orice
+    ramane in afara latin-1 (replace), ca sa nu crape niciodata callback-ul GUI.
+    """
+    if not text:
+        return ""
+    repl = {"—": "-", "–": "-", "‘": "'", "’": "'",
+            "“": '"', "”": '"', "…": "...", " ": " "}
+    for k, v in repl.items():
+        text = text.replace(k, v)
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+
 def _make_icon_image(paused: bool) -> "Image.Image":
     """Genereaza un icon 64x64 (scut). Verde = activ, gri = pauza."""
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
@@ -96,12 +112,12 @@ class TrayController:
         if not self._icon:
             return
         self._icon.icon = _make_icon_image(self.state.paused)
-        self._icon.title = self.state.tooltip
+        self._icon.title = _safe_title(self.state.tooltip)
 
     def update_tooltip(self, text: str) -> None:
         self.state.tooltip = text
         if self._icon:
-            self._icon.title = text
+            self._icon.title = _safe_title(text)
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():

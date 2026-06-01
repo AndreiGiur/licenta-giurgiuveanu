@@ -1353,7 +1353,7 @@ class AgentApp:
 
         self._render_status_dot()
         if hasattr(self, "tray") and self.tray:
-            self.tray.update_tooltip(f"VulnWatch Agent — {txt}")
+            self.tray.update_tooltip(f"VulnWatch Agent - {txt}")
         self.root.after(2000, self._tick_status_refresh)
 
     # ── Daemon control ────────────────────────────────────────────────────────
