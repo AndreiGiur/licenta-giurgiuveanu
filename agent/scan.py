@@ -294,25 +294,39 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _import_service():
+    try:
+        from . import service
+    except ImportError:
+        from agent import service  # type: ignore[no-redef]
+    return service
+
+
+def _import_autostart():
+    try:
+        from . import autostart
+    except ImportError:
+        from agent import autostart  # type: ignore[no-redef]
+    return autostart
+
+
 def main(argv: list[str] | None = None) -> int:
     if "--service" in sys.argv:
-        try:
-            from . import service
-        except ImportError:
-            from agent import service  # type: ignore[no-redef]
-        return service.run_as_service()
+        return _import_service().run_as_service()
+    # Service install/uninstall: pe Windows folosim Windows Service (pywin32);
+    # pe Linux/macOS folosim systemd/launchd user-service prin autostart.
     if "--install-service" in sys.argv:
-        try:
-            from . import service
-        except ImportError:
-            from agent import service  # type: ignore[no-redef]
-        return service.install_service()
+        if sys.platform == "win32":
+            return _import_service().install_service()
+        ok, msg = _import_autostart().enable()
+        print(msg)
+        return 0 if ok else 1
     if "--uninstall-service" in sys.argv:
-        try:
-            from . import service
-        except ImportError:
-            from agent import service  # type: ignore[no-redef]
-        return service.uninstall_service()
+        if sys.platform == "win32":
+            return _import_service().uninstall_service()
+        ok, msg = _import_autostart().disable()
+        print(msg)
+        return 0 if ok else 1
 
     parser = build_parser()
     if argv is None:
