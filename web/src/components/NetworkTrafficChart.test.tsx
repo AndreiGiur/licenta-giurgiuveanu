@@ -33,8 +33,11 @@ describe("NetworkTrafficChart", () => {
     ]);
     render(<NetworkTrafficChart deviceUid="dev1" />);
     await waitFor(() => {
-      expect(screen.getByText(/12.5 KB\/s iesit/i)).toBeInTheDocument();
+      expect(screen.getByText(/12.5 KB\/s/i)).toBeInTheDocument();
       expect(screen.getByText(/7 conexiuni active/i)).toBeInTheDocument();
+      // legenda tematizata
+      expect(screen.getByText("Iesit")).toBeInTheDocument();
+      expect(screen.getByText("Intrat")).toBeInTheDocument();
     });
   });
 });
