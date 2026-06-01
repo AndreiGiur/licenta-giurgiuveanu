@@ -112,13 +112,15 @@ Three levels controlled by `SCAN_PROFILES` dict in `agent/core.py`:
 - **advanced** (~3-8min): all processes + cmdline, port→process binding, ESTABLISHED connections, services, startup keys, scheduled tasks, shares, PS execution policy, network adapters
 - **deep** (~10-20min): WMI subscriptions, AppInit_DLLs/IFEO/Winlogon, Security event log (4625/4672/4720), hosts, DNS+ARP, root certificates, BitLocker, Defender, recently modified files in System32/Program Files
 
-Each level is a `ScanProfile` dataclass with boolean flags. The 6 composable collectors in `agent/collectors/` (network, processes, software, system_info, persistence, forensics) check the flags and collect accordingly. **Adding a new level = one dict entry.**
+Each level is a `ScanProfile` dataclass with boolean flags. The composable collectors in `agent/collectors/` (network, processes, software, system_info, persistence, forensics + the Linux-only `linux_audit`) check the flags and collect accordingly. **Adding a new level = one dict entry.** The Windows-only sub-collectors no-op on Linux; `linux_audit.collect_linux_audit()` no-ops off Linux and gates extra checks (cron/services, then SUID/SGID/world-writable) behind the `include_linux_basic/jobs/files` ScanProfile flags.
 
 ### Rules engine (`server/app/rules.py`) — `@rule` decorator with min_level
 
-`evaluate(scan_dict)` returns `(exposure_score, findings)`. Rules auto-filter by `scan["scan_type"]` via `LEVEL_ORDER` (standard=0 < advanced=1 < deep=2). **Adding a new rule = decorate a function.**
+`evaluate(scan_dict)` returns `(exposure_score, findings)`. Rules auto-filter by `scan["scan_type"]` via `LEVEL_ORDER` (standard=0 < advanced=1 < deep=2) AND by OS via `@rule(os="any"|"windows"|"linux")` matched against `scan["os"]["system"]` (helper `_scan_os`). **Adding a new rule = decorate a function.**
 
-**23 active rules. Standard (9):** `NET-OPEN-PORTS-1`, `NET-MANY-PORTS-2`, `OS-ADMIN-1`, `PROC-SUSPICIOUS-1`, `PROC-POWERSHELL-2`, `SW-VULNERABLE-1`, `OS-EOL-1`, `FW-DISABLED-1`, `USER-ADMIN-1`. **Advanced (6):** `STARTUP-SUSPICIOUS-1`, `TASK-SUSPICIOUS-1`, `SVC-SUSPICIOUS-1`, `NET-SHARE-1`, `PS-POLICY-1`, `NET-ESTABLISHED-1`. **Deep (8):** `REG-HIJACK-1`, `WMI-PERSIST-1`, `CERT-UNTRUSTED-1`, `AV-DISABLED-1`, `EVENTLOG-BRUTEFORCE-1`, `EVENTLOG-PRIVESC-1`, `HOSTS-TAMPERED-1`, `BITLOCKER-OFF-1`.
+**OS split (2026-06-01):** Windows-specific rules are tagged `os="windows"`; cross-platform rules (ports, software, processes) stay `os="any"`. The dedicated module `server/app/rules_linux.py` holds **22 Linux rules** (`os="linux"`, Lynis-style: SSH hardening, UID0/empty-pass, SUID/SGID, firewall, sysctl/ASLR/ip_forward, sudo NOPASSWD, world-writable, kernel EOL, pass aging/umask, cron/service persistence) consuming `scan["linux"]` from collector `agent/collectors/linux_audit.py`. It is imported at the END of `rules.py` (`from . import rules_linux`) so its `@rule` registrations run after the decorator is defined. **Adding a Linux rule = decorate a function in rules_linux.py — Windows code stays untouched.**
+
+**Windows/cross rules (23). Standard (9):** `NET-OPEN-PORTS-1`, `NET-MANY-PORTS-2`, `OS-ADMIN-1`, `PROC-SUSPICIOUS-1`, `PROC-POWERSHELL-2`, `SW-VULNERABLE-1`, `OS-EOL-1`, `FW-DISABLED-1`, `USER-ADMIN-1`. **Advanced (6):** `STARTUP-SUSPICIOUS-1`, `TASK-SUSPICIOUS-1`, `SVC-SUSPICIOUS-1`, `NET-SHARE-1`, `PS-POLICY-1`, `NET-ESTABLISHED-1`. **Deep (8):** `REG-HIJACK-1`, `WMI-PERSIST-1`, `CERT-UNTRUSTED-1`, `AV-DISABLED-1`, `EVENTLOG-BRUTEFORCE-1`, `EVENTLOG-PRIVESC-1`, `HOSTS-TAMPERED-1`, `BITLOCKER-OFF-1`.
 
 Exposure score formula with diminishing returns: `score = min(100, round(100 * (1 - e^(-raw/60))))`
 

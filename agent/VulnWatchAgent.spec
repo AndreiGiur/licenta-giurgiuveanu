@@ -42,6 +42,7 @@ a = Analysis(
             "agent.nmap_runner",
             "agent.nmap_parser",
             "agent.single_instance",
+            "agent.collectors.linux_audit",
             # pystray backend-uri cross-platform + PIL
             "pystray._gtk",
             "pystray._darwin",
