@@ -1,0 +1,3 @@
+# Scripturile shell trebuie sa aiba MEREU line endings LF — altfel CRLF (Windows)
+# le strica la rulare pe Linux/Kali ("bash: \r: command not found").
+*.sh text eol=lf
