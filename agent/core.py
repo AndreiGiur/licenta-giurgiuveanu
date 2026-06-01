@@ -260,37 +260,52 @@ def _bundled_nse_path() -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def deploy_nse_script(log: LogFn = _noop_log) -> bool:
-    """Copiază vulnwatch-audit.nse din bundle în NSE scripts dir al instalării
-    de nmap. Întoarce True dacă deploy a reușit, False dacă nmap lipsește.
+def _nse_scripts_dir(nmap: Path) -> Path | None:
+    """Localizeaza NSE scripts dir per-OS. Windows: `{nmap_dir}\\scripts`.
+    Linux/macOS: scripturile NU sunt langa binar, ci in share dir
+    (`/usr/share/nmap/scripts`, `/usr/local/share/nmap/scripts`). Intoarce
+    primul director existent, sau None."""
+    candidates = [nmap.parent / "scripts"]
+    if sys.platform != "win32":
+        candidates += [
+            Path("/usr/share/nmap/scripts"),
+            Path("/usr/local/share/nmap/scripts"),
+        ]
+    for c in candidates:
+        if c.is_dir():
+            return c
+    return None
 
-    Trebuie rulat la startup-ul service-ului (idempotent — overwrite ok)."""
+
+def deploy_nse_script(log: LogFn = _noop_log) -> bool:
+    """Copiaza vulnwatch-audit.nse in NSE scripts dir al instalarii de nmap.
+    **Best-effort** — scanarea foloseste oricum calea absoluta a scriptului
+    (vezi `_run_nmap_if_needed`), deci esecul aici NU blocheaza deep scan-ul
+    (pe Linux scrierea in /usr/share/nmap/scripts cere root; e ok daca esueaza).
+    Idempotent. Intoarce True doar daca a copiat efectiv."""
     nmap = _nmap_path()
     if not nmap:
-        log("nmap lipsește — script vulnwatch-audit.nse nu poate fi deployed", "warn")
         return False
     bundled = _bundled_nse_path()
     if not bundled:
-        log("vulnwatch-audit.nse lipsește din bundle/dev tree", "warn")
         return False
-    # Scripts dir = `{nmap_dir}\scripts\`
-    scripts_dir = nmap.parent / "scripts"
-    if not scripts_dir.is_dir():
-        log(f"NSE scripts dir lipsește la {scripts_dir}", "warn")
+    scripts_dir = _nse_scripts_dir(nmap)
+    if not scripts_dir:
+        log("NSE scripts dir negasit (folosesc calea absoluta la scanare)", "info")
         return False
     target = scripts_dir / "vulnwatch-audit.nse"
     try:
         shutil.copy2(bundled, target)
-        log(f"Deploy NSE script OK: {target}", "ok")
     except OSError as e:
-        log(f"Deploy NSE script eșuat: {e}", "error")
+        # Tipic pe Linux fara root — non-fatal, scanarea foloseste calea absoluta.
+        log(f"Deploy NSE skip (folosesc calea absoluta): {e}", "info")
         return False
-    # Refresh script index
+    log(f"Deploy NSE script OK: {target}", "ok")
     try:
         subprocess.run([str(nmap), "--script-updatedb"],
                        capture_output=True, timeout=30)
     except subprocess.SubprocessError:
-        pass  # not fatal
+        pass
     return True
 
 
@@ -340,6 +355,10 @@ def _run_nmap_if_needed(
         if progress_cb:
             label = "Nmap moderat pornit..." if scan_type == "advanced" else "Nmap agresiv pornit..."
             progress_cb(65, label)
+        # Pasam calea absoluta a scriptului NSE — nmap il gaseste fara sa-l
+        # copiem in scripts dir-ul de sistem (pe Linux ar cere root).
+        bundled_nse = _bundled_nse_path()
+        nse_path = str(bundled_nse) if bundled_nse else None
         t0 = time.time()
         try:
             exit_code, stderr = nmap_runner.run_nmap(
@@ -347,6 +366,7 @@ def _run_nmap_if_needed(
                 xml_out=xml_out,
                 profile=scan_type,
                 progress_cb=_nmap_progress,
+                nse_script_path=nse_path,
                 log=log,
             )
         except nmap_runner.NmapRunnerError as e:

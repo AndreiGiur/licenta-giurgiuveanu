@@ -102,13 +102,23 @@ def build_nmap_args(
     all_ports: bool = False,
     extra_script_args: Optional[str] = None,
     profile: str = "legacy",
+    nse_script_path: Optional[str] = None,
 ) -> list[str]:
     """Construieste argumentele CLI pentru nmap (fara exe-ul in sine).
 
     Daca profile e setat la 'advanced' sau 'deep', foloseste NMAP_PROFILES
     (args + scripturi + top_ports preconfigurate). 'legacy' = comportamentul
     initial (-sV -O --script vulnwatch-audit) pentru backwards compat.
-    """
+
+    `nse_script_path`: daca e dat, referinta `vulnwatch-audit` (dupa nume) e
+    inlocuita cu calea absoluta a scriptului (`/cale/vulnwatch-audit.nse`).
+    Asa nmap il gaseste fara sa-l copiem in scripts dir-ul de sistem (care pe
+    Linux cere root) — nmap accepta cai absolute in `--script`."""
+    def _scripts(s: str) -> str:
+        if nse_script_path:
+            return s.replace("vulnwatch-audit", nse_script_path)
+        return s
+
     if profile in NMAP_PROFILES:
         prof = NMAP_PROFILES[profile]
         args: list[str] = list(prof["base_args"])
@@ -117,7 +127,7 @@ def build_nmap_args(
             args.append("-p-")
         else:
             args.extend(["--top-ports", str(prof["top_ports"])])
-        args.extend(["--script", prof["scripts"]])
+        args.extend(["--script", _scripts(prof["scripts"])])
         # Progres periodic pe stdout/stderr pentru afisare real-time in UI.
         args.extend(["--stats-every", "2s"])
     else:
@@ -127,7 +137,7 @@ def build_nmap_args(
             args.append("-p-")
         elif top_ports:
             args.extend(["--top-ports", str(top_ports)])
-        args.extend(["--script", "vulnwatch-audit"])
+        args.extend(["--script", _scripts("vulnwatch-audit")])
     if extra_script_args:
         args.extend(["--script-args", extra_script_args])
     args.extend(["-oX", xml_out])
@@ -143,6 +153,7 @@ def run_nmap(
     timeout_sec: int = 1800,
     profile: str = "legacy",
     progress_cb: Optional[Callable[[float, str], None]] = None,
+    nse_script_path: Optional[str] = None,
     log=None,
 ) -> tuple[int, str]:
     """Ruleaza nmap. Intoarce (exit_code, output_text). XML va fi scris la xml_out.
@@ -159,7 +170,7 @@ def run_nmap(
         timeout_sec = NMAP_PROFILES[profile]["timeout_sec"]
     args = build_nmap_args(targets=targets, xml_out=str(xml_out),
                            top_ports=top_ports, all_ports=all_ports,
-                           profile=profile)
+                           profile=profile, nse_script_path=nse_script_path)
     cmd = [str(nmap)] + args
     if log:
         log(f"nmap: {' '.join(cmd)}", "info")

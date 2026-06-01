@@ -27,6 +27,27 @@ def test_build_args_include_stats_every_for_profiles():
     assert "2s" in " ".join(args)
 
 
+def test_nse_script_path_replaces_audit_name():
+    """Cand dam calea absoluta, 'vulnwatch-audit' (dupa nume) e inlocuit cu calea
+    (nmap o gaseste fara scripts dir-ul de sistem). Pe Linux nu mai cere root."""
+    p = "/home/u/vulnwatch-agent/agent/nse/vulnwatch-audit.nse"
+    # deep profile (vulnwatch-audit,vuln,default,auth,banner)
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                           profile="deep", nse_script_path=p)
+    joined = " ".join(args)
+    assert p in joined
+    assert "vuln,default,auth,banner" in joined  # built-in scripts raman dupa nume
+    # legacy
+    args2 = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml", nse_script_path=p)
+    assert p in " ".join(args2)
+
+
+def test_no_nse_path_keeps_audit_by_name():
+    """Fara cale (Windows cu deploy), ramane referinta dupa nume 'vulnwatch-audit'."""
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml", profile="deep")
+    assert "vulnwatch-audit,vuln,default,auth,banner" in " ".join(args)
+
+
 def test_build_args_localhost_only():
     args = build_nmap_args(targets=["127.0.0.1"], top_ports=1000,
                            xml_out="result.xml")
