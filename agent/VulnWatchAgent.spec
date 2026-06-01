@@ -13,9 +13,11 @@ Detalii:
 - hiddenimports  → asigura ca PyInstaller include subpachetele psutil
                    pentru platforma curenta si plumbingul pystray.
 """
+import sys
 from pathlib import Path
 
 block_cipher = None
+_win = sys.platform == "win32"
 
 repo_root = Path.cwd()
 agent_dir = repo_root / "agent"
@@ -28,34 +30,37 @@ a = Analysis(
         # Scriptul NSE custom — deployed la startup in NSE scripts dir al nmap.
         (str(agent_dir / "nse" / "vulnwatch-audit.nse"), "nse"),
     ],
-    hiddenimports=[
-        "agent",
-        "agent.core",
-        "agent.gui",
-        "agent.autostart",
-        "agent.tray",
-        "agent.service",
-        "agent.ipc",
-        "agent.nmap_runner",
-        "agent.nmap_parser",
-        "agent.single_instance",
-        # pywin32 — necesar pentru Service framework + single-instance mutex
-        "win32serviceutil",
-        "win32service",
-        "win32event",
-        "win32api",
-        "winerror",
-        "servicemanager",
-        "pywintypes",
-        # pystray are backend-uri specifice per platforma — le includem pe
-        # cele uzuale ca PyInstaller sa le ridice.
-        "pystray._win32",
-        "pystray._gtk",
-        "pystray._darwin",
-        "pystray._dummy",
-        "PIL.Image",
-        "PIL.ImageDraw",
-    ],
+    hiddenimports=(
+        [
+            "agent",
+            "agent.core",
+            "agent.gui",
+            "agent.autostart",
+            "agent.tray",
+            "agent.service",
+            "agent.ipc",
+            "agent.nmap_runner",
+            "agent.nmap_parser",
+            "agent.single_instance",
+            # pystray backend-uri cross-platform + PIL
+            "pystray._gtk",
+            "pystray._darwin",
+            "pystray._dummy",
+            "PIL.Image",
+            "PIL.ImageDraw",
+        ]
+        # pywin32 + backend pystray Windows — DOAR pe Windows (nu exista pe Linux)
+        + ([
+            "win32serviceutil",
+            "win32service",
+            "win32event",
+            "win32api",
+            "winerror",
+            "servicemanager",
+            "pywintypes",
+            "pystray._win32",
+        ] if _win else [])
+    ),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -78,7 +83,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="VulnWatchAgent",
+    name="VulnWatchAgent" if _win else "vulnwatch-agent",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
