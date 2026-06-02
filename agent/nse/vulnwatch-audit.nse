@@ -86,12 +86,16 @@ local cve_mapper = {}
 -- DB embedded: service → list of {version_pattern, cve, severity, title}
 local CVE_DB = {
   ["microsoft-ds"] = {
-    {pattern = ".*",                cve = "CVE-2017-0144", severity = "critical",
-     title = "EternalBlue (MS17-010) — verifica patch SMB"},
+    -- Samba pe Linux (Metasploitable: Samba 3.0.20) — usermap_script RCE.
+    {pattern = "[Ss]amba",          cve = "CVE-2007-2447", severity = "critical",
+     title = "Samba usermap_script RCE (CVE-2007-2447) - Samba 3.0.20-3.0.25rc3"},
+    -- SMB pe Windows — verifica patch EternalBlue (doar daca produsul e Windows).
+    {pattern = "[Ww]indows",        cve = "CVE-2017-0144", severity = "critical",
+     title = "SMB pe Windows - verifica patch MS17-010 (EternalBlue)"},
   },
   ["netbios-ssn"] = {
-    {pattern = ".*",                cve = "CVE-2017-0144", severity = "high",
-     title = "NetBIOS expus — risc EternalBlue dacă SMB neactualizat"},
+    {pattern = "[Ss]amba",          cve = "CVE-2007-2447", severity = "critical",
+     title = "Samba usermap_script RCE (CVE-2007-2447)"},
   },
   ["http"] = {
     {pattern = "[Aa]pache 2%.4%.49", cve = "CVE-2021-41773", severity = "critical",
@@ -114,8 +118,8 @@ local CVE_DB = {
   ["ftp"] = {
     {pattern = "vsftpd 2%.3%.4", cve = "CVE-2011-2523", severity = "critical",
      title = "vsftpd 2.3.4 backdoor — orice user:pass acceptat"},
-    {pattern = "ProFTPD 1%.3%.5", cve = "CVE-2015-3306", severity = "high",
-     title = "ProFTPD 1.3.5 mod_copy RCE"},
+    {pattern = "ProFTPD 1%.3%.[0-9]", cve = "CVE-2015-3306", severity = "high",
+     title = "ProFTPD 1.3.x - vulnerabilitati cunoscute (ex. mod_copy RCE 1.3.5)"},
   },
   ["telnet"] = {
     {pattern = ".*",                cve = "Plaintext protocol", severity = "high",
@@ -130,6 +134,8 @@ local CVE_DB = {
      title = "MySQL 5.0-5.6 — versiune end-of-life, multiple CVE-uri"},
   },
   ["postgresql"] = {
+    {pattern = "8%.", cve = "weak-creds", severity = "high",
+     title = "PostgreSQL 8.x - EOL, frecvent credentiale default (postgres:postgres)"},
     {pattern = "10%.", cve = "CVE-2018-1058", severity = "medium",
      title = "PostgreSQL 10.x — verifică privilegii pe search_path (CVE-2018-1058)"},
   },
@@ -140,6 +146,47 @@ local CVE_DB = {
   ["mongodb"] = {
     {pattern = ".*",                cve = "Unauth access common", severity = "high",
      title = "MongoDB — verifică authentication (default e fără auth)"},
+  },
+  -- Servicii clasice expuse de Metasploitable 2 (CVE-uri reale, bazate pe versiune).
+  ["irc"] = {
+    {pattern = "[Uu]nreal",         cve = "CVE-2010-2075", severity = "critical",
+     title = "UnrealIRCd 3.2.8.1 backdoor (CVE-2010-2075) - RCE"},
+  },
+  ["distccd"] = {
+    {pattern = ".*",                cve = "CVE-2004-2687", severity = "critical",
+     title = "distccd remote command execution (CVE-2004-2687)"},
+  },
+  ["exec"] = {
+    {pattern = ".*",                cve = "r-services", severity = "high",
+     title = "rexec (512) - serviciu r insecur, autentificare necriptata"},
+  },
+  ["login"] = {
+    {pattern = ".*",                cve = "r-services", severity = "high",
+     title = "rlogin (513) - serviciu r insecur, trust .rhosts"},
+  },
+  ["shell"] = {
+    {pattern = ".*",                cve = "r-services", severity = "high",
+     title = "rsh (514) - serviciu r insecur, comenzi necriptate"},
+  },
+  ["ingreslock"] = {
+    {pattern = ".*",                cve = "backdoor", severity = "critical",
+     title = "ingreslock (1524) - frecvent backdoor shell pe sisteme compromise"},
+  },
+  ["bindshell"] = {
+    {pattern = ".*",                cve = "backdoor", severity = "critical",
+     title = "bindshell (1524) - shell root expus (Metasploitable)"},
+  },
+  ["java-rmi"] = {
+    {pattern = ".*",                cve = "CVE-2011-3556", severity = "critical",
+     title = "Java RMI registry - class loading RCE (config default)"},
+  },
+  ["rmiregistry"] = {
+    {pattern = ".*",                cve = "CVE-2011-3556", severity = "critical",
+     title = "Java RMI registry - class loading RCE (config default)"},
+  },
+  ["vnc"] = {
+    {pattern = ".*",                cve = "weak-auth", severity = "high",
+     title = "VNC expus - verifica autentificarea (frecvent parola slaba/absenta)"},
   },
 }
 
