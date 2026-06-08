@@ -3,8 +3,9 @@ VulnWatch Agent — interfata grafica (Tkinter).
 
 Trei pagini afisate dinamic, in functie de stare:
 
-1. **Login** (cand nu exista config valid) — formular cu Email / Parola / API URL
-   + link "Nu ai cont? Inregistreaza-te" (toggle inline).
+1. **Login** (cand nu exista config valid) — formular cu Email / Parola
+   + link "Nu ai cont? Inregistreaza-te" (toggle inline). Endpoint-ul backend
+   este fix (core.DEFAULT_API_BASE) si nu e expus in UI.
 
 2. **Enroll Device** (post-login, masina noua) — afiseaza UID detectat,
    nume editabil, bifa autostart. Submit → POST /devices → salveaza config →
@@ -475,21 +476,11 @@ class AgentApp:
                    style="Link.TButton",
                    command=self._toggle_auth_mode).pack(side="left", padx=(6, 0))
 
-        # Footer cu API URL + iconita edit
+        # Footer — doar versiunea (endpoint-ul backend e ascuns deliberat in UI)
         footer = ttk.Frame(self.root, style="TFrame")
         footer.place(relx=0.5, rely=1.0, y=-14, anchor="s")
-
-        ttk.Label(footer, text=f"VulnWatch Agent v{core.AGENT_VERSION}  ·  API: ",
+        ttk.Label(footer, text=f"VulnWatch Agent v{core.AGENT_VERSION}",
                   style="Footer.TLabel").pack(side="left")
-        api_short = self._var_api.get().replace("http://", "").replace("/api/v1", "")
-        self._api_short_var = tk.StringVar(value=api_short)
-        ttk.Label(footer, textvariable=self._api_short_var,
-                  style="Footer.TLabel").pack(side="left")
-        edit_btn = tk.Label(footer, text=" ✎ ",
-                            bg=p["bg"], fg=p["accent"],
-                            font=("Segoe UI", 10), cursor="hand2")
-        edit_btn.pack(side="left")
-        edit_btn.bind("<Button-1>", lambda e: self._open_api_url_modal())
 
     def _toggle_auth_mode(self) -> None:
         if self._auth_mode.get() == "login":
@@ -518,76 +509,6 @@ class AgentApp:
             modal.grab_set()
         except tk.TclError:
             pass
-
-    def _open_api_url_modal(self) -> None:
-        """Modal pentru editare API URL — fereastra Toplevel cu input + butoane."""
-        p = self.theme.palette
-        modal = tk.Toplevel(self.root)
-        modal.title("Setări avansate")
-        modal.configure(bg=p["bg"])
-        modal.geometry("460x240")
-        modal.resizable(False, False)
-        modal.transient(self.root)
-
-        modal.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width() - 460) // 2
-        y = self.root.winfo_rooty() + (self.root.winfo_height() - 240) // 2
-        modal.geometry(f"+{x}+{y}")
-
-        wrap = ttk.Frame(modal, style="TFrame", padding=20)
-        wrap.pack(fill="both", expand=True)
-
-        ttk.Label(wrap, text="API URL backend VulnWatch",
-                  style="Title.TLabel",
-                  font=("Cambria", 14, "bold")).pack(anchor="w")
-        ttk.Label(wrap, text="Modifică doar dacă știi ce faci.",
-                  style="Subtitle.TLabel", font=("Segoe UI", 10),
-                  wraplength=400).pack(anchor="w", pady=(2, 12))
-
-        ttk.Label(wrap, text="URL", style="Dim.TLabel").pack(anchor="w")
-
-        # Default value: din _var_api daca exista (pagina Login), altfel din
-        # configul actual (pagina Status, unde _var_api nu e setata).
-        if hasattr(self, "_var_api"):
-            default_val = self._var_api.get()
-        else:
-            try:
-                api_base, _, _ = core.get_enrollment()
-                default_val = api_base
-            except RuntimeError:
-                default_val = core.DEFAULT_API_BASE
-
-        var = tk.StringVar(value=default_val)
-        entry = ttk.Entry(wrap, textvariable=var, font=("Segoe UI", 11))
-        entry.pack(fill="x", pady=(2, 14))
-        entry.focus_set()
-        entry.select_range(0, "end")
-
-        actions = ttk.Frame(wrap, style="TFrame")
-        actions.pack(fill="x")
-
-        def on_save():
-            new_url = var.get().strip().rstrip("/")
-            if new_url:
-                if hasattr(self, "_var_api"):
-                    self._var_api.set(new_url)
-                    if hasattr(self, "_refresh_api_short"):
-                        self._refresh_api_short()
-            modal.destroy()
-
-        def on_reset():
-            var.set(core.DEFAULT_API_BASE)
-
-        ttk.Button(actions, text="Salvează", style="Accent.TButton",
-                   command=on_save).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Anulează", style="Secondary.TButton",
-                   command=modal.destroy).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Revino la default", style="Link.TButton",
-                   command=on_reset).pack(side="right")
-
-        modal.bind("<Return>", lambda e: on_save())
-        modal.bind("<Escape>", lambda e: modal.destroy())
-        self._safe_grab(modal)  # grab dupa ce continutul e gata (X11 safe)
 
     def _open_about_dialog(self) -> None:
         """Modal Despre — versiune + descriere."""
@@ -624,12 +545,6 @@ class AgentApp:
                    command=modal.destroy).pack(side="right", pady=(16, 0))
         modal.bind("<Escape>", lambda e: modal.destroy())
         self._safe_grab(modal)  # grab dupa continut (X11 safe)
-
-    def _refresh_api_short(self) -> None:
-        """Actualizeaza afisarea scurta a API URL in footer."""
-        if hasattr(self, "_api_short_var"):
-            api_short = self._var_api.get().replace("http://", "").replace("/api/v1", "")
-            self._api_short_var.set(api_short)
 
     def _submit_login(self) -> None:
         email = self._var_email.get().strip().lower()
@@ -1091,7 +1006,7 @@ class AgentApp:
         ttk.Label(wrap, text="VULNWATCH AGENT", style="Brand.TLabel").pack(anchor="w")
 
         try:
-            api_base, device_uid, _ = core.get_enrollment()
+            _, device_uid, _ = core.get_enrollment()
         except RuntimeError:
             self._render_login_page()
             return
@@ -1220,7 +1135,7 @@ class AgentApp:
         p = self.theme.palette
 
         try:
-            api_base, device_uid, _ = core.get_enrollment()
+            _, device_uid, _ = core.get_enrollment()
         except RuntimeError:
             return
 
@@ -1229,10 +1144,7 @@ class AgentApp:
         info_box.pack(fill="x", pady=(0, 8))
         tk.Label(info_box, text=f"UID tehnic: {device_uid}",
                  bg=p["surface"], fg=p["text_dim"],
-                 font=("Consolas", 9)).pack(anchor="w", padx=10, pady=(8, 2))
-        tk.Label(info_box, text=f"API: {api_base}",
-                 bg=p["surface"], fg=p["text_dim"],
-                 font=("Consolas", 9)).pack(anchor="w", padx=10, pady=(0, 8))
+                 font=("Consolas", 9)).pack(anchor="w", padx=10, pady=(8, 8))
 
         # Buton fallback: instaleaza nmap daca lipseste (deep indisponibil).
         if core._nmap_path() is None:
@@ -1422,8 +1334,6 @@ class AgentApp:
         except Exception:
             pass
 
-        m.add_command(label="Setări avansate API URL...",
-                      command=self._open_api_url_modal)
         m.add_command(label="Despre VulnWatch Agent",
                       command=self._open_about_dialog)
 
