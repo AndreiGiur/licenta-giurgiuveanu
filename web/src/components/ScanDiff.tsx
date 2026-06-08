@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { getScanDiff } from "../api/exposure";
 import type { ScanDiff as ScanDiffData, ScanDiffFinding } from "../api/types";
+import { InfoTip } from "./InfoTip";
 
 
 function sevClass(s: string): string {
@@ -78,6 +79,7 @@ export function ScanDiff({ scanId, previousId }: Props) {
           <div className={`diff-delta ${deltaClass}`}>
             <span className="diff-delta-icon">{deltaIcon}</span>
             <span>{deltaText}</span>
+            <InfoTip topic="diff-delta" size={14} />
           </div>
         </div>
       </div>
@@ -86,6 +88,7 @@ export function ScanDiff({ scanId, previousId }: Props) {
         <div className="diff-column">
           <div className="diff-column-title diff-added-title">
             <span>Adaugate</span>
+            <InfoTip topic="diff-added" size={14} />
             <span className="diff-count">{data.added.length}</span>
           </div>
           {data.added.length === 0
@@ -97,6 +100,7 @@ export function ScanDiff({ scanId, previousId }: Props) {
         <div className="diff-column">
           <div className="diff-column-title diff-fixed-title">
             <span>Rezolvate</span>
+            <InfoTip topic="diff-fixed" size={14} />
             <span className="diff-count">{data.fixed.length}</span>
           </div>
           {data.fixed.length === 0
@@ -108,6 +112,7 @@ export function ScanDiff({ scanId, previousId }: Props) {
         <div className="diff-column">
           <div className="diff-column-title diff-unchanged-title">
             <span>Nemodificate</span>
+            <InfoTip topic="diff-unchanged" size={14} />
             <span className="diff-count">{data.unchanged.length}</span>
           </div>
           {data.unchanged.length === 0

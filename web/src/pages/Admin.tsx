@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import { InfoTip } from "../components/InfoTip";
 import {
   listAdminUsers, deleteAdminUser, changeAdminUserRole, adminResetPassword,
   listAdminDevices, listAdminScans,
@@ -99,9 +100,9 @@ function AdminUsersTab() {
         <thead>
           <tr>
             <th>Email</th>
-            <th>Rol</th>
-            <th>Provider</th>
-            <th>Devices</th>
+            <th>Rol<InfoTip topic="admin-user-role" size={14} /></th>
+            <th>Provider<InfoTip topic="admin-user-provider" size={14} /></th>
+            <th>Devices<InfoTip topic="admin-user-devices" size={14} /></th>
             <th>Inregistrat</th>
             <th></th>
           </tr>
@@ -153,7 +154,7 @@ function AdminDevicesTab() {
           <th>Device UID</th>
           <th>Nume</th>
           <th>Owner</th>
-          <th>Status</th>
+          <th>Status<InfoTip topic="admin-device-status" size={14} /></th>
           <th>Inregistrat</th>
         </tr>
       </thead>
@@ -206,8 +207,8 @@ function AdminScansTab() {
             <th>Scan</th>
             <th>Device</th>
             <th>Owner</th>
-            <th>Tip</th>
-            <th>Scor</th>
+            <th>Tip<InfoTip topic="admin-scan-type" size={14} /></th>
+            <th>Scor<InfoTip topic="admin-scan-score" size={14} /></th>
             <th>Data</th>
           </tr>
         </thead>

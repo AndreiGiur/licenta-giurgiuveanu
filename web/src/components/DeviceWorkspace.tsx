@@ -7,6 +7,7 @@ import { ScoreGauge } from "./ScoreGauge";
 import { ConnectionTopology } from "./ConnectionTopology";
 import { NetworkTrafficChart } from "./NetworkTrafficChart";
 import { ScanTypeExplainer } from "./ScanTypeExplainer";
+import { InfoTip } from "./InfoTip";
 import { useScanJobPolling } from "../hooks/useScanJobPolling";
 import { useScanDetail } from "../hooks/useScanDetail";
 
@@ -61,9 +62,11 @@ export function DeviceWorkspace({ device, onDeleted }:
           <span className="score-badge" style={{ marginLeft: 10, fontSize: 12 }}>
             {device.is_online ? "online" : "offline"}
           </span>
+          <InfoTip topic="device-online" />
         </h2>
         <div className="workspace-actions">
           <label className="sr-only" htmlFor="scan-type">Tip scanare</label>
+          <InfoTip topic="scan-type" />
           <select id="scan-type" aria-label="Tip scanare" className="form-input"
             value={scanType} onChange={(e) => setScanType(e.target.value as ScanType)}
             style={{ width: 140 }}>
@@ -91,14 +94,14 @@ export function DeviceWorkspace({ device, onDeleted }:
 
       <div className="monitor-row">
         <div className="card">
-          <div className="card-header"><span className="card-title">Scor expunere</span></div>
+          <div className="card-header"><span className="card-title">Scor expunere</span><InfoTip topic="exposure-score" /></div>
           <div className="card-body monitor-gauge">
             {detail ? <ScoreGauge value={detail.exposure_score} size={160} />
                     : <div className="empty-state">Nicio scanare inca.</div>}
           </div>
         </div>
         <div className="card">
-          <div className="card-header"><span className="card-title">Conexiune</span></div>
+          <div className="card-header"><span className="card-title">Conexiune</span><InfoTip topic="connection-topology" /></div>
           <div className="card-body">
             <ConnectionTopology online={!!device.is_online}
               lastHeartbeat={device.last_heartbeat ?? null}
@@ -106,14 +109,14 @@ export function DeviceWorkspace({ device, onDeleted }:
           </div>
         </div>
         <div className="card">
-          <div className="card-header"><span className="card-title">Trafic de retea (live)</span></div>
+          <div className="card-header"><span className="card-title">Trafic de retea (live)</span><InfoTip topic="network-traffic" /></div>
           <div className="card-body"><NetworkTrafficChart deviceUid={uid} /></div>
         </div>
       </div>
 
       <div className="workspace-scans">
         <div className="card">
-          <div className="card-header"><span className="card-title">Scanari</span>
+          <div className="card-header"><span className="card-title">Scanari</span><InfoTip topic="scans-list" />
             <span className="card-badge">{scans.length}</span></div>
           <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {scans.length === 0 && <div className="empty-state">Nicio scanare.</div>}
@@ -131,7 +134,7 @@ export function DeviceWorkspace({ device, onDeleted }:
           </div>
         </div>
         <div className="card">
-          <div className="card-header"><span className="card-title">Findings</span>
+          <div className="card-header"><span className="card-title">Findings</span><InfoTip topic="findings" />
             {detail && <button className="btn btn-ghost btn-sm"
               onClick={() => navigate(`/scans/${detail.scan_id}`)}>Detalii complete →</button>}</div>
           <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>

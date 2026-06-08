@@ -8,6 +8,7 @@ import { ScoreGauge } from "../components/ScoreGauge";
 import { ScoreBreakdownBars } from "../components/ScoreBreakdownBars";
 import { ScanDiff } from "../components/ScanDiff";
 import NmapSection from "../components/NmapSection";
+import { InfoTip } from "../components/InfoTip";
 
 type Category = "persistence" | "network" | "system" | "software" | "processes" | "forensics";
 
@@ -162,12 +163,15 @@ function FindingDetailPanel({ finding }: { finding: Finding }) {
         <span className={`severity-badge ${getSeverityClass(finding.severity)}`}>
           {finding.severity.toUpperCase()}
         </span>
+        <InfoTip topic="severity" />
         <h3 className="finding-detail-title">{finding.title}</h3>
         <span className="finding-detail-id">{finding.rule_id}</span>
+        <InfoTip topic="rule-id" size={14} />
       </div>
 
       {compliance.length > 0 && (
         <div className="finding-compliance">
+          <InfoTip topic="compliance" size={14} />
           {cisRefs.map(ref => (
             <span key={ref} className="compliance-chip compliance-cis" title="CIS Controls v8">
               {ref}
@@ -182,14 +186,14 @@ function FindingDetailPanel({ finding }: { finding: Finding }) {
       )}
 
       <section className="finding-section">
-        <h4>Recomandare</h4>
+        <h4>Recomandare<InfoTip topic="recommendation" size={14} /></h4>
         <p>{finding.recommendation}</p>
       </section>
 
       {!!finding.evidence && typeof finding.evidence === "object" &&
         Object.keys(finding.evidence as object).length > 0 && (
         <section className="finding-section">
-          <h4>Dovezi</h4>
+          <h4>Dovezi<InfoTip topic="finding-evidence" size={14} /></h4>
           <EvidenceView evidence={finding.evidence} />
         </section>
       )}
@@ -320,12 +324,21 @@ export default function ScanDetail() {
             <aside className="scan-detail-sidebar">
               <ScoreGauge value={data.exposure_score} size={160} />
               <div className="score-summary">
+                <span>Scor de expunere</span><InfoTip topic="exposure-score" size={14} />
+              </div>
+              <div className="score-summary">
                 <strong>{data.findings.length}</strong> vulnerabilități găsite
+                <InfoTip topic="findings-count" size={14} />
               </div>
               {data.score_breakdown && (
                 <ScoreBreakdownBars breakdown={data.score_breakdown} compact />
               )}
 
+              {categories.length > 0 && (
+                <div className="score-summary" style={{ marginTop: 4 }}>
+                  <span>Categorii</span><InfoTip topic="category-nav" size={14} />
+                </div>
+              )}
               <nav className="category-nav">
                 {categories.map(cat => {
                   const items = findingsByCategory[cat] ?? [];

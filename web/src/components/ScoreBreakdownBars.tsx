@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import type { ScoreBreakdown } from "../api/types";
 import { SCORE_CATEGORIES } from "../api/types";
+import { InfoTip } from "./InfoTip";
 
 interface Props {
   breakdown: ScoreBreakdown;
@@ -24,6 +25,7 @@ export function ScoreBreakdownBars({ breakdown, compact = false }: Props) {
           <div key={key} className="score-breakdown-row">
             <div className="score-breakdown-label">
               <span className="score-breakdown-name">{label}</span>
+              <InfoTip topic={`cat-${key}`} size={14} />
               <span className="score-breakdown-weight">{Math.round(weight * 100)}%</span>
             </div>
             <div className="score-breakdown-track">

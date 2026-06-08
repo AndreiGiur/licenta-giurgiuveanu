@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import Navbar from "../components/Navbar";
 import { UserAvatar } from "../components/UserAvatar";
 import { ScoreTrendChart } from "../components/ScoreTrendChart";
+import { InfoTip } from "../components/InfoTip";
 import { fetchMe, updateMyProfile, type Me, type ScanType } from "../api/auth";
 import { apiGet } from "../api/http";
 import {
@@ -228,7 +229,7 @@ function PreferencesSection({ me, onUpdated }: { me: Me; onUpdated: (m: Me) => v
       <h2 className="profile-section-title">Preferinte</h2>
       <div className="profile-pref-row">
         <div>
-          <div className="profile-pref-label">Tip scanare implicit</div>
+          <div className="profile-pref-label">Tip scanare implicit<InfoTip topic="pref-scan-type" size={14} /></div>
           <div className="profile-pref-hint">Selectat automat cand declanseaza un scan nou din UI.</div>
         </div>
         <div className="profile-pref-options">
@@ -274,22 +275,22 @@ function StatsSection({
       <h2 className="profile-section-title">Statistici personale</h2>
       <div className="profile-stats-grid">
         <div className="profile-stat-card">
-          <div className="profile-stat-label">Device-uri</div>
+          <div className="profile-stat-label">Device-uri<InfoTip topic="stat-device-count" size={14} /></div>
           <div className="profile-stat-value">{stats.device_count}</div>
         </div>
         <div className="profile-stat-card">
-          <div className="profile-stat-label">Total scanari</div>
+          <div className="profile-stat-label">Total scanari<InfoTip topic="stat-scan-count" size={14} /></div>
           <div className="profile-stat-value">{stats.scan_count}</div>
         </div>
         <div className="profile-stat-card">
-          <div className="profile-stat-label">Scor mediu</div>
+          <div className="profile-stat-label">Scor mediu<InfoTip topic="stat-avg-score" size={14} /></div>
           <div className="profile-stat-value">
             {stats.avg_exposure_score !== null
               ? `${stats.avg_exposure_score}/100` : "—"}
           </div>
         </div>
         <div className="profile-stat-card">
-          <div className="profile-stat-label">Ultima scanare</div>
+          <div className="profile-stat-label">Ultima scanare<InfoTip topic="stat-last-scan" size={14} /></div>
           <div className="profile-stat-value-small">
             {formatDate(stats.last_scan_at)}
           </div>
@@ -304,7 +305,7 @@ function StatsSection({
         <div className="profile-trend-block">
           <div className="profile-trend-header">
             <div>
-              <div className="profile-section-subtitle">Evolutie scor (ultimele 30 zile)</div>
+              <div className="profile-section-subtitle">Evolutie scor (ultimele 30 zile)<InfoTip topic="score-trend" size={14} /></div>
               <div className="profile-section-hint">
                 Hover pentru a vedea data si tipul scanarii.
               </div>
@@ -338,14 +339,14 @@ function SessionsSection({ sessions, onRevoked }:
   }
   return (
     <section className="profile-section">
-      <h2 className="profile-section-title">Sesiuni active</h2>
+      <h2 className="profile-section-title">Sesiuni active<InfoTip topic="sessions" size={15} /></h2>
       <div className="profile-sessions">
         {sessions.map(s => (
           <div key={s.id} className="profile-session-row">
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="profile-session-ua">
                 {truncateUA(s.user_agent)}
-                {s.is_current && <span className="profile-tag profile-tag-current">ACEASTA</span>}
+                {s.is_current && <><span className="profile-tag profile-tag-current">ACEASTA</span><InfoTip topic="session-current" size={14} /></>}
               </div>
               <div className="profile-session-meta">
                 IP: {s.ip ?? "?"} · creat: {formatDate(s.created_at)}
@@ -375,22 +376,22 @@ function PlatformSection({ stats }: { stats: PlatformStats | null }) {
       </h2>
       <div className="profile-stats-grid">
         <div className="profile-stat-card">
-          <div className="profile-stat-label">Total useri</div>
+          <div className="profile-stat-label">Total useri<InfoTip topic="platform-total-users" size={14} /></div>
           <div className="profile-stat-value">{stats.total_users}</div>
         </div>
         <div className="profile-stat-card">
-          <div className="profile-stat-label">Devices online</div>
+          <div className="profile-stat-label">Devices online<InfoTip topic="platform-devices-online" size={14} /></div>
           <div className="profile-stat-value">
             {stats.devices_online}<span style={{ fontSize: 14, color: "var(--text-muted)" }}>
               /{stats.total_devices}</span>
           </div>
         </div>
         <div className="profile-stat-card">
-          <div className="profile-stat-label">Scanari ultimele 24h</div>
+          <div className="profile-stat-label">Scanari ultimele 24h<InfoTip topic="platform-scans-24h" size={14} /></div>
           <div className="profile-stat-value">{stats.scans_last_24h}</div>
         </div>
         <div className="profile-stat-card">
-          <div className="profile-stat-label">Scor mediu platforma</div>
+          <div className="profile-stat-label">Scor mediu platforma<InfoTip topic="platform-avg-score" size={14} /></div>
           <div className="profile-stat-value">
             {stats.avg_exposure_score !== null
               ? `${stats.avg_exposure_score}/100` : "—"}

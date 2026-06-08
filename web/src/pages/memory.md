@@ -27,6 +27,14 @@ componenta React standalone care isi gestioneaza propriul state (`useState`,
 | `Profile.tsx`       | **Pagina /profile** — 4 sectiuni standard (Cont cu avatar + email + provider + buton schimba parola; Statistici cu device_count / scan_count / avg_score / last_scan; Sesiuni active cu marker `is_current` + buton Revoca; pentru admin: sectiunea Platforma cu 4 metric cards: total_users / devices_online / scans_24h / avg_score). Foloseste `getUserStats`, `listMySessions`, `revokeSession`, `changePassword`, `getPlatformStats` din `api/profile.ts`. |
 | `Admin.tsx`         | **Pagina /admin (require_admin)** — 3 tabs: **Users** (tabel cu select role, reset password via prompt, delete; search bar dupa email), **Devices** (tabel cu owner_email + status online), **Scans** (paginat 25/pagina, link catre `/scans/{id}`, scor + scan_type). Foloseste `listAdminUsers/Devices/Scans` etc. din `api/profile.ts`. |
 
+## Butoane de info (i)
+
+**(2026-06-08)** `ScanDetail`, `Profile` si `Admin` au butoane `<InfoTip>` (vezi
+`components/InfoTip.tsx` + `help/helpContent.ts`) langa elementele importante:
+- `ScanDetail`: scor expunere, nr findings, categorii, severitate, rule_id, conformitate (CIS/NIST), recomandare, dovezi; plus nmap (prin `NmapSection`/`NmapHostCard`) si diff (prin `ScanDiff`).
+- `Profile`: cele 4 statistici personale, trendul, tipul de scanare implicit, sesiuni active (+ marker sesiune curenta), cele 4 metrici de platforma (admin).
+- `Admin`: antetele coloanelor (Rol, Provider, Devices, Status, Tip, Scor) — (i) in `<th>`, nu pe fiecare rand.
+
 ## Pattern de loading + error
 
 Toate paginile urmeaza acelasi pattern:
