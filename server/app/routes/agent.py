@@ -1,13 +1,14 @@
 """Endpoint-uri pentru agent (auth: X-Device-Token) + download installer + Google enroll desktop."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import config, google_auth
 from ..auth import get_db, require_user
+from ..ratelimit import limiter
 from ..models import Device, Finding, Scan, ScanJob, ScanJobStatus, User
 from ..rules import evaluate
 from ..schemas import (
@@ -280,7 +281,8 @@ def download_agent_info(_user: User = Depends(require_user)):
 
 
 @router.post("/agent/google-enroll", response_model=GoogleAgentEnrollOut, tags=["agent"])
-def agent_google_enroll(payload: GoogleAgentEnrollIn, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def agent_google_enroll(request: Request, payload: GoogleAgentEnrollIn, db: Session = Depends(get_db)):
     """Agent trimite id_token (deja obtinut prin loopback OAuth) + device info.
     Backend verifica tokenul, creeaza/gaseste User + Device, returneaza device_token."""
     if not config.GOOGLE_CLIENT_ID_DESKTOP:

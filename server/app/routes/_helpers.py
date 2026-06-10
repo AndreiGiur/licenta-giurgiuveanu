@@ -7,6 +7,9 @@ artefactului de agent.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +18,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import config
 from ..auth import get_user_by_email
 from ..models import Device, ScanJob, User, hash_token
 from ..schemas import DeviceOut, ScanJobOut
@@ -82,29 +86,48 @@ def _device_for_token_or_401(db: Session, x_device_token: str | None) -> Device:
     return device
 
 
-# ── Google OAuth: state store CSRF in-memory cu TTL 5 minute ─────────────────
+# ── Google OAuth: state CSRF stateless, semnat HMAC, cu TTL 5 minute ─────────
 #
-# Nu persistam in DB — flow-ul e scurt si nu vrem sa aglomeram tabelele.
-# State expira automat dupa 5 minute. La fiecare salvare facem si un cleanup
-# oportunist al starilor expirate (evitam memory leak).
-_OAUTH_STATE_STORE: dict[str, float] = {}
+# Format: "<nonce>.<timestamp>.<semnatura>". Semnatura este HMAC-SHA256 peste
+# "nonce.timestamp" cu un secret de server, deci state-ul nu trebuie tinut in
+# memorie sau in DB — orice worker il poate valida (spre deosebire de vechiul
+# dict in-memory, care pica la `uvicorn --workers N`).
+#
+# Secretul vine din env SECRET_KEY; daca lipseste, se genereaza unul random
+# per-proces (suficient pentru dev single-worker; in productie multi-worker
+# SECRET_KEY trebuie setat ca toti workerii sa valideze acelasi state).
+#
+# Nota: spre deosebire de store-ul one-time, un state semnat poate fi refolosit
+# in fereastra de 5 minute. Nu e exploatabil practic: codul OAuth atasat este
+# consumat de Google la primul exchange, iar al doilea callback esueaza acolo.
 _OAUTH_STATE_TTL = 300  # 5 minute
+_STATE_SECRET = (config.SECRET_KEY or secrets.token_urlsafe(32)).encode("utf-8")
 
 
-def _store_state(state: str) -> None:
-    """Salveaza state CSRF + curata stari expirate."""
-    now = time.time()
-    expired = [s for s, t in _OAUTH_STATE_STORE.items() if now - t > _OAUTH_STATE_TTL]
-    for s in expired:
-        del _OAUTH_STATE_STORE[s]
-    _OAUTH_STATE_STORE[state] = now
+def _sign_state(payload: str) -> str:
+    return hmac.new(_STATE_SECRET, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _make_state() -> str:
+    """Construieste un state CSRF semnat: nonce.timestamp.semnatura."""
+    nonce = secrets.token_urlsafe(16)
+    ts = str(int(time.time()))
+    payload = f"{nonce}.{ts}"
+    return f"{payload}.{_sign_state(payload)}"
 
 
 def _consume_state(state: str) -> bool:
-    """Verifica state si il sterge. True daca e valid si neexpirat."""
-    if state not in _OAUTH_STATE_STORE:
+    """Valideaza semnatura si TTL-ul unui state. True daca e valid si neexpirat."""
+    parts = state.rsplit(".", 1)
+    if len(parts) != 2:
         return False
-    ts = _OAUTH_STATE_STORE.pop(state)
+    payload, sig = parts
+    if not hmac.compare_digest(_sign_state(payload), sig):
+        return False
+    try:
+        ts = int(payload.rsplit(".", 1)[1])
+    except (ValueError, IndexError):
+        return False
     return (time.time() - ts) <= _OAUTH_STATE_TTL
 
 

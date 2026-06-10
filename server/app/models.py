@@ -60,6 +60,9 @@ class Session(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
+    # SHA-256 hex al tokenului de sesiune (NU tokenul plain). Tokenul plain
+    # pleaca o singura data catre client (cookie HttpOnly / body la login);
+    # un dump al DB-ului nu contine sesiuni utilizabile.
     token: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)

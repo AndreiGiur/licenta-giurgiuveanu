@@ -18,6 +18,11 @@ GOOGLE_REDIRECT_URI_WEB = os.environ.get(
 GOOGLE_CLIENT_ID_DESKTOP = os.environ.get("GOOGLE_CLIENT_ID_DESKTOP", "")
 FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173")
 
+# Secret de server pentru semnarea state-ului OAuth (HMAC). Obligatoriu in
+# productie cu mai multi workeri uvicorn — altfel fiecare proces isi genereaza
+# unul random si callback-ul poate ateriza pe alt worker decat cel emitent.
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+
 # ── Constante de business / pragulele motorului de scoring ──────────────────
 # (extrase din rules.py + routes.py + scheduler.py pentru a fi configurabile)
 
@@ -39,3 +44,8 @@ BRUTEFORCE_FAIL_COUNT_THRESHOLD = int(os.environ.get("BRUTEFORCE_FAIL_COUNT_THRE
 
 # Prag minim de porturi LISTEN deschise pentru regula NET-MANY-PORTS-2.
 MANY_PORTS_THRESHOLD = int(os.environ.get("MANY_PORTS_THRESHOLD", "20"))
+
+# Minute dupa care un ScanJob ramas in "running" este marcat failed de
+# scheduler_loop (agent mort / net cazut in timpul scanarii). Default generos:
+# scanarea deep cu nmap poate dura pana la ~60 min.
+SCAN_JOB_TIMEOUT_MIN = int(os.environ.get("SCAN_JOB_TIMEOUT_MIN", "90"))

@@ -69,6 +69,7 @@ python scan.py logout      # delete local config
 - Frontend relies solely on the browser's automatic cookie handling (`credentials: "include"`)
 - Non-browser clients (agent enrollment, tests) pass token via `X-Session-Token` header
 - Sessions expire in 24h (`SESSION_EXPIRE_HOURS` env var)
+- DB stores only the SHA-256 of the session token (`hash_token`, same as device tokens); `require_user`/logout/`is_current` hash the incoming token before lookup
 
 **Agent auth (agent → backend) — client-generated tokens:**
 - Fiecare device are un `device_token` — **generat local** de executabil cu `secrets.token_urlsafe(48)`
@@ -184,3 +185,6 @@ web/src/pages/memory.md          ← Dashboard.tsx, Devices.tsx, Login.tsx, Regi
 | `SESSION_EXPIRE_HOURS` | 24 | Session lifetime |
 | `COOKIE_SECURE` | false | Set true in production (HTTPS only) |
 | `COOKIE_SAMESITE` | lax | Set strict in production |
+| `SECRET_KEY` | (random per-process) | HMAC signing of OAuth state; REQUIRED in production with multiple uvicorn workers |
+| `SCAN_JOB_TIMEOUT_MIN` | 90 | Minutes after which a stuck `running` ScanJob is reaped to `failed` by the scheduler loop |
+| `AUTO_CREATE_TABLES` | true | `create_all` at startup; set false in production (Alembic owns the schema) |

@@ -10,7 +10,7 @@ from ..auth import (
     require_user,
     verify_password,
 )
-from ..models import Device, Scan, Session as DbSession, User
+from ..models import Device, Scan, Session as DbSession, User, hash_token
 from ..schemas import (
     ChangePasswordIn,
     MeOut,
@@ -107,7 +107,7 @@ def me_sessions(
             ip=s.ip,
             created_at=s.created_at,
             expires_at=s.expires_at,
-            is_current=(s.token == current_token),
+            is_current=(current_token is not None and s.token == hash_token(current_token)),
         ))
     return out
 

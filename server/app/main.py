@@ -16,10 +16,12 @@ from .scheduler import scheduler_loop
 logger = logging.getLogger(__name__)
 
 # In dev + teste cream tabelele la pornire (rapid, fara pasi manuali).
-# In productie se foloseste Alembic: `alembic upgrade head` (vezi server/alembic/).
-# Migrarile sunt sursa de adevar pentru schema; create_all ramane convenabil
-# pentru SQLite-ul din teste si pentru pornirea locala rapida.
-Base.metadata.create_all(bind=engine)
+# In productie se foloseste Alembic: `alembic upgrade head` (vezi server/alembic/)
+# si se seteaza AUTO_CREATE_TABLES=false ca cele doua mecanisme sa nu se
+# suprapuna. Migrarile sunt sursa de adevar pentru schema; create_all ramane
+# convenabil pentru SQLite-ul din teste si pentru pornirea locala rapida.
+if os.getenv("AUTO_CREATE_TABLES", "true").lower() == "true":
+    Base.metadata.create_all(bind=engine)
 
 
 @asynccontextmanager

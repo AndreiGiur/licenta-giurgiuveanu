@@ -169,12 +169,28 @@ def write_config(cfg: configparser.ConfigParser) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with CONFIG_FILE.open("w", encoding="utf-8") as f:
         cfg.write(f)
-    # Permisiuni 0600 pe POSIX (token-ul este sensibil).
+    # Token-ul plain e sensibil — restrangem accesul la fisier doar la userul
+    # curent, echivalentul lui chmod 0600 pe fiecare OS.
     if os.name == "posix":
         try:
             os.chmod(CONFIG_FILE, stat.S_IRUSR | stat.S_IWUSR)
         except OSError:
             pass
+    elif os.name == "nt":
+        # icacls: taie mostenirea ACL si lasa doar userul curent (+SYSTEM,
+        # ca serviciul Windows sa poata citi configul). Best-effort: daca
+        # icacls lipseste sau da eroare, fisierul ramane cu ACL-urile default.
+        username = os.environ.get("USERNAME")
+        if username:
+            try:
+                subprocess.run(
+                    ["icacls", str(CONFIG_FILE), "/inheritance:r",
+                     "/grant:r", f"{username}:F", "/grant:r", "SYSTEM:F"],
+                    capture_output=True, timeout=10,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except (OSError, subprocess.SubprocessError):
+                pass
 
 
 def clear_config() -> bool:

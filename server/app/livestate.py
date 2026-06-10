@@ -3,6 +3,12 @@
 Date efemere de tip 'live monitor' — se pierd la restart backend (acceptabil,
 nu e istoric de pastrat). Capat la 60 sample-uri/device (~10 min la 10s).
 Thread-safe (heartbeat-urile pot veni concurent).
+
+LIMITARE ASUMATA: buffer-ul traieste in memoria procesului, deci functioneaza
+corect doar cu un singur worker uvicorn. Cu `--workers N`, heartbeat-ul poate
+ateriza pe alt proces decat cel care serveste UI-ul si graficul live ar aparea
+gol/incomplet. Pentru deploy multi-worker ar trebui mutat in Redis — out of
+scope pentru o platforma self-hosted single-instance.
 """
 from __future__ import annotations
 

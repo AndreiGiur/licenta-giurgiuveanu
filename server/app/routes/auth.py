@@ -1,8 +1,6 @@
 """Endpoint-uri de autentificare: register, login, me, logout + Google OAuth web flow."""
 from __future__ import annotations
 
-import secrets
-
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -20,10 +18,10 @@ from ..auth import (
     set_session_cookie,
     verify_password,
 )
-from ..models import Session as DbSession, User
+from ..models import Session as DbSession, User, hash_token
 from ..ratelimit import limiter
 from ..schemas import GoogleAuthUrlOut, LoginIn, MeOut, RegisterIn, TokenOut
-from ._helpers import _consume_state, _store_state, _upsert_google_user
+from ._helpers import _consume_state, _make_state, _upsert_google_user
 
 router = APIRouter()
 
@@ -91,7 +89,7 @@ def logout(
     """Logout idempotent: sterge sesiunea din DB daca exista si curata cookie-ul.
     Nu intoarce 401 daca tokenul lipseste — clientul a vrut deja sa se delogeze."""
     if token:
-        sess = db.execute(select(DbSession).where(DbSession.token == token)).scalar_one_or_none()
+        sess = db.execute(select(DbSession).where(DbSession.token == hash_token(token))).scalar_one_or_none()
         if sess:
             db.delete(sess)
             db.commit()
@@ -110,12 +108,12 @@ def logout(
 
 
 @router.get("/auth/google/url", response_model=GoogleAuthUrlOut, tags=["auth"])
-def google_auth_url():
+@limiter.limit("10/minute")
+def google_auth_url(request: Request):
     """Frontend ia URL-ul si redirect-uieste user-ul catre Google."""
     if not config.GOOGLE_CLIENT_ID_WEB:
         raise HTTPException(status_code=503, detail="Google OAuth nu este configurat")
-    state = secrets.token_urlsafe(32)
-    _store_state(state)
+    state = _make_state()
     url = google_auth.build_authorization_url(
         client_id=config.GOOGLE_CLIENT_ID_WEB,
         redirect_uri=config.GOOGLE_REDIRECT_URI_WEB,
@@ -125,6 +123,7 @@ def google_auth_url():
 
 
 @router.get("/auth/google/callback", tags=["auth"])
+@limiter.limit("10/minute")
 async def google_auth_callback(
     code: str,
     state: str,

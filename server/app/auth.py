@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .models import User, Session as DbSession
+from .models import User, Session as DbSession, hash_token
 
 
 PBKDF2_ITERATIONS = 200_000
@@ -72,10 +72,13 @@ def create_session(db: Session, user_id: int, user_agent: str | None, ip: str | 
     # Cleanup oportunist la creare sesiune noua
     _purge_expired_sessions(db, user_id=user_id)
 
+    # In DB stocam doar SHA-256 al tokenului (acelasi tratament ca device_token).
+    # Tokenul plain pleaca o singura data catre client si nu poate fi recuperat
+    # dintr-un dump al bazei de date.
     token = DbSession.new_token()
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(hours=SESSION_EXPIRE_HOURS)
-    sess = DbSession(user_id=user_id, token=token, user_agent=user_agent, ip=ip, expires_at=expires_at)
+    sess = DbSession(user_id=user_id, token=hash_token(token), user_agent=user_agent, ip=ip, expires_at=expires_at)
     db.add(sess)
     db.commit()
     return token
@@ -129,7 +132,7 @@ def require_user(
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing session token")
 
-    sess = db.execute(select(DbSession).where(DbSession.token == token)).scalar_one_or_none()
+    sess = db.execute(select(DbSession).where(DbSession.token == hash_token(token))).scalar_one_or_none()
     if not sess:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid session token")
 

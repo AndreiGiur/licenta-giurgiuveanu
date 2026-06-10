@@ -54,17 +54,57 @@ def compute_next_run(
     raise ValueError(f"Unknown frequency: {frequency}")
 
 
+def reap_stale_jobs(db, now: datetime | None = None,
+                    timeout_min: int | None = None) -> int:
+    """Marcheaza failed joburile ramase in 'running' peste timeout.
+
+    Fara acest reaper, un agent mort in timpul scanarii (kill, BSOD, net cazut)
+    lasa jobul in 'running' pentru totdeauna: UI-ul polleaza la infinit, iar
+    scheduler_loop refuza sa creeze joburi noi pentru device (vede unul activ),
+    deci scanarile programate se opresc permanent.
+
+    Returneaza numarul de joburi marcate failed."""
+    from . import config
+    from .models import ScanJob, ScanJobStatus
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if timeout_min is None:
+        timeout_min = config.SCAN_JOB_TIMEOUT_MIN
+
+    # Comparam ca naive UTC (SQLite stocheaza naive; pe Postgres sesiunea DB
+    # este fortata pe UTC in db.py, deci interpretarea naive = UTC e corecta).
+    cutoff = (now - timedelta(minutes=timeout_min)).replace(tzinfo=None)
+    stale = db.query(ScanJob).filter(
+        ScanJob.status == ScanJobStatus.RUNNING,
+        ScanJob.started_at.is_not(None),
+        ScanJob.started_at < cutoff,
+    ).all()
+    for job in stale:
+        job.status = ScanJobStatus.FAILED
+        job.finished_at = now.replace(tzinfo=None)
+        job.error_message = (
+            f"timeout: agentul nu a raportat nimic in {timeout_min} minute "
+            "(proces oprit sau conexiune pierduta in timpul scanarii)"
+        )
+        logger.warning("Reaped stale running job id=%s (device_id=%s)",
+                       job.id, job.device_id)
+    return len(stale)
+
+
 async def scheduler_loop(session_factory, poll_interval: int = 60):
-    """Background loop care creeaza ScanJob-uri pentru schedule-uri due.
+    """Background loop care creeaza ScanJob-uri pentru schedule-uri due
+    si curata joburile running ramase blocate (reap_stale_jobs).
 
     Ruleaza ca asyncio.Task pornit la startup-ul aplicatiei via FastAPI lifespan.
-    Skip pe SC_DISABLED_SCHEDULER=true (folosit in teste)."""
+    Skip pe DISABLE_SCHEDULER=true (folosit in teste)."""
     from .models import Device, ScanJob, ScanSchedule
     logger.info("Scheduler loop started (poll=%ds)", poll_interval)
     while True:
         try:
             with session_factory() as db:
                 now_aware = datetime.now(timezone.utc)
+                reap_stale_jobs(db, now=now_aware)
                 # SQLite stocheaza naive datetimes; comparam ca naive UTC.
                 now_naive = now_aware.replace(tzinfo=None)
                 due = db.query(ScanSchedule).filter(

@@ -51,8 +51,10 @@ importa lazy `gui` si `tray` doar daca sunt necesare.
 
 ## Configul local
 
-Stocat la `~/.vulnwatch/config.ini` (creat automat dupa enrollment, permisiuni
-0600 pe POSIX). Sectiunile:
+Stocat la `~/.vulnwatch/config.ini` (creat automat dupa enrollment; tokenul e
+sensibil, deci `write_config` restrange accesul la userul curent: `chmod 0600`
+pe POSIX, `icacls /inheritance:r /grant:r USER:F SYSTEM:F` pe Windows —
+best-effort, SYSTEM pastrat ca serviciul Windows sa poata citi). Sectiunile:
 
 - `[agent]` — credentials + identitate device:
   - `api_base` — URL backend (ex: `http://127.0.0.1:8000/api/v1`)
