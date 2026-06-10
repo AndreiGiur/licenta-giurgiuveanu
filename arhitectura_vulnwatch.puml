@@ -1,0 +1,115 @@
+@startuml arhitectura_vulnwatch
+' Diagrama de componente - platforma VulnWatch
+' Generare: plantuml arhitectura_vulnwatch.puml  (produce un PNG/SVG)
+
+title Arhitectura platformei VulnWatch - diagrama de componente
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam roundCorner 10
+skinparam ArrowColor #2D1B3D
+skinparam package {
+  BackgroundColor #FEFAF2
+  BorderColor #2D1B3D
+  FontColor #2D1B3D
+}
+skinparam component {
+  BackgroundColor #FFF8E6
+  BorderColor #B8860B
+  FontColor #2D1B3D
+}
+skinparam database {
+  BackgroundColor #F4C95D
+  BorderColor #B8860B
+}
+skinparam cloud {
+  BackgroundColor #EFE3F2
+  BorderColor #7A3B69
+}
+
+actor "Utilizator\n(browser)" as User
+
+package "agent/  (daemon Python, masina monitorizata)" as Agent {
+  [scan.py\nCLI] as CLI
+  [gui.py / tray.py\nUI desktop] as GUI
+  [core.py\nlogica de business] as Core
+  package "collectors/" as Collectors {
+    [network] as Net
+    [processes] as Proc
+    [software] as Soft
+    [system_info] as Sys
+    [persistence] as Pers
+    [forensics] as Foren
+    [linux_audit] as Lin
+  }
+  [nmap_runner.py\n+ nmap_parser.py] as Nmap
+  [google_oauth.py\nPKCE loopback] as AgentOAuth
+
+  CLI --> Core
+  GUI --> Core
+  Core --> Collectors
+  Core --> Nmap
+  Core --> AgentOAuth
+}
+
+package "server/  (FastAPI)" as Server {
+  [routes/\nrutele REST /api/v1\n(8 sub-routere)] as API
+  [auth.py\nsesiuni + require_user] as Auth
+  [google_auth.py\nOAuth web] as SrvOAuth
+  [rules.py + rules_linux.py\nmotor de reguli @rule] as Rules
+  [reports.py\nrapoarte PDF] as Reports
+  [scheduler.py\nscanari programate] as Sched
+  [livestate.py\nprogres scanare live] as Live
+  [models.py / db.py\nSQLAlchemy ORM] as ORM
+
+  API --> Auth
+  API --> SrvOAuth
+  API --> Rules
+  API --> Reports
+  API --> Sched
+  API --> Live
+  API --> ORM
+}
+
+package "web/  (React + TypeScript, Vite)" as Web {
+  [api/http.ts\nclient REST] as HTTP
+  [UnifiedDashboard\n+ DeviceSidebar/Workspace] as Dash
+  [ScanDetail] as Devices
+  [Login / Register / Profile / Admin] as Auth2
+  [ThemeProvider\ntema Honey & Plum] as Theme
+
+  Dash --> HTTP
+  Devices --> HTTP
+  Auth2 --> HTTP
+}
+
+database "PostgreSQL" as DB
+cloud "Google OAuth" as Google
+cloud "nmap + NSE (Lua)\nbaza CVE" as NmapEngine
+
+' --- Relatii intre componente ---
+User --> Web : HTTPS (cookie de sesiune)
+Web --> API : REST /api/v1\ncredentials: include
+
+Core --> API : HTTPS outbound\nheartbeat, jobs, rezultate\n(X-Device-Token)
+AgentOAuth ..> Google : id_token (PKCE)
+SrvOAuth ..> Google : code -> id_token
+
+Nmap --> NmapEngine : scan profund (deep)
+ORM --> DB : SQL
+Reports --> DB
+
+note bottom of Agent
+  Model **pull**: agentul nu expune
+  niciun port. Toate conexiunile sunt
+  initiate de agent (outbound HTTPS).
+end note
+
+note right of Rules
+  Scorare multidimensionala pe 4 categorii
+  (weight + confidence per regula).
+  Filtrare automata dupa nivel si OS.
+end note
+
+@enduml
