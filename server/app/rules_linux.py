@@ -12,7 +12,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .rules import rule, VULNERABLE_SOFTWARE
+from . import rules as _rules_mod
+from .rules import rule
 
 
 def _lx(scan: dict[str, Any]) -> dict:
@@ -74,7 +75,9 @@ def rule_lnx_pkg_vulnerable(scan):
     pkgs = _lx(scan).get("packages") or []
     names = [f"{p.get('name', '')} {p.get('version', '')}" for p in pkgs]
     out = []
-    for r in VULNERABLE_SOFTWARE:
+    # Citim VULNERABLE_SOFTWARE dinamic din modul (nu prin valoare la import) ca
+    # un eventual _refresh_from_feed() sa se reflecte si in regulile Linux.
+    for r in _rules_mod.VULNERABLE_SOFTWARE:
         for n in names:
             if r["name_contains"].lower() in n.lower():
                 out.append({"rule_id": "LNX-PKG-VULNERABLE-1", "severity": r["severity"],

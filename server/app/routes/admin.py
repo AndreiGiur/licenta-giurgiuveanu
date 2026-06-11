@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import create_password, get_db, require_admin
@@ -26,15 +27,19 @@ def admin_list_users(
     _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    out: list[AdminUserOut] = []
-    for u in db.query(User).order_by(User.created_at.desc()).all():
-        dc = db.query(Device).filter(Device.owner_id == u.id).count()
-        out.append(AdminUserOut(
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    # Count-uri de device grupate intr-un singur query (nu unul per user).
+    device_counts: dict[int, int] = dict(db.execute(
+        select(Device.owner_id, func.count(Device.id)).group_by(Device.owner_id)
+    ).all())
+    return [
+        AdminUserOut(
             id=u.id, email=u.email, role=u.role,
             auth_provider=u.auth_provider, created_at=u.created_at,
-            device_count=dc,
-        ))
-    return out
+            device_count=device_counts.get(u.id, 0),
+        )
+        for u in users
+    ]
 
 
 @router.delete("/admin/users/{user_id}", status_code=204, tags=["admin"])
@@ -99,19 +104,24 @@ def admin_list_devices(
     _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    out: list[AdminDeviceOut] = []
-    for d in db.query(Device).order_by(Device.created_at.desc()).all():
-        owner = db.query(User).filter(User.id == d.owner_id).first()
-        out.append(AdminDeviceOut(
+    devices = db.query(Device).order_by(Device.created_at.desc()).all()
+    # Emailurile owner-ilor intr-un singur query (nu unul per device).
+    owner_ids = {d.owner_id for d in devices}
+    emails: dict[int, str] = dict(db.execute(
+        select(User.id, User.email).where(User.id.in_(owner_ids))
+    ).all()) if owner_ids else {}
+    return [
+        AdminDeviceOut(
             id=d.id,
             device_uid=d.device_uid,
             name=d.name,
             owner_id=d.owner_id,
-            owner_email=owner.email if owner else "unknown@x.com",
+            owner_email=emails.get(d.owner_id, "unknown@x.com"),
             created_at=d.created_at,
             is_online=d.is_online,
-        ))
-    return out
+        )
+        for d in devices
+    ]
 
 
 @router.get("/admin/scans", response_model=AdminScansPage, tags=["admin"])
@@ -125,16 +135,29 @@ def admin_list_scans(
     offset = max(offset, 0)
     q = db.query(Scan).order_by(Scan.created_at.desc())
     total = q.count()
+    scans = q.offset(offset).limit(limit).all()
+
+    # Batch device + owner pentru pagina curenta (nu 2 query-uri per scan).
+    device_ids = {s.device_id for s in scans}
+    devices: dict[int, Device] = {
+        d.id: d for d in db.execute(
+            select(Device).where(Device.id.in_(device_ids))
+        ).scalars().all()
+    } if device_ids else {}
+    owner_ids = {d.owner_id for d in devices.values()}
+    emails: dict[int, str] = dict(db.execute(
+        select(User.id, User.email).where(User.id.in_(owner_ids))
+    ).all()) if owner_ids else {}
+
     items: list[AdminScanListItem] = []
-    for s in q.offset(offset).limit(limit).all():
-        device = db.query(Device).filter(Device.id == s.device_id).first()
-        owner = db.query(User).filter(User.id == device.owner_id).first() if device else None
+    for s in scans:
+        device = devices.get(s.device_id)
         scan_type = (s.payload or {}).get("scan_type") if s.payload else None
         items.append(AdminScanListItem(
             scan_id=s.id,
             device_uid=device.device_uid if device else "?",
             device_name=device.name if device else "?",
-            owner_email=owner.email if owner else "unknown@x.com",
+            owner_email=emails.get(device.owner_id, "unknown@x.com") if device else "unknown@x.com",
             created_at=s.created_at,
             exposure_score=s.exposure_score,
             scan_type=scan_type,
@@ -150,17 +173,22 @@ def admin_platform_stats(
     """Metrici platforma — pentru sectiunea Platforma din profilul admin."""
     total_users = db.query(User).count()
     total_devices = db.query(Device).count()
-    # devices_online = is_online property (last_heartbeat < 30s)
-    devices_online = sum(1 for d in db.query(Device).all() if d.is_online)
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(hours=24)
-    cutoff_naive = cutoff.replace(tzinfo=None)
+    # devices_online = last_heartbeat in ultimele 30s (echivalentul property-ului
+    # is_online, dar calculat in SQL ca sa nu incarcam toate device-urile).
+    online_cutoff = (now - timedelta(seconds=30)).replace(tzinfo=None)
+    devices_online = db.query(Device).filter(
+        Device.last_heartbeat.is_not(None),
+        Device.last_heartbeat >= online_cutoff,
+    ).count()
+    cutoff_naive = (now - timedelta(hours=24)).replace(tzinfo=None)
     scans_24h = db.query(Scan).filter(Scan.created_at >= cutoff_naive).count()
     scans_total = db.query(Scan).count()
     avg_score: float | None = None
     if scans_total > 0:
-        total = sum(s.exposure_score for s in db.query(Scan).all())
-        avg_score = round(total / scans_total, 1)
+        # Media in SQL (func.avg) in loc sa incarcam toate scanarile in memorie.
+        avg_raw = db.query(func.avg(Scan.exposure_score)).scalar()
+        avg_score = round(float(avg_raw), 1) if avg_raw is not None else None
     return AdminPlatformStatsOut(
         total_users=total_users,
         total_devices=total_devices,

@@ -1,4 +1,4 @@
-"""Generator PDF rapoarte scan — paleta Honey & Plum."""
+"""Generator PDF rapoarte scan — paleta Ocean (albastru + teal)."""
 from __future__ import annotations
 
 import json
@@ -244,21 +244,14 @@ def generate_scan_pdf(scan, device, findings, owner_email: str) -> bytes:
         elements.append(Spacer(1, 0.6 * cm))
 
     # ── Coverage standarde (CIS Controls v8 + NIST CSF 2.0) ──
+    # Finding-urile din DB nu persista campul `compliance`, asa ca il
+    # reconstruim din regula sursa (_RULES) dupa `rule_id`.
     compliance_refs: dict[str, list[str]] = {}  # "CIS-9.2" -> [rule_id-uri care l-au declansat]
+    from .rules import _RULES
+    rules_by_id = {fn._rule_id: getattr(fn, "_compliance", []) for fn in _RULES}
     for f in findings:
-        for ref in (f.evidence.get("_compliance_at_finding", []) if False else (getattr(f, "compliance", None) or [])):
+        for ref in rules_by_id.get(f.rule_id, []):
             compliance_refs.setdefault(ref, []).append(f.rule_id)
-    # Fallback: ia compliance din finding dict (cum vine din evaluate()).
-    if not compliance_refs:
-        # Reincarca compliance per regula din _RULES.
-        try:
-            from .rules import _RULES
-            rules_by_id = {fn._rule_id: getattr(fn, "_compliance", []) for fn in _RULES}
-            for f in findings:
-                for ref in rules_by_id.get(f.rule_id, []):
-                    compliance_refs.setdefault(ref, []).append(f.rule_id)
-        except Exception:
-            pass
 
     if compliance_refs:
         elements.append(Paragraph("Coverage standarde de securitate", h2_style))

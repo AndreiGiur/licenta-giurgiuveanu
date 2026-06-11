@@ -82,7 +82,7 @@ app.add_middleware(
     # Credentials = True este necesar pentru cookie-ul HttpOnly de sesiune.
     # FastAPI/Starlette nu permite "*" cand credentials sunt activate.
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
         "Accept",
         "Content-Type",

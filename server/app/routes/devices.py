@@ -53,17 +53,30 @@ def create_device(payload: DeviceCreateIn, db: Session = Depends(get_db), user: 
 @router.get("/devices", response_model=list[DeviceOut], tags=["devices"])
 def list_devices(db: Session = Depends(get_db), user: User = Depends(require_user)):
     rows = db.execute(select(Device).where(Device.owner_id == user.id).order_by(Device.id.desc())).scalars().all()
-    out: list[DeviceOut] = []
-    for d in rows:
-        scan_count = db.execute(
-            select(func.count(Scan.id)).where(Scan.device_id == d.id)
-        ).scalar_one()
-        last_score = db.execute(
-            select(Scan.exposure_score).where(Scan.device_id == d.id)
-            .order_by(Scan.id.desc()).limit(1)
-        ).scalar_one_or_none()
-        out.append(_device_to_out(d, scan_count=scan_count, last_score=last_score))
-    return out
+
+    # Agregari intr-un numar fix de query-uri (nu 2 per device): count-uri
+    # grupate + scorul ultimului scan (max(Scan.id) per device).
+    counts: dict[int, int] = dict(db.execute(
+        select(Scan.device_id, func.count(Scan.id))
+        .join(Device, Scan.device_id == Device.id)
+        .where(Device.owner_id == user.id)
+        .group_by(Scan.device_id)
+    ).all())
+    latest_ids = (
+        select(func.max(Scan.id))
+        .join(Device, Scan.device_id == Device.id)
+        .where(Device.owner_id == user.id)
+        .group_by(Scan.device_id)
+        .scalar_subquery()
+    )
+    last_scores: dict[int, int] = dict(db.execute(
+        select(Scan.device_id, Scan.exposure_score).where(Scan.id.in_(latest_ids))
+    ).all())
+
+    return [
+        _device_to_out(d, scan_count=counts.get(d.id, 0), last_score=last_scores.get(d.id))
+        for d in rows
+    ]
 
 
 # ── Smart re-link ────────────────────────────────────────────────────────────
