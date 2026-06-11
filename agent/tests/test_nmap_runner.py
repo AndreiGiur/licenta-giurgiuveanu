@@ -36,10 +36,34 @@ def test_nse_script_path_replaces_audit_name():
                            profile="deep", nse_script_path=p)
     joined = " ".join(args)
     assert p in joined
-    assert "vuln,default,auth,banner" in joined  # built-in scripts raman dupa nume
+    # categoriile built-in raman, dar in expresie cu excludere (vezi testul dedicat)
+    assert "vuln" in joined and "default" in joined and "banner" in joined
     # legacy
     args2 = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml", nse_script_path=p)
     assert p in " ".join(args2)
+
+
+def test_nse_path_with_categories_excludes_db_duplicate():
+    """Regresie 'duplicate script ID' (scan 29, 2026-06-11): cand scriptul e dat
+    pe cale absoluta DAR e instalat si in scripts dir-ul nmap (installer-ul il
+    copiaza), categoria 'vuln' il incarca a doua oara si nmap face abort.
+    Fix: categoriile se trec intr-o expresie cu 'and not vulnwatch-audit'."""
+    p = "/opt/agent/nse/vulnwatch-audit.nse"
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                           profile="deep", nse_script_path=p)
+    script_arg = args[args.index("--script") + 1]
+    assert script_arg.startswith(p + ",")
+    assert "((vuln or default or auth or banner) and not vulnwatch-audit)" in script_arg
+    assert script_arg.count("vulnwatch-audit.nse") == 1
+
+
+def test_nse_path_advanced_stays_path_only():
+    """Advanced are doar scriptul nostru (fara categorii) -- calea simpla, fara expresie."""
+    p = "/opt/agent/nse/vulnwatch-audit.nse"
+    args = build_nmap_args(targets=["127.0.0.1"], xml_out="x.xml",
+                           profile="advanced", nse_script_path=p)
+    script_arg = args[args.index("--script") + 1]
+    assert script_arg == p
 
 
 def test_no_nse_path_keeps_audit_by_name():

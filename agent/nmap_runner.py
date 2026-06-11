@@ -122,9 +122,18 @@ def build_nmap_args(
     Asa nmap il gaseste fara sa-l copiem in scripts dir-ul de sistem (care pe
     Linux cere root) — nmap accepta cai absolute in `--script`."""
     def _scripts(s: str) -> str:
-        if nse_script_path:
-            return s.replace("vulnwatch-audit", nse_script_path)
-        return s
+        """Inlocuieste 'vulnwatch-audit' cu calea absoluta SI exclude copia din
+        scripts dir-ul nmap din expansiunea categoriilor. Installer-ul copiaza
+        scriptul in system dir (script.db, categorii safe/discovery/vuln), deci
+        fara excludere 'vuln' l-ar incarca a doua oara -> nmap abort cu
+        'duplicate script ID' (bug scan 29 / 2026-06-11, doar pe deep)."""
+        if not nse_script_path:
+            return s
+        categories = [p for p in s.split(",") if p != "vulnwatch-audit"]
+        out = [nse_script_path]
+        if categories:
+            out.append(f"(({' or '.join(categories)}) and not vulnwatch-audit)")
+        return ",".join(out)
 
     if profile in NMAP_PROFILES:
         prof = NMAP_PROFILES[profile]
