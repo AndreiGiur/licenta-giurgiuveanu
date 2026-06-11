@@ -269,3 +269,128 @@ def test_pwsh_encoded_cmdline_fires():
         {"pid": 9, "name": "pwsh.exe", "cmdline": "pwsh.exe -EncodedCommand QQBC"},
     ])
     assert "PROC-ENCODED-CMDLINE-1" in _rule_ids(scan)
+
+
+# -- DEFENDER-EXCLUSIONS-1 (deep) ----------------------------------------------
+
+def test_defender_exclusion_root_fires():
+    scan = _scan("deep", system_info={"defender": {"enabled": True, "exclusions": {
+        "paths": ["C:\\", "C:\\dev\\proiect"], "processes": [], "extensions": [],
+    }}})
+    assert "DEFENDER-EXCLUSIONS-1" in _rule_ids(scan)
+
+
+def test_defender_exclusion_powershell_process_fires():
+    scan = _scan("deep", system_info={"defender": {"enabled": True, "exclusions": {
+        "paths": [], "processes": ["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"],
+        "extensions": [],
+    }}})
+    assert "DEFENDER-EXCLUSIONS-1" in _rule_ids(scan)
+
+
+def test_defender_narrow_exclusion_quiet():
+    scan = _scan("deep", system_info={"defender": {"enabled": True, "exclusions": {
+        "paths": ["C:\\dev\\proiect\\node_modules"], "processes": ["msbuild.exe"],
+        "extensions": [],
+    }}})
+    assert "DEFENDER-EXCLUSIONS-1" not in _rule_ids(scan)
+
+
+# -- ARP-SPOOF-1 (deep) ---------------------------------------------------------
+
+def test_arp_duplicate_mac_fires():
+    scan = _scan("deep", forensics={"arp_table": [
+        {"ip": "192.168.1.1", "mac": "aa-bb-cc-dd-ee-ff"},
+        {"ip": "192.168.1.50", "mac": "aa-bb-cc-dd-ee-ff"},
+        {"ip": "192.168.1.7", "mac": "11-22-33-44-55-66"},
+    ]})
+    assert "ARP-SPOOF-1" in _rule_ids(scan)
+
+
+def test_arp_broadcast_and_multicast_ignored():
+    scan = _scan("deep", forensics={"arp_table": [
+        {"ip": "192.168.1.255", "mac": "ff-ff-ff-ff-ff-ff"},
+        {"ip": "224.0.0.22", "mac": "01-00-5e-00-00-16"},
+        {"ip": "224.0.0.251", "mac": "01-00-5e-00-00-fb"},
+        {"ip": "192.168.1.1", "mac": "aa-bb-cc-dd-ee-ff"},
+    ]})
+    assert "ARP-SPOOF-1" not in _rule_ids(scan)
+
+
+# -- DNS-SUSPICIOUS-1 (deep) ------------------------------------------------------
+
+def test_dns_punycode_fires():
+    scan = _scan("deep", forensics={"dns_cache": [
+        {"name": "xn--pple-43d.com", "ip": "1.2.3.4"},
+    ]})
+    assert "DNS-SUSPICIOUS-1" in _rule_ids(scan)
+
+
+def test_dns_abused_tld_fires():
+    scan = _scan("deep", forensics={"dns_cache": [
+        {"name": "login-update.tk", "ip": "5.6.7.8"},
+    ]})
+    assert "DNS-SUSPICIOUS-1" in _rule_ids(scan)
+
+
+def test_dns_dga_label_fires():
+    scan = _scan("deep", forensics={"dns_cache": [
+        {"name": "xkcdqwrtzpsdfghjklbnmvcxzqwrt.com", "ip": "9.9.9.9"},
+    ]})
+    assert "DNS-SUSPICIOUS-1" in _rule_ids(scan)
+
+
+def test_dns_normal_domains_quiet():
+    scan = _scan("deep", forensics={"dns_cache": [
+        {"name": "www.google.com", "ip": "142.250.1.1"},
+        {"name": "github.com", "ip": "140.82.1.1"},
+        {"name": "fastapi.tiangolo.com", "ip": "1.1.1.1"},
+    ]})
+    assert "DNS-SUSPICIOUS-1" not in _rule_ids(scan)
+
+
+# -- RECENT-SYSTEM-FILES-1 (deep) --------------------------------------------------
+
+def test_recent_executable_in_system32_fires():
+    scan = _scan("deep", forensics={"recent_files": [
+        {"path": "C:\\Windows\\System32\\evil.dll", "modified": "2026-06-10T12:00:00"},
+    ]})
+    assert "RECENT-SYSTEM-FILES-1" in _rule_ids(scan)
+
+
+def test_recent_non_executable_quiet():
+    scan = _scan("deep", forensics={"recent_files": [
+        {"path": "C:\\Windows\\System32\\config.log", "modified": "2026-06-10T12:00:00"},
+    ]})
+    assert "RECENT-SYSTEM-FILES-1" not in _rule_ids(scan)
+
+
+# -- AUDIT-POLICY-OFF-1 (deep) -----------------------------------------------------
+
+def test_audit_logon_off_fires():
+    scan = _scan("deep", system_info={"audit_policy": {
+        "audit_logon": 0, "audit_account_manage": 3,
+    }})
+    assert "AUDIT-POLICY-OFF-1" in _rule_ids(scan)
+
+
+def test_audit_all_on_quiet():
+    scan = _scan("deep", system_info={"audit_policy": {
+        "audit_logon": 3, "audit_account_manage": 3,
+    }})
+    assert "AUDIT-POLICY-OFF-1" not in _rule_ids(scan)
+
+
+def test_audit_absent_quiet():
+    assert "AUDIT-POLICY-OFF-1" not in _rule_ids(_scan("deep", system_info={}))
+
+
+# -- nivel: regulile deep nu ruleaza la advanced ------------------------------------
+
+def test_deep_rules_skipped_at_advanced():
+    scan = _scan("advanced",
+                 system_info={"audit_policy": {"audit_logon": 0}},
+                 forensics={"dns_cache": [{"name": "a.tk", "ip": "1.1.1.1"}]})
+    ids = _rule_ids(scan)
+    assert "AUDIT-POLICY-OFF-1" not in ids
+    assert "DNS-SUSPICIOUS-1" not in ids
