@@ -39,6 +39,20 @@ def collect_system(cfg: ScanProfile) -> dict:
         smb1 = _smb1_status()
         if smb1 is not None:
             out["smb1_enabled"] = smb1
+    if platform.system() == "Windows" and (cfg.include_password_policy or cfg.include_audit_policy):
+        inf = _secedit_export()
+        if inf:
+            parsed = _parse_secedit_inf(inf)
+            if cfg.include_password_policy:
+                pw = {k: parsed[k] for k in
+                      ("min_password_length", "max_password_age_days", "lockout_threshold")
+                      if k in parsed}
+                if pw:
+                    out["password_policy"] = pw
+            if cfg.include_audit_policy:
+                ap = {k: parsed[k] for k in ("audit_logon", "audit_account_manage") if k in parsed}
+                if ap:
+                    out["audit_policy"] = ap
     return out
 
 
@@ -125,6 +139,61 @@ def _smb1_status() -> bool | None:
     if val is None:
         return None
     return bool(val)
+
+
+def _to_int(val: str) -> int | None:
+    try:
+        return int(str(val).strip().strip('"'))
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_secedit_inf(text: str) -> dict:
+    """Parseaza INF-ul exportat de secedit. Cheile sunt fixe si numerice --
+    imune la localizarea Windows (spre deosebire de `net accounts`/`auditpol`)."""
+    out: dict = {}
+    section = ""
+    mapping = {
+        ("system access", "minimumpasswordlength"): "min_password_length",
+        ("system access", "maximumpasswordage"): "max_password_age_days",
+        ("system access", "lockoutbadcount"): "lockout_threshold",
+        ("event audit", "auditlogonevents"): "audit_logon",
+        ("event audit", "auditaccountmanage"): "audit_account_manage",
+    }
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1].lower()
+            continue
+        if "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        target = mapping.get((section, key.strip().lower()))
+        if target is None:
+            continue
+        num = _to_int(val)
+        if num is not None:
+            out[target] = num
+    return out
+
+
+def _secedit_export() -> str | None:
+    """Exporta politica locala de securitate (INF). None la esec/fara admin."""
+    import tempfile
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = os.path.join(td, "sec.inf")
+            r = subprocess.run(
+                ["secedit", "/export", "/cfg", cfg_path, "/areas", "SECURITYPOLICY", "/quiet"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode != 0 or not os.path.exists(cfg_path):
+                return None
+            # secedit scrie UTF-16 LE cu BOM
+            with open(cfg_path, encoding="utf-16") as f:
+                return f.read()
+    except (subprocess.SubprocessError, OSError, UnicodeError):
+        return None
 
 
 def _ps(script: str, timeout: int = 30) -> str | None:

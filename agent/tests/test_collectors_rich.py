@@ -91,3 +91,49 @@ def test_new_profile_flags_per_level():
     assert deep.include_wifi_profiles is True
     assert deep.include_password_policy is True
     assert deep.include_audit_policy is True
+
+
+SECEDIT_INF_FIXTURE = """[Unicode]
+Unicode=yes
+[System Access]
+MinimumPasswordAge = 0
+MaximumPasswordAge = 42
+MinimumPasswordLength = 0
+PasswordComplexity = 1
+LockoutBadCount = 0
+[Event Audit]
+AuditSystemEvents = 0
+AuditLogonEvents = 0
+AuditAccountManage = 3
+[Version]
+signature="$CHICAGO$"
+"""
+
+
+def test_parse_secedit_inf_extracts_numeric_keys():
+    parsed = si._parse_secedit_inf(SECEDIT_INF_FIXTURE)
+    assert parsed["min_password_length"] == 0
+    assert parsed["max_password_age_days"] == 42
+    assert parsed["lockout_threshold"] == 0
+    assert parsed["audit_logon"] == 0
+    assert parsed["audit_account_manage"] == 3
+
+
+def test_parse_secedit_inf_garbage_returns_empty():
+    assert si._parse_secedit_inf("nu e un INF valid") == {}
+
+
+def test_collect_system_splits_password_and_audit_policy(monkeypatch):
+    import platform as plat
+    if plat.system() != "Windows":
+        return  # colectarea e Windows-only (pattern existent in test_collectors.py)
+    from agent.core import ScanProfile
+    monkeypatch.setattr(si, "_secedit_export", lambda: SECEDIT_INF_FIXTURE)
+    # dezactiveaza colectarile lente irelevante pentru acest test
+    cfg = ScanProfile(include_firewall=False, include_users=False,
+                      include_password_policy=True, include_audit_policy=True)
+    data = si.collect_system(cfg)
+    assert data["password_policy"] == {
+        "min_password_length": 0, "max_password_age_days": 42, "lockout_threshold": 0,
+    }
+    assert data["audit_policy"] == {"audit_logon": 0, "audit_account_manage": 3}
