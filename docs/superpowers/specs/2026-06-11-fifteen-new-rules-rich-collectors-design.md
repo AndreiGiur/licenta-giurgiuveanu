@@ -33,7 +33,7 @@ la deep.
 | `OS-UPTIME-1` | any | hygiene | 0.5 | 1.0 | low | `os.uptime_seconds` > 30 zile (prag `UPTIME_DAYS_THRESHOLD` in config.py) | CIS-7.3, NIST-PR.PS-02 |
 | `UAC-DISABLED-1` | windows | hygiene | 1.2 | 1.0 | high | `system_info.uac.enable_lua == false` SAU `consent_prompt_admin == 0` (silent elevate) | CIS-4.1, CIS-5.4, NIST-PR.AA-05 |
 | `AUTOLOGON-PASSWORD-1` | windows | critical_risk | 1.5 | 1.0 | critical | `system_info.autologon.password_present == true` (parola in clar in registry) | CIS-5.2, CIS-4.1, NIST-PR.AA-01 |
-| `SMB1-ENABLED-1` | windows | network_exposure | 1.5 | 1.0 | high | `system_info.smb1_enabled == true` (DOAR la valoare explicita 1 in registry — lipsa cheii nu declanseaza) | CIS-4.2, CIS-4.8, NIST-PR.PS-01, NIST-ID.RA-01 |
+| `SMB-LEGACY-1` (initial `SMB1-ENABLED-1`; redenumit la implementare — conventia rule ID nu permite cifre in segment) | windows | network_exposure | 1.5 | 1.0 | high | `system_info.smb1_enabled == true` (DOAR la valoare explicita 1 in registry — lipsa cheii nu declanseaza) | CIS-4.2, CIS-4.8, NIST-PR.PS-01, NIST-ID.RA-01 |
 | `USER-GUEST-ENABLED-1` | windows | hygiene | 1.0 | 1.0 | medium | cont `Guest` cu `enabled == true`, SAU orice cont activ cu `password_required == false` | CIS-5.2, CIS-5.3, NIST-PR.AA-01 |
 
 ### Advanced (5)
