@@ -123,6 +123,21 @@ def test_parse_secedit_inf_garbage_returns_empty():
     assert si._parse_secedit_inf("nu e un INF valid") == {}
 
 
+def test_parse_secedit_inf_strips_leading_bom():
+    # utf-16-le NU consuma BOM-ul la citire — parserul nu trebuie sa piarda
+    # prima sectiune din cauza lui
+    parsed = si._parse_secedit_inf("﻿" + SECEDIT_INF_FIXTURE)
+    assert parsed["min_password_length"] == 0
+    assert parsed["audit_account_manage"] == 3
+
+
+def test_parse_secedit_inf_negative_max_age_passes_through():
+    # MaximumPasswordAge = -1 inseamna "parola nu expira" — valoarea ajunge
+    # ca atare la server, unde regula decide semnificatia
+    inf = "[System Access]\nMaximumPasswordAge = -1\n"
+    assert si._parse_secedit_inf(inf) == {"max_password_age_days": -1}
+
+
 def test_collect_system_splits_password_and_audit_policy(monkeypatch):
     import platform as plat
     if plat.system() != "Windows":

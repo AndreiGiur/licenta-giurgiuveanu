@@ -153,6 +153,9 @@ def _parse_secedit_inf(text: str) -> dict:
     imune la localizarea Windows (spre deosebire de `net accounts`/`auditpol`)."""
     out: dict = {}
     section = ""
+    # strip BOM defensiv: corectitudinea parserului nu trebuie sa depinda de
+    # encoding-ul ales de caller (utf-16 il consuma, utf-16-le NU)
+    text = text.lstrip("﻿")
     mapping = {
         ("system access", "minimumpasswordlength"): "min_password_length",
         ("system access", "maximumpasswordage"): "max_password_age_days",
