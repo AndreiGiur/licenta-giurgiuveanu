@@ -698,7 +698,8 @@ def collect_system_data(device_uid: str, scan_type: str = "standard",
 
     os_keys = ("system", "release", "version", "machine", "hostname",
                "uptime_seconds", "is_admin", "username")
-    si_keys = ("local_users", "firewall", "bitlocker", "defender")
+    si_keys = ("local_users", "firewall", "bitlocker", "defender",
+               "uac", "autologon", "smb1_enabled", "password_policy", "audit_policy")
 
     return {
         "device_uid": device_uid,

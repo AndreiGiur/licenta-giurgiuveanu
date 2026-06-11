@@ -33,6 +33,12 @@ def collect_system(cfg: ScanProfile) -> dict:
         out["bitlocker"] = _bitlocker_status()
     if cfg.include_defender and platform.system() == "Windows":
         out["defender"] = _defender_status()
+    if platform.system() == "Windows":
+        out["uac"] = _uac_status()
+        out["autologon"] = _autologon_status()
+        smb1 = _smb1_status()
+        if smb1 is not None:
+            out["smb1_enabled"] = smb1
     return out
 
 
@@ -47,6 +53,78 @@ def _is_admin() -> bool:
         return os.geteuid() == 0  # type: ignore[attr-defined]
     except Exception:
         return False
+
+
+_POLICIES_SYSTEM = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+_WINLOGON_KEY = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+_LANMAN_PARAMS = r"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+
+
+def _reg_value(path: str, name: str):
+    """Citeste o valoare din HKLM. None daca lipseste / non-Windows."""
+    try:
+        import winreg  # type: ignore[import-not-found]
+        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+        try:
+            val, _ = winreg.QueryValueEx(k, name)
+            return val
+        finally:
+            winreg.CloseKey(k)
+    except (ImportError, FileNotFoundError, OSError):
+        return None
+
+
+def _reg_value_exists(path: str, name: str) -> bool:
+    """True daca valoarea exista in HKLM -- enumerare nume, datele NU se citesc.
+    Folosit pentru DefaultPassword (privacy: nu aducem parola in memorie)."""
+    try:
+        import winreg  # type: ignore[import-not-found]
+        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+        try:
+            i = 0
+            while True:
+                vname, _, _ = winreg.EnumValue(k, i)
+                if vname.lower() == name.lower():
+                    return True
+                i += 1
+        except OSError:
+            return False
+        finally:
+            winreg.CloseKey(k)
+    except (ImportError, FileNotFoundError, OSError):
+        return False
+
+
+def _uac_status() -> dict:
+    """EnableLUA + ConsentPromptBehaviorAdmin din Policies\\System."""
+    out: dict = {}
+    enable_lua = _reg_value(_POLICIES_SYSTEM, "EnableLUA")
+    if enable_lua is not None:
+        out["enable_lua"] = bool(enable_lua)
+    consent = _reg_value(_POLICIES_SYSTEM, "ConsentPromptBehaviorAdmin")
+    if consent is not None:
+        out["consent_prompt_admin"] = int(consent)
+    return out
+
+
+def _autologon_status() -> dict:
+    """AutoAdminLogon + DefaultUserName + PREZENTA DefaultPassword (bool).
+    Valoarea parolei nu se citeste niciodata (vezi _reg_value_exists)."""
+    auto = str(_reg_value(_WINLOGON_KEY, "AutoAdminLogon") or "0").strip()
+    return {
+        "enabled": auto == "1",
+        "default_username": str(_reg_value(_WINLOGON_KEY, "DefaultUserName") or ""),
+        "password_present": _reg_value_exists(_WINLOGON_KEY, "DefaultPassword"),
+    }
+
+
+def _smb1_status() -> bool | None:
+    """SMB1 din LanmanServer Parameters. None = cheia lipseste (default OS --
+    pe Win10+ inseamna dezactivat; regula NU se declanseaza pe None)."""
+    val = _reg_value(_LANMAN_PARAMS, "SMB1")
+    if val is None:
+        return None
+    return bool(val)
 
 
 def _ps(script: str, timeout: int = 30) -> str | None:
