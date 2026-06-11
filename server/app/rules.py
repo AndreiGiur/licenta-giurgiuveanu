@@ -985,3 +985,4 @@ def collect_nmap_lua_findings(scan: dict) -> list[dict] | None:
 # (decoratorul @rule din acest modul le adauga la import).
 # ─────────────────────────────────────────────────────────────────────────────
 from . import rules_linux  # noqa: E402,F401  (trebuie dupa definirea @rule)
+from . import rules_extended  # noqa: E402,F401  (idem -- reguli 2026-06-11)
