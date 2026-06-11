@@ -163,3 +163,159 @@ def check_guest_or_passwordless(scan: dict) -> dict | None:
             "parole obligatorii pentru toate conturile active."
         ),
     }
+
+
+# -----------------------------------------------------------------------------
+# ADVANCED (5)
+# -----------------------------------------------------------------------------
+
+
+@rule("PROC-ENCODED-CMDLINE-1", min_level="advanced", category="activity",
+      weight=1.2, confidence=0.8,
+      compliance=["CIS-8.5", "CIS-10.7", "NIST-DE.AE-02"], os="windows")
+def check_encoded_cmdline(scan: dict) -> dict | None:
+    procs = scan.get("processes", []) or []
+    suspicious = []
+    for p in procs:
+        name = (p.get("name") or "").lower()
+        if "powershell" not in name and "pwsh" not in name:
+            continue
+        cmdline = (p.get("cmdline") or "").lower()
+        if any(pat in cmdline for pat in PS_OFFENSIVE_CMDLINE_PATTERNS):
+            suspicious.append({
+                "pid": p.get("pid"), "name": p.get("name"),
+                "cmdline": (p.get("cmdline") or "")[:200],
+            })
+    if not suspicious:
+        return None
+    return {
+        "rule_id": "PROC-ENCODED-CMDLINE-1",
+        "title": "Proces PowerShell rulant cu comanda encodata/ofensiva",
+        "severity": "high",
+        "evidence": {"processes": suspicious[:10]},
+        "recommendation": (
+            "Comenzile -EncodedCommand/IEX/DownloadString sunt tipice payload-urilor "
+            "ofensive. Investigheaza procesul parinte si opreste procesul daca nu e legitim."
+        ),
+    }
+
+
+@rule("WIFI-INSECURE-1", min_level="advanced", category="network_exposure", weight=1.0,
+      compliance=["CIS-12.6", "NIST-PR.IR-01"], os="windows")
+def check_wifi_insecure(scan: dict) -> dict | None:
+    profiles = (scan.get("network", {}) or {}).get("wifi_profiles", []) or []
+    flagged = []
+    worst = "medium"
+    for p in profiles:
+        auth = (p.get("authentication") or "").lower()
+        sev = WIFI_INSECURE_AUTH.get(auth)
+        if sev is None:
+            continue
+        flagged.append({"ssid": p.get("ssid"), "authentication": p.get("authentication")})
+        if sev == "high":
+            worst = "high"
+    if not flagged:
+        return None
+    return {
+        "rule_id": "WIFI-INSECURE-1",
+        "title": "Profile WiFi salvate cu autentificare nesigura",
+        "severity": worst,
+        "evidence": {"profiles": flagged},
+        "recommendation": (
+            "Sterge profilele nesigure (netsh wlan delete profile name=\"<SSID>\") "
+            "sau reconfigureaza retelele pe WPA2/WPA3. Retelele Open/WEP permit "
+            "interceptarea traficului."
+        ),
+    }
+
+
+@rule("PASS-POLICY-WEAK-1", min_level="advanced", category="hygiene", weight=1.0,
+      compliance=["CIS-5.2", "NIST-PR.AA-01"], os="windows")
+def check_password_policy(scan: dict) -> dict | None:
+    pol = (scan.get("system_info", {}) or {}).get("password_policy", {}) or {}
+    if not pol:
+        return None
+    issues = []
+    mpl = pol.get("min_password_length")
+    if isinstance(mpl, int) and mpl < MIN_PASSWORD_LENGTH_THRESHOLD:
+        issues.append(
+            f"Lungime minima parola: {mpl} (recomandat >= {MIN_PASSWORD_LENGTH_THRESHOLD})")
+    lockout = pol.get("lockout_threshold")
+    if isinstance(lockout, int) and lockout == 0:
+        issues.append("Account lockout dezactivat (LockoutBadCount=0)")
+    max_age = pol.get("max_password_age_days")
+    if isinstance(max_age, int) and max_age <= 0:
+        issues.append("Parolele nu expira niciodata (MaximumPasswordAge <= 0)")
+    if not issues:
+        return None
+    return {
+        "rule_id": "PASS-POLICY-WEAK-1",
+        "title": "Politica locala de parole este slaba",
+        "severity": "medium",
+        "evidence": {"issues": issues, "policy": pol},
+        "recommendation": (
+            "Configureaza in secpol.msc: lungime minima >= 8, "
+            "account lockout threshold 5-10 incercari, expirare parola <= 365 zile."
+        ),
+    }
+
+
+def _is_unquoted_path_with_spaces(path: str) -> bool:
+    """True pentru path de serviciu necitat cu spatii inainte de .exe --
+    vectorul clasic 'unquoted service path' de escaladare de privilegii."""
+    p = (path or "").strip()
+    if not p or p.startswith('"'):
+        return False
+    low = p.lower()
+    idx = low.find(".exe")
+    exe_part = p[: idx + 4] if idx != -1 else p
+    return " " in exe_part
+
+
+@rule("SVC-UNQUOTED-PATH-1", min_level="advanced", category="hygiene",
+      weight=0.8, confidence=0.9,
+      compliance=["CIS-4.1", "NIST-PR.PS-01"], os="windows")
+def check_unquoted_service_paths(scan: dict) -> dict | None:
+    services = (scan.get("persistence", {}) or {}).get("services", []) or []
+    flagged = [
+        {"name": s.get("name"), "path": s.get("binary_path")}
+        for s in services
+        if _is_unquoted_path_with_spaces(s.get("binary_path", ""))
+    ]
+    if not flagged:
+        return None
+    return {
+        "rule_id": "SVC-UNQUOTED-PATH-1",
+        "title": "Servicii cu path necitat continand spatii (unquoted service path)",
+        "severity": "medium",
+        "evidence": {"services": flagged[:20]},
+        "recommendation": (
+            "Adauga ghilimele in jurul path-ului executabilului: "
+            "sc config <name> binPath= '\"C:\\Program Files\\App\\svc.exe\"'. "
+            "Un atacator poate planta C:\\Program.exe pentru escaladare."
+        ),
+    }
+
+
+@rule("PORT-PROCESS-SUSPECT-1", min_level="advanced", category="network_exposure", weight=1.2,
+      compliance=["CIS-4.5", "CIS-13.5", "NIST-DE.CM-01"], os="windows")
+def check_listener_user_writable(scan: dict) -> dict | None:
+    listeners = (scan.get("network", {}) or {}).get("port_processes", []) or []
+    flagged = [
+        {"port": li.get("port"), "process": li.get("process"), "exe": li.get("exe")}
+        for li in listeners
+        if any(pat in (li.get("exe") or "").lower() for pat in SUSPICIOUS_STARTUP_PATHS)
+    ]
+    if not flagged:
+        return None
+    return {
+        "rule_id": "PORT-PROCESS-SUSPECT-1",
+        "title": "Proces din director user-writable asculta pe retea",
+        "severity": "high",
+        "evidence": {"listeners": flagged[:20]},
+        "recommendation": (
+            "Un executabil din Temp/AppData care asculta pe un port este tipic "
+            "pentru backdoor-uri. Verifica semnatura si provenienta; opreste "
+            "procesul si scaneaza sistemul daca nu il recunosti."
+        ),
+    }
