@@ -152,3 +152,19 @@ def test_collect_system_splits_password_and_audit_policy(monkeypatch):
         "min_password_length": 0, "max_password_age_days": 42, "lockout_threshold": 0,
     }
     assert data["audit_policy"] == {"audit_logon": 0, "audit_account_manage": 3}
+
+
+def test_defender_status_includes_exclusions(monkeypatch):
+    def fake_ps(script, timeout=30):
+        if "Get-MpPreference" in script:
+            return ('{"ExclusionPath":["C:\\\\Users","C:\\\\dev\\\\tools"],'
+                    '"ExclusionProcess":"powershell.exe","ExclusionExtension":null}')
+        if "Get-MpComputerStatus" in script:
+            return '{"AMRunningMode":"Normal","RealTimeProtectionEnabled":true,"AntivirusSignatureLastUpdated":""}'
+        return None
+
+    monkeypatch.setattr(si, "_ps", fake_ps)
+    result = si._defender_status()
+    assert result["exclusions"]["paths"] == ["C:\\Users", "C:\\dev\\tools"]
+    assert result["exclusions"]["processes"] == ["powershell.exe"]  # scalar -> lista
+    assert result["exclusions"]["extensions"] == []                  # null -> lista goala

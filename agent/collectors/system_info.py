@@ -353,5 +353,29 @@ def _defender_status() -> dict:
                     third_party.append({"name": name, "product_state": state})
         except (json.JSONDecodeError, ValueError, TypeError):
             pass
+    # Exclusions Defender (tactica frecventa de malware: exclude C:\, Temp, powershell).
+    excl_out = _ps(
+        "Get-MpPreference -ErrorAction SilentlyContinue | "
+        "Select-Object ExclusionPath, ExclusionProcess, ExclusionExtension | "
+        "ConvertTo-Json -Compress"
+    )
+    if excl_out:
+        try:
+            data = json.loads(excl_out)
+
+            def _as_list(v) -> list[str]:
+                if v is None:
+                    return []
+                if isinstance(v, str):
+                    return [v]
+                return [str(x) for x in v]
+
+            result["exclusions"] = {
+                "paths": _as_list(data.get("ExclusionPath")),
+                "processes": _as_list(data.get("ExclusionProcess")),
+                "extensions": _as_list(data.get("ExclusionExtension")),
+            }
+        except json.JSONDecodeError:
+            pass
     result["third_party_av"] = third_party
     return result
