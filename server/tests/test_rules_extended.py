@@ -244,3 +244,28 @@ def test_listener_without_exe_info_quiet():
         {"port": 8080, "pid": 1, "process": "x.exe", "exe": ""},
     ]})
     assert "PORT-PROCESS-SUSPECT-1" not in _rule_ids(scan)
+
+
+# -- SVC-UNQUOTED-PATH-1: contract verbatim cu colectorul ----------------------
+
+def test_quoted_with_args_collector_shape_quiet():
+    # forma VERBATIM trimisa de colector pentru un serviciu corect citat cu argumente
+    scan = _scan("advanced", persistence={"services": [
+        {"name": "GoodSvc", "status": "running",
+         "binary_path": '"C:\\Program Files\\My App\\service.exe" -k netsvcs'},
+    ]})
+    assert "SVC-UNQUOTED-PATH-1" not in _rule_ids(scan)
+
+
+def test_extensionless_path_quiet():
+    scan = _scan("advanced", persistence={"services": [
+        {"name": "Drv", "status": "running", "binary_path": r"C:\Program Files\App\driver"},
+    ]})
+    assert "SVC-UNQUOTED-PATH-1" not in _rule_ids(scan)
+
+
+def test_pwsh_encoded_cmdline_fires():
+    scan = _scan("advanced", processes=[
+        {"pid": 9, "name": "pwsh.exe", "cmdline": "pwsh.exe -EncodedCommand QQBC"},
+    ])
+    assert "PROC-ENCODED-CMDLINE-1" in _rule_ids(scan)

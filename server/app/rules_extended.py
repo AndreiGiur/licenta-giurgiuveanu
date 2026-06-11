@@ -260,15 +260,34 @@ def check_password_policy(scan: dict) -> dict | None:
     }
 
 
+_EXECUTABLE_EXTENSIONS: tuple[str, ...] = (".exe", ".com", ".bat", ".cmd", ".sys")
+
+
 def _is_unquoted_path_with_spaces(path: str) -> bool:
-    """True pentru path de serviciu necitat cu spatii inainte de .exe --
-    vectorul clasic 'unquoted service path' de escaladare de privilegii."""
+    """True pentru path de serviciu necitat cu spatii inainte de extensia executabilului.
+
+    Vectorul clasic 'unquoted service path' de escaladare de privilegii.
+    Asteapta `binary_path` VERBATIM asa cum l-a trimis colectorul (cu quoting intact),
+    fara nicio stergere de ghilimele. Un path inceput cu '"' este deja citat -- nu e
+    vulnerabil, se returneaza False direct.
+
+    Extensii acoperite: .exe, .com, .bat, .cmd, .sys. Daca niciuna nu e gasita in
+    path, returneaza False (evita FP pe path-uri fara extensie).
+    """
     p = (path or "").strip()
     if not p or p.startswith('"'):
         return False
     low = p.lower()
-    idx = low.find(".exe")
-    exe_part = p[: idx + 4] if idx != -1 else p
+    # Gaseste prima extensie executabila din path.
+    idx = -1
+    ext_len = 4  # toate extensiile au 4 caractere
+    for ext in _EXECUTABLE_EXTENSIONS:
+        pos = low.find(ext)
+        if pos != -1 and (idx == -1 or pos < idx):
+            idx = pos
+    if idx == -1:
+        return False  # nicio extensie cunoscuta -- nu e un path executabil clar
+    exe_part = p[: idx + ext_len]
     return " " in exe_part
 
 

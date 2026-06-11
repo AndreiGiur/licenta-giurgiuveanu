@@ -651,7 +651,7 @@ def check_suspicious_services(scan: dict) -> dict | None:
         s for s in services
         if s.get("status", "").lower() == "running"
         and s.get("binary_path", "")
-        and not any(s.get("binary_path", "").lower().startswith(p) for p in STANDARD_SERVICE_PATHS)
+        and not any(s.get("binary_path", "").lstrip('"').lower().startswith(p) for p in STANDARD_SERVICE_PATHS)
     ]
     if not suspicious:
         return None
