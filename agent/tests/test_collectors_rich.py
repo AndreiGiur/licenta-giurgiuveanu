@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from agent.collectors import system_info as si  # noqa: E402
+from agent.collectors import network as net  # noqa: E402
 
 
 def test_uac_status_reads_registry_values(monkeypatch):
@@ -168,3 +169,62 @@ def test_defender_status_includes_exclusions(monkeypatch):
     assert result["exclusions"]["paths"] == ["C:\\Users", "C:\\dev\\tools"]
     assert result["exclusions"]["processes"] == ["powershell.exe"]  # scalar -> lista
     assert result["exclusions"]["extensions"] == []                  # null -> lista goala
+
+
+WIFI_XML_FIXTURE = """<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+    <name>CasaMea</name>
+    <SSIDConfig><SSID><name>CasaMea</name></SSID></SSIDConfig>
+    <MSM>
+        <security>
+            <authEncryption>
+                <authentication>WPA2PSK</authentication>
+                <encryption>AES</encryption>
+                <useOneX>false</useOneX>
+            </authEncryption>
+        </security>
+    </MSM>
+</WLANProfile>
+"""
+
+
+def test_parse_wifi_profile_xml_extracts_ssid_and_auth():
+    p = net._parse_wifi_profile_xml(WIFI_XML_FIXTURE)
+    assert p == {"ssid": "CasaMea", "authentication": "WPA2PSK"}
+
+
+def test_parse_wifi_profile_xml_never_contains_key_material():
+    # exportul fara key=clear nu are keyMaterial; parserul oricum nu citeste decat name+authentication
+    p = net._parse_wifi_profile_xml(WIFI_XML_FIXTURE)
+    assert set(p.keys()) == {"ssid", "authentication"}
+
+
+def test_parse_wifi_profile_xml_invalid_returns_none():
+    assert net._parse_wifi_profile_xml("<broken") is None
+    assert net._parse_wifi_profile_xml("<a><b/></a>") is None
+
+
+def test_port_processes_include_exe(monkeypatch):
+    import types as _t
+    import psutil
+
+    fake_conn = _t.SimpleNamespace(
+        status=psutil.CONN_LISTEN, pid=4242,
+        laddr=_t.SimpleNamespace(ip="0.0.0.0", port=8888), raddr=None,
+    )
+
+    class FakeProc:
+        def __init__(self, pid):
+            self.pid = pid
+        def name(self):
+            return "evil.exe"
+        def exe(self):
+            return r"C:\Users\x\AppData\Local\Temp\evil.exe"
+
+    monkeypatch.setattr(net.psutil, "net_connections", lambda kind="tcp": [fake_conn])
+    monkeypatch.setattr(net.psutil, "Process", FakeProc)
+    listeners = net._port_processes()
+    assert listeners == [{
+        "port": 8888, "pid": 4242, "process": "evil.exe",
+        "exe": r"C:\Users\x\AppData\Local\Temp\evil.exe",
+    }]

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import platform
 import socket
 import subprocess
+from pathlib import Path
 
 import psutil
 
@@ -29,6 +31,8 @@ def collect_network(cfg: ScanProfile) -> dict:
         out["shares"] = _network_shares()
     if cfg.include_net_adapters:
         out["adapters"] = _adapters()
+    if cfg.include_wifi_profiles and platform.system() == "Windows":
+        out["wifi_profiles"] = _wifi_profiles()
 
     return out
 
@@ -100,9 +104,15 @@ def _port_processes() -> list[dict]:
                 continue
             try:
                 p = psutil.Process(conn.pid)
-                out.append({"port": conn.laddr.port, "pid": conn.pid, "process": p.name()})
+                try:
+                    exe = p.exe()
+                except (psutil.AccessDenied, OSError):
+                    exe = ""
+                out.append({"port": conn.laddr.port, "pid": conn.pid,
+                            "process": p.name(), "exe": exe})
             except (psutil.NoSuchProcess, psutil.AccessDenied):
-                out.append({"port": conn.laddr.port, "pid": conn.pid, "process": ""})
+                out.append({"port": conn.laddr.port, "pid": conn.pid,
+                            "process": "", "exe": ""})
     except Exception:
         pass
     return out
@@ -207,3 +217,51 @@ def _adapters() -> list[dict]:
     except Exception:
         pass
     return out
+
+
+_WLAN_NS = "{http://www.microsoft.com/networking/WLAN/profile/v1}"
+
+
+def _parse_wifi_profile_xml(xml_text: str) -> dict | None:
+    """Extrage {ssid, authentication} din XML-ul netsh (schema fixa, imuna la
+    localizare). NU citeste keyMaterial -- exportul se face FARA key=clear."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return None
+    name_el = root.find(f"{_WLAN_NS}name")
+    auth_el = root.find(
+        f"{_WLAN_NS}MSM/{_WLAN_NS}security/{_WLAN_NS}authEncryption/{_WLAN_NS}authentication"
+    )
+    if name_el is None or auth_el is None:
+        return None
+    return {"ssid": (name_el.text or "").strip(),
+            "authentication": (auth_el.text or "").strip()}
+
+
+def _wifi_profiles() -> list[dict]:
+    """Exporta profilele WiFi salvate (XML, fara chei) si le parseaza."""
+    import tempfile
+    profiles: list[dict] = []
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            r = subprocess.run(
+                ["netsh", "wlan", "export", "profile", f"folder={td}"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode != 0:
+                return []
+            for fname in os.listdir(td):
+                if not fname.lower().endswith(".xml"):
+                    continue
+                try:
+                    text = (Path(td) / fname).read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    continue
+                parsed = _parse_wifi_profile_xml(text)
+                if parsed:
+                    profiles.append(parsed)
+    except (subprocess.SubprocessError, OSError):
+        return []
+    return profiles[:50]
