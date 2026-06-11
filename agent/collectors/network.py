@@ -104,12 +104,15 @@ def _port_processes() -> list[dict]:
                 continue
             try:
                 p = psutil.Process(conn.pid)
+                # name() inainte de exe(): daca procesul moare intre cele doua,
+                # fallback-ul exterior nu arunca la gunoi un exe deja citit
+                name = p.name()
                 try:
                     exe = p.exe()
                 except (psutil.AccessDenied, OSError):
                     exe = ""
                 out.append({"port": conn.laddr.port, "pid": conn.pid,
-                            "process": p.name(), "exe": exe})
+                            "process": name, "exe": exe})
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 out.append({"port": conn.laddr.port, "pid": conn.pid,
                             "process": "", "exe": ""})
@@ -256,7 +259,7 @@ def _wifi_profiles() -> list[dict]:
                 if not fname.lower().endswith(".xml"):
                     continue
                 try:
-                    text = (Path(td) / fname).read_text(encoding="utf-8")
+                    text = (Path(td) / fname).read_text(encoding="utf-8-sig")
                 except (OSError, UnicodeError):
                     continue
                 parsed = _parse_wifi_profile_xml(text)
