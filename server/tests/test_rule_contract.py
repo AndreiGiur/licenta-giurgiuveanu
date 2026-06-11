@@ -122,8 +122,9 @@ def test_rule_returns_valid_type_on_empty_scan(rule_fn, make_scan):
 
 def test_rules_count_matches_expectation():
     """Pragul de regularitate — daca cineva sterge accidental o regula, prinde aici.
-    Actualmente: 24 reguli active. Cresterea e OK (adaugare). Scaderea trebuie verificata."""
-    assert len(_RULES) >= 24, f"Numarul de reguli a scazut: {len(_RULES)} (minim asteptat 24)"
+    Actualmente: 61 reguli active (23 Windows/cross + NMAP-LUA-1 + 22 Linux + 15 extended).
+    Cresterea e OK (adaugare). Scaderea trebuie verificata."""
+    assert len(_RULES) >= 61, f"Numarul de reguli a scazut: {len(_RULES)} (minim asteptat 61)"
 
 
 def test_categories_coverage_balanced():
