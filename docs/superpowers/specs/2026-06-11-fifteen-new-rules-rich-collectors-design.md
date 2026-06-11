@@ -54,7 +54,7 @@ la deep.
 | `ARP-SPOOF-1` | windows | network_exposure | 1.2 | 0.7 | high | acelasi MAC mapat la >= 2 IP-uri distincte in `forensics.arp_table`; exclude broadcast (`ff:ff:...`), multicast (`01:00:5e`, `33:33`), IP-uri >= 224.0.0.0 si 255.255.255.255 | CIS-13.3, NIST-DE.CM-01 |
 | `DNS-SUSPICIOUS-1` | windows | activity | 0.8 | 0.6 | medium | intrari `forensics.dns_cache` cu punycode (`xn--`), TLD frecvent abuzat (`.tk .ml .ga .cf .gq .top`), sau label >= 25 caractere fara vocale (heuristic DGA) | CIS-9.2, NIST-DE.AE-02 |
 | `RECENT-SYSTEM-FILES-1` | windows | activity | 0.7 | 0.6 | medium | fisiere `.exe/.dll/.sys` din `forensics.recent_files` (System32/Program Files modificate in 7 zile); evidence cap la 20 | CIS-10.7, NIST-PR.DS-06 |
-| `AUDIT-POLICY-OFF-1` | windows | hygiene | 1.0 | 1.0 | medium | subcategoriile `Logon` si `User Account Management` cu auditing `No Auditing` (identificate prin GUID, nu prin nume localizat) | CIS-8.2, CIS-8.5, NIST-DE.CM-09 |
+| `AUDIT-POLICY-OFF-1` | windows | hygiene | 1.0 | 0.8 | medium | `AuditLogonEvents == 0` SAU `AuditAccountManage == 0` din INF-ul secedit `[Event Audit]` (valori numerice, locale-independente; conf 0.8 fiindca advanced audit policy poate suprascrie categoriile legacy) | CIS-8.2, CIS-8.5, NIST-DE.CM-09 |
 
 Balanta pe categorii: hygiene 6, network_exposure 4, activity 3, critical_risk 2.
 
@@ -77,9 +77,11 @@ Balanta pe categorii: hygiene 6, network_exposure 4, activity 3, critical_risk 2
   `LockoutBadCount`. Chei locale-independente. Fara admin → camp absent (degradare).
 - `defender.exclusions` (deep, fara flag nou — extinde query-ul Defender existent):
   `Get-MpPreference` → `{paths: [...], processes: [...], extensions: [...]}`.
-- `audit_policy` (deep, flag nou): `auditpol /get /category:* /r` (CSV),
-  parsare dupa coloana **Subcategory GUID**: Logon `{0CCE9215-69AE-11D9-BED3-505054503030}`,
-  User Account Management `{0CCE9235-69AE-11D9-BED3-505054503030}`.
+- `audit_policy` (deep, flag nou): din ACELASI export secedit ca password_policy —
+  sectiunea `[Event Audit]`, cheile `AuditLogonEvents` si `AuditAccountManage`
+  (0=none, 1=success, 2=failure, 3=both; numerice, locale-independente).
+  Motivare schimbare fata de auditpol: CSV-ul auditpol are valorile setarilor
+  localizate (RO), GUID-ul identifica doar randul, nu si valoarea.
   Necesita admin; fara admin → camp absent.
 
 ### `agent/collectors/network.py`
@@ -100,7 +102,9 @@ Balanta pe categorii: hygiene 6, network_exposure 4, activity 3, critical_risk 2
 
 ## Modificari in server
 
-- `server/app/rules.py`: 15 functii noi cu `@rule` (14 `os="windows"`, `OS-UPTIME-1` `os="any"`).
+- `server/app/rules_extended.py` (modul NOU): cele 15 functii cu `@rule`
+  (14 `os="windows"`, `OS-UPTIME-1` `os="any"`), importat la finalul `rules.py`
+  — acelasi pattern ca `rules_linux.py`; `rules.py` nu se umfla.
 - `server/app/config.py`: praguri noi `UPTIME_DAYS_THRESHOLD = 30`,
   `MIN_PASSWORD_LENGTH_THRESHOLD = 8`.
 - `test_rules_count_matches_expectation`: 46 → 61.
