@@ -75,7 +75,7 @@ class ScanProfile:
     include_arp_dns: bool = False
     include_recent_files: bool = False
 
-    # Colectare bogata (2026-06-11): WiFi, politici locale
+    # Colectare bogata Windows-only (2026-06-11): netsh wlan + secedit
     include_wifi_profiles: bool = False    # netsh wlan export (advanced+)
     include_password_policy: bool = False  # secedit [System Access] (advanced+)
     include_audit_policy: bool = False     # secedit [Event Audit] (deep)
