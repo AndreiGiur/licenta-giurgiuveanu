@@ -29,7 +29,7 @@ def test_autologon_password_present_without_reading_value(monkeypatch):
     auto = si._autologon_status()
     assert auto == {"enabled": True, "default_username": "andrei", "password_present": True}
     # invariantul de privacy: dict-ul NU contine vreo cheie cu parola
-    assert "password" not in {k.lower() for k in auto} - {"password_present"}
+    assert all("password" not in k.lower() for k in auto if k != "password_present")
 
 
 def test_autologon_absent(monkeypatch):
@@ -47,3 +47,26 @@ def test_smb1_explicit_enabled(monkeypatch):
 def test_smb1_missing_key_returns_none(monkeypatch):
     monkeypatch.setattr(si, "_reg_value", lambda path, name: None)
     assert si._smb1_status() is None
+
+
+def test_local_users_includes_password_required(monkeypatch):
+    canned = {
+        # primul apel _ps: Get-LocalUser; al doilea: Get-LocalGroupMember
+        "Get-LocalUser": '[{"Name":"Guest","Enabled":true,"PasswordRequired":false},'
+                         '{"Name":"andrei","Enabled":true,"PasswordRequired":true}]',
+        "Get-LocalGroupMember": '["DESKTOP\\\\andrei"]',
+    }
+
+    def fake_ps(script, timeout=30):
+        for key, value in canned.items():
+            if key in script:
+                return value
+        return None
+
+    monkeypatch.setattr(si, "_ps", fake_ps)
+    users = si._local_users()
+    by_name = {u["name"]: u for u in users}
+    assert by_name["Guest"]["password_required"] is False
+    assert by_name["Guest"]["enabled"] is True
+    assert by_name["andrei"]["password_required"] is True
+    assert by_name["andrei"]["is_admin"] is True

@@ -163,7 +163,7 @@ def _firewall_status() -> dict:
 def _local_users() -> list[dict]:
     """Conturi locale + flag is_admin (folosind PowerShell Get-LocalUser)."""
     out = _ps(
-        "Get-LocalUser | Select-Object Name, Enabled | ConvertTo-Json -Compress"
+        "Get-LocalUser | Select-Object Name, Enabled, PasswordRequired | ConvertTo-Json -Compress"
     )
     users: list[dict] = []
     if out:
@@ -175,6 +175,7 @@ def _local_users() -> list[dict]:
                 users.append({
                     "name": u.get("Name", ""),
                     "enabled": bool(u.get("Enabled", True)),
+                    "password_required": bool(u.get("PasswordRequired", True)),
                     "is_admin": False,
                 })
         except json.JSONDecodeError:
