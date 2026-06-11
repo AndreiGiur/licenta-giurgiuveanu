@@ -34,6 +34,10 @@ server/static/agent/*.exe
 *.sqlite
 *.sqlite3
 
+# Prezentare licenta — se tine local, nu in repo
+*.pptx
+~$*
+
 # OS
 .DS_Store
 Thumbs.db
