@@ -58,6 +58,10 @@ def test_local_users_includes_password_required(monkeypatch):
     }
 
     def fake_ps(script, timeout=30):
+        if "Get-LocalUser" in script:
+            # pin pe contractul de query: fara PasswordRequired in Select-Object,
+            # campul ar disparea silentios din output-ul real
+            assert "PasswordRequired" in script
         for key, value in canned.items():
             if key in script:
                 return value
