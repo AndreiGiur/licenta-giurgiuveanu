@@ -12,6 +12,19 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Librariile mari in chunk-uri separate: se cache-uiesc independent
+        // de codul aplicatiei si nu mai umfla bundle-ul principal.
+        manualChunks: {
+          react: ["react", "react-dom", "react-router-dom"],
+          recharts: ["recharts"],
+          motion: ["framer-motion"],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: "jsdom",

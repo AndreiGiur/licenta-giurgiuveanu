@@ -1,3 +1,21 @@
+# Normalizare line endings: LF in repo si in working tree pe toate OS-urile
+# (elimina avertismentele "LF will be replaced by CRLF" pe Windows).
+* text=auto eol=lf
+
 # Scripturile shell trebuie sa aiba MEREU line endings LF — altfel CRLF (Windows)
 # le strica la rulare pe Linux/Kali ("bash: \r: command not found").
 *.sh text eol=lf
+
+# Scripturi Windows raman CRLF (conventia nativa).
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# Fisiere binare — fara conversie.
+*.png binary
+*.jpg binary
+*.ico binary
+*.exe binary
+*.pptx binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

@@ -20,6 +20,7 @@ job queue pentru scan-on-demand, motor de reguli pentru calculul scorului.
 | `tests/`              | Pytest end-to-end (TestClient). Vezi `tests/memory.md`.              |
 | `alembic/` + `alembic.ini` | **Migrari DB** (additiv, pentru productie). `env.py` citeste `DATABASE_URL` + `Base.metadata`; `versions/` contine migrarea initiala (7 tabele). `alembic upgrade head` in productie; dev/teste raman pe `create_all`. |
 | `requirements.txt`    | Dependencies de runtime + dev: `fastapi`, `uvicorn[standard]`, `sqlalchemy`, `alembic`, `psycopg[binary]`, `pydantic[email]`, `google-auth`, `requests` (transport HTTP pentru google-auth), `httpx`, `reportlab`, `slowapi`, `pytest`. |
+| `requirements-lock.txt` | **Lockfile `pip freeze` (2026-06-11)** — versiunile exacte cu care a fost validata suita de teste; pentru mediu reproductibil (demo licenta): `pip install -r requirements-lock.txt`. Include si dependintele agentului (venv partajat). |
 | `.env.example`        | Template pentru `.env`. Variabile: `DATABASE_URL`, `SESSION_EXPIRE_HOURS`, `CORS_ORIGINS`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `GOOGLE_CLIENT_ID_WEB`, `GOOGLE_CLIENT_SECRET_WEB`, `GOOGLE_REDIRECT_URI_WEB`, `GOOGLE_CLIENT_ID_DESKTOP`, `FRONTEND_BASE_URL`, `SECRET_KEY` (HMAC state OAuth — obligatoriu in productie multi-worker), `SCAN_JOB_TIMEOUT_MIN` (default 90), `AUTO_CREATE_TABLES` (default true; false in productie cu Alembic). |
 
 ## Rulare

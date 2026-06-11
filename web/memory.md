@@ -24,7 +24,7 @@ Sesiune autentificata prin **cookie HttpOnly** setat de backend la
 | `index.html`            | Template HTML — punctul de intrare Vite. `<div id="root">`.          |
 | `package.json`          | Dependencies + scripts: `dev` (Vite dev server), `build` (`tsc -b && vite build`), `lint`, `preview`, **`test` (vitest run)**, **`test:watch`**. |
 | `package-lock.json`     | Lock file npm — versiuni exacte ale tuturor tranzitivelor.           |
-| `vite.config.ts`        | Plugin `@vitejs/plugin-react`; proxy `server: { proxy: { "/api": { target: "http://127.0.0.1:8000" } } }`. |
+| `vite.config.ts`        | Plugin `@vitejs/plugin-react`; proxy `server: { proxy: { "/api": { target: "http://127.0.0.1:8000" } } }`. **Code-splitting (2026-06-11):** `build.rollupOptions.output.manualChunks` separa `react` (react+react-dom+react-router-dom), `recharts` si `motion` (framer-motion) in chunk-uri proprii — bundle-ul principal a scazut de la ~812 KB la ~260 KB. |
 | `tsconfig.json`         | Root config — referinta la `tsconfig.app.json` si `tsconfig.node.json`. |
 | `tsconfig.app.json`     | Config TS pentru codul aplicatiei (`src/**`). Strict, target modern. |
 | `tsconfig.node.json`    | Config TS pentru `vite.config.ts` si scripturi de build (Node-side). |
