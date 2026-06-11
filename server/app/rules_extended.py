@@ -144,8 +144,10 @@ def check_guest_or_passwordless(scan: dict) -> dict | None:
     for u in users:
         if u.get("enabled") is not True:
             continue
-        name = (u.get("name") or "")
-        if name.lower() == "guest":
+        name = (u.get("name") or "").strip()
+        # limitare cunoscuta: pe Windows localizat contul built-in poate avea alt
+        # nume (ex. "Invitat" pe RO); ramura password_required compenseaza partial
+        if name.lower() in ("guest", "invitat"):
             flagged.append({"name": name, "reason": "cont Guest activ"})
         elif u.get("password_required") is False:
             flagged.append({"name": name, "reason": "parola neobligatorie"})

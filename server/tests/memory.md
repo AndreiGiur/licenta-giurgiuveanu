@@ -40,7 +40,7 @@ Rulare: `python -m pytest server/tests` (din radacina repo-ului).
 | `test_e2e_scan_flow.py`         | 3     | **Test E2E (integrare) al fluxului scan-on-demand** care strabate tot lantul intr-un singur scenariu (auth → devices → scan_jobs → agent → rules → persistenta → citire UI), simuland agentul la granita HTTP (`X-Device-Token`). Lifecycle complet: register/login → enroll device → heartbeat → creeaza job → pickup agent → progress → result (scoring real: porturi riscante + XP EOL + Flash) → poll done → GET scan detail (NET-OPEN-PORTS/OS-EOL/SW-VULNERABLE) → lista scanari. + flow esec (fail) + izolare (token device B nu ridica jobul lui A; token invalid → 401). |
 | `test_security_fixes.py`        | 11    | **Fix-uri securitate/robustete (2026-06-10):** (1) session token stocat **hash-uit** in DB — plain absent din DB, hash prezent, auth + logout + `is_current` functioneaza prin `hash_token`; (2) **OAuth state HMAC** — roundtrip valid, semnatura/payload alterate respinse, malformed respins, expirat dupa TTL 300s (monkeypatch `time.time`); (3) **`reap_stale_jobs`** — job running vechi de 120 min marcat failed cu mesaj timeout, joburile fresh/pending neatinse, dupa reap conditia de skip a scheduler-ului e libera (scanarile programate se deblocheaza). |
 
-## Total: 406 teste server (392 + 14 rules_extended) + 117 unit tests in `agent/tests/` + 74 teste frontend (Vitest) = **597 teste**.
+## Total: 411 teste server (397 baseline + 14 rules_extended; contract tests se parametrizeaza automat din `_RULES`) + 135 unit tests in `agent/tests/` + 89 teste frontend (Vitest) = **635 teste**.
 
 ## Pattern important
 
