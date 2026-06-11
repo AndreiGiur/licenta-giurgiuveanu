@@ -221,6 +221,18 @@ def test_unquoted_path_without_spaces_quiet():
     assert "SVC-UNQUOTED-PATH-1" not in _rule_ids(scan)
 
 
+def test_old_agent_munged_quoted_shape_quiet():
+    # regresie scan 29 (2026-06-11): agentii vechi faceau strip('"') si lasau
+    # ghilimeaua interioara -- serviciul era CORECT citat, nu trebuie flag-uit
+    scan = _scan("advanced", persistence={"services": [
+        {"name": "AnyDesk", "status": "running",
+         "binary_path": 'C:\\Program Files (x86)\\AnyDesk\\AnyDesk.exe" --service'},
+        {"name": "edgeupdate", "status": "running",
+         "binary_path": 'C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe" /svc'},
+    ]})
+    assert "SVC-UNQUOTED-PATH-1" not in _rule_ids(scan)
+
+
 # -- PORT-PROCESS-SUSPECT-1 (advanced) ------------------------------------------
 
 def test_listener_from_temp_fires():

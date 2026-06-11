@@ -279,6 +279,11 @@ def _is_unquoted_path_with_spaces(path: str) -> bool:
     p = (path or "").strip()
     if not p or p.startswith('"'):
         return False
+    # Compat agenti vechi (pre 2026-06-11): colectorul facea strip('"') si lasa
+    # ghilimeaua interioara (ex: C:\Program Files\App\svc.exe" --arg). Orice
+    # ghilimea ramasa inseamna ca path-ul ERA citat -> nu e vulnerabil.
+    if '"' in p:
+        return False
     low = p.lower()
     # Gaseste prima extensie executabila din path.
     idx = -1
