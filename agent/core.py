@@ -75,6 +75,11 @@ class ScanProfile:
     include_arp_dns: bool = False
     include_recent_files: bool = False
 
+    # Colectare bogata (2026-06-11): WiFi, politici locale
+    include_wifi_profiles: bool = False    # netsh wlan export (advanced+)
+    include_password_policy: bool = False  # secedit [System Access] (advanced+)
+    include_audit_policy: bool = False     # secedit [Event Audit] (deep)
+
     # Linux audit (ruleaza doar pe Linux — vezi collectors/linux_audit.py)
     include_linux_basic: bool = False   # ssh, firewall, useri, kernel, sysctl, pachete, login.defs, mounts
     include_linux_jobs: bool = False    # cron, servicii systemd (advanced+)
@@ -105,6 +110,8 @@ SCAN_PROFILES: dict[str, ScanProfile] = {
         include_tasks=True,
         include_shares=True,
         include_ps_policy=True,
+        include_wifi_profiles=True,
+        include_password_policy=True,
         include_linux_basic=True,
         include_linux_jobs=True,
     ),
@@ -133,6 +140,9 @@ SCAN_PROFILES: dict[str, ScanProfile] = {
         include_certs=True,
         include_arp_dns=True,
         include_recent_files=True,
+        include_wifi_profiles=True,
+        include_password_policy=True,
+        include_audit_policy=True,
         include_linux_basic=True,
         include_linux_jobs=True,
         include_linux_files=True,

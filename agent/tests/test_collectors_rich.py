@@ -74,3 +74,20 @@ def test_local_users_includes_password_required(monkeypatch):
     assert by_name["Guest"]["enabled"] is True
     assert by_name["andrei"]["password_required"] is True
     assert by_name["andrei"]["is_admin"] is True
+
+
+def test_new_profile_flags_per_level():
+    from agent.core import SCAN_PROFILES
+    std, adv, deep = SCAN_PROFILES["standard"], SCAN_PROFILES["advanced"], SCAN_PROFILES["deep"]
+    # standard: nimic din colectarea scumpa
+    assert std.include_wifi_profiles is False
+    assert std.include_password_policy is False
+    assert std.include_audit_policy is False
+    # advanced: wifi + password policy, fara audit
+    assert adv.include_wifi_profiles is True
+    assert adv.include_password_policy is True
+    assert adv.include_audit_policy is False
+    # deep: toate
+    assert deep.include_wifi_profiles is True
+    assert deep.include_password_policy is True
+    assert deep.include_audit_policy is True
