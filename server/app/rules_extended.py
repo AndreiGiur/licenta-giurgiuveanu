@@ -26,6 +26,8 @@ WIFI_INSECURE_AUTH: dict[str, str] = {
 }
 
 # Radacini de exclusions Defender care anuleaza practic protectia.
+# INTENTIONAT match exact (nu prefix): "c:\users\andrei" e o excludere legitima
+# per-user si NU trebuie sa declanseze; doar radacinile in sine + \temp/\appdata.
 SUSPICIOUS_EXCLUSION_ROOTS: frozenset[str] = frozenset({
     "c:", "c:\\users", "c:\\windows", "c:\\programdata", "c:\\temp",
 })
