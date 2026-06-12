@@ -18,7 +18,7 @@ graph LR
 
     subgraph Server["Backend (FastAPI)"]
         API["API REST<br/>45 endpoint-uri"]
-        Rules["Motor reguli<br/>24 reguli x4 categorii"]
+        Rules["Motor reguli<br/>61 reguli x4 categorii"]
         PDF["Generator PDF<br/>(reportlab)"]
         Scheduler["Scheduler asyncio<br/>(planificări recurente)"]
         API -->|invocă| Rules
