@@ -107,7 +107,7 @@ def _services() -> list[dict]:
                 "display_name": s.get("DisplayName", ""),
                 "status": str(s.get("State", "")).lower(),
                 "start_type": str(s.get("StartMode", "")).lower(),
-                "binary_path": (s.get("PathName") or "").strip('"'),
+                "binary_path": s.get("PathName") or "",
             }
             for s in data
         ]

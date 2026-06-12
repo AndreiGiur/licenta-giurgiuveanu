@@ -651,7 +651,7 @@ def check_suspicious_services(scan: dict) -> dict | None:
         s for s in services
         if s.get("status", "").lower() == "running"
         and s.get("binary_path", "")
-        and not any(s.get("binary_path", "").lower().startswith(p) for p in STANDARD_SERVICE_PATHS)
+        and not any(s.get("binary_path", "").lstrip('"').lower().startswith(p) for p in STANDARD_SERVICE_PATHS)
     ]
     if not suspicious:
         return None
@@ -985,3 +985,4 @@ def collect_nmap_lua_findings(scan: dict) -> list[dict] | None:
 # (decoratorul @rule din acest modul le adauga la import).
 # ─────────────────────────────────────────────────────────────────────────────
 from . import rules_linux  # noqa: E402,F401  (trebuie dupa definirea @rule)
+from . import rules_extended  # noqa: E402,F401  (idem -- reguli 2026-06-11)

@@ -84,6 +84,18 @@ def test_svc_suspicious_fires_on_nonstandard_path():
     assert "SVC-SUSPICIOUS-1" in _ids(findings)
 
 
+def test_svc_suspicious_quiet_on_quoted_program_files_path():
+    # Regresie: path citat verbatim (forma colector) sub Program Files nu trebuie
+    # sa fie alertat de SVC-SUSPICIOUS-1 dupa fix-ul lstrip('"').
+    scan = _base("advanced")
+    scan["persistence"] = {"services": [
+        {"name": "LegitSvc", "status": "running",
+         "binary_path": '"C:\\Program Files\\Legit App\\svc.exe" -k netsvcs'},
+    ]}
+    _, _, findings = evaluate(scan)
+    assert "SVC-SUSPICIOUS-1" not in _ids(findings)
+
+
 def test_net_share_excludes_admin_default():
     scan = _base("advanced")
     scan["network"] = {"open_ports": [], "shares": [

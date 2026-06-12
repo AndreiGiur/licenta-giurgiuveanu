@@ -33,6 +33,26 @@ def collect_system(cfg: ScanProfile) -> dict:
         out["bitlocker"] = _bitlocker_status()
     if cfg.include_defender and platform.system() == "Windows":
         out["defender"] = _defender_status()
+    if platform.system() == "Windows":
+        out["uac"] = _uac_status()
+        out["autologon"] = _autologon_status()
+        smb1 = _smb1_status()
+        if smb1 is not None:
+            out["smb1_enabled"] = smb1
+    if platform.system() == "Windows" and (cfg.include_password_policy or cfg.include_audit_policy):
+        inf = _secedit_export()
+        if inf:
+            parsed = _parse_secedit_inf(inf)
+            if cfg.include_password_policy:
+                pw = {k: parsed[k] for k in
+                      ("min_password_length", "max_password_age_days", "lockout_threshold")
+                      if k in parsed}
+                if pw:
+                    out["password_policy"] = pw
+            if cfg.include_audit_policy:
+                ap = {k: parsed[k] for k in ("audit_logon", "audit_account_manage") if k in parsed}
+                if ap:
+                    out["audit_policy"] = ap
     return out
 
 
@@ -47,6 +67,136 @@ def _is_admin() -> bool:
         return os.geteuid() == 0  # type: ignore[attr-defined]
     except Exception:
         return False
+
+
+_POLICIES_SYSTEM = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+_WINLOGON_KEY = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+_LANMAN_PARAMS = r"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+
+
+def _reg_value(path: str, name: str):
+    """Citeste o valoare din HKLM. None daca lipseste / non-Windows."""
+    try:
+        import winreg  # type: ignore[import-not-found]
+        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+        try:
+            val, _ = winreg.QueryValueEx(k, name)
+            return val
+        finally:
+            winreg.CloseKey(k)
+    except (ImportError, FileNotFoundError, OSError):
+        return None
+
+
+def _reg_value_exists(path: str, name: str) -> bool:
+    """True daca valoarea exista in HKLM -- enumerare nume, datele NU se citesc.
+    Folosit pentru DefaultPassword (privacy: nu aducem parola in memorie)."""
+    try:
+        import winreg  # type: ignore[import-not-found]
+        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+        try:
+            i = 0
+            while True:
+                vname, _, _ = winreg.EnumValue(k, i)
+                if vname.lower() == name.lower():
+                    return True
+                i += 1
+        except OSError:
+            return False
+        finally:
+            winreg.CloseKey(k)
+    except (ImportError, FileNotFoundError, OSError):
+        return False
+
+
+def _uac_status() -> dict:
+    """EnableLUA + ConsentPromptBehaviorAdmin din Policies\\System."""
+    out: dict = {}
+    enable_lua = _reg_value(_POLICIES_SYSTEM, "EnableLUA")
+    if enable_lua is not None:
+        out["enable_lua"] = bool(enable_lua)
+    consent = _reg_value(_POLICIES_SYSTEM, "ConsentPromptBehaviorAdmin")
+    if consent is not None:
+        out["consent_prompt_admin"] = int(consent)
+    return out
+
+
+def _autologon_status() -> dict:
+    """AutoAdminLogon + DefaultUserName + PREZENTA DefaultPassword (bool).
+    Valoarea parolei nu se citeste niciodata (vezi _reg_value_exists)."""
+    auto = str(_reg_value(_WINLOGON_KEY, "AutoAdminLogon") or "0").strip()
+    return {
+        "enabled": auto == "1",
+        "default_username": str(_reg_value(_WINLOGON_KEY, "DefaultUserName") or ""),
+        "password_present": _reg_value_exists(_WINLOGON_KEY, "DefaultPassword"),
+    }
+
+
+def _smb1_status() -> bool | None:
+    """SMB1 din LanmanServer Parameters. None = cheia lipseste (default OS --
+    pe Win10+ inseamna dezactivat; regula NU se declanseaza pe None)."""
+    val = _reg_value(_LANMAN_PARAMS, "SMB1")
+    if val is None:
+        return None
+    return bool(val)
+
+
+def _to_int(val: str) -> int | None:
+    try:
+        return int(str(val).strip().strip('"'))
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_secedit_inf(text: str) -> dict:
+    """Parseaza INF-ul exportat de secedit. Cheile sunt fixe si numerice --
+    imune la localizarea Windows (spre deosebire de `net accounts`/`auditpol`)."""
+    out: dict = {}
+    section = ""
+    # strip BOM defensiv: corectitudinea parserului nu trebuie sa depinda de
+    # encoding-ul ales de caller (utf-16 il consuma, utf-16-le NU)
+    text = text.lstrip("﻿")
+    mapping = {
+        ("system access", "minimumpasswordlength"): "min_password_length",
+        ("system access", "maximumpasswordage"): "max_password_age_days",
+        ("system access", "lockoutbadcount"): "lockout_threshold",
+        ("event audit", "auditlogonevents"): "audit_logon",
+        ("event audit", "auditaccountmanage"): "audit_account_manage",
+    }
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1].lower()
+            continue
+        if "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        target = mapping.get((section, key.strip().lower()))
+        if target is None:
+            continue
+        num = _to_int(val)
+        if num is not None:
+            out[target] = num
+    return out
+
+
+def _secedit_export() -> str | None:
+    """Exporta politica locala de securitate (INF). None la esec/fara admin."""
+    import tempfile
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            cfg_path = os.path.join(td, "sec.inf")
+            r = subprocess.run(
+                ["secedit", "/export", "/cfg", cfg_path, "/areas", "SECURITYPOLICY", "/quiet"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode != 0 or not os.path.exists(cfg_path):
+                return None
+            # secedit scrie UTF-16 LE cu BOM
+            with open(cfg_path, encoding="utf-16") as f:
+                return f.read()
+    except (subprocess.SubprocessError, OSError, UnicodeError):
+        return None
 
 
 def _ps(script: str, timeout: int = 30) -> str | None:
@@ -85,7 +235,7 @@ def _firewall_status() -> dict:
 def _local_users() -> list[dict]:
     """Conturi locale + flag is_admin (folosind PowerShell Get-LocalUser)."""
     out = _ps(
-        "Get-LocalUser | Select-Object Name, Enabled | ConvertTo-Json -Compress"
+        "Get-LocalUser | Select-Object Name, Enabled, PasswordRequired | ConvertTo-Json -Compress"
     )
     users: list[dict] = []
     if out:
@@ -97,6 +247,7 @@ def _local_users() -> list[dict]:
                 users.append({
                     "name": u.get("Name", ""),
                     "enabled": bool(u.get("Enabled", True)),
+                    "password_required": bool(u.get("PasswordRequired", True)),
                     "is_admin": False,
                 })
         except json.JSONDecodeError:
@@ -201,6 +352,30 @@ def _defender_status() -> dict:
                 if state & 0x1000:
                     third_party.append({"name": name, "product_state": state})
         except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+    # Exclusions Defender (tactica frecventa de malware: exclude C:\, Temp, powershell).
+    excl_out = _ps(
+        "Get-MpPreference -ErrorAction SilentlyContinue | "
+        "Select-Object ExclusionPath, ExclusionProcess, ExclusionExtension | "
+        "ConvertTo-Json -Compress"
+    )
+    if excl_out:
+        try:
+            data = json.loads(excl_out)
+
+            def _as_list(v) -> list[str]:
+                if v is None:
+                    return []
+                if isinstance(v, str):
+                    return [v]
+                return [str(x) for x in v]
+
+            result["exclusions"] = {
+                "paths": _as_list(data.get("ExclusionPath")),
+                "processes": _as_list(data.get("ExclusionProcess")),
+                "extensions": _as_list(data.get("ExclusionExtension")),
+            }
+        except json.JSONDecodeError:
             pass
     result["third_party_av"] = third_party
     return result

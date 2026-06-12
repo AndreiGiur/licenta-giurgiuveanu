@@ -45,6 +45,13 @@ BRUTEFORCE_FAIL_COUNT_THRESHOLD = int(os.environ.get("BRUTEFORCE_FAIL_COUNT_THRE
 # Prag minim de porturi LISTEN deschise pentru regula NET-MANY-PORTS-2.
 MANY_PORTS_THRESHOLD = int(os.environ.get("MANY_PORTS_THRESHOLD", "20"))
 
+# Zile de uptime peste care sistemul e considerat ne-restartat de prea mult timp
+# (patch-uri in asteptare) -- regula OS-UPTIME-1.
+UPTIME_DAYS_THRESHOLD = int(os.environ.get("UPTIME_DAYS_THRESHOLD", "30"))
+
+# Lungimea minima acceptata pentru parolele locale -- regula PASS-POLICY-WEAK-1.
+MIN_PASSWORD_LENGTH_THRESHOLD = int(os.environ.get("MIN_PASSWORD_LENGTH_THRESHOLD", "8"))
+
 # Minute dupa care un ScanJob ramas in "running" este marcat failed de
 # scheduler_loop (agent mort / net cazut in timpul scanarii). Default generos:
 # scanarea deep cu nmap poate dura pana la ~60 min.

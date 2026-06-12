@@ -109,9 +109,9 @@ Agent  → POST /agent/jobs/{id}/fail          → ScanJob(failed) on error
 
 Three levels controlled by `SCAN_PROFILES` dict in `agent/core.py`:
 
-- **standard** (~45-90s): ports LISTEN, OS, firewall, local users, top 30 processes, installed software
-- **advanced** (~3-8min): all processes + cmdline, port→process binding, ESTABLISHED connections, services, startup keys, scheduled tasks, shares, PS execution policy, network adapters
-- **deep** (~10-20min): WMI subscriptions, AppInit_DLLs/IFEO/Winlogon, Security event log (4625/4672/4720), hosts, DNS+ARP, root certificates, BitLocker, Defender, recently modified files in System32/Program Files
+- **standard** (~45-90s): ports LISTEN, OS, firewall, local users (+enabled/password_required), top 30 processes, installed software, UAC + autologon (doar flag prezenta parola) + SMBv1 din registry
+- **advanced** (~3-8min): all processes + cmdline, port→process binding (+exe path), ESTABLISHED connections, services (binary_path VERBATIM, quoting pastrat), startup keys, scheduled tasks, shares, PS execution policy, network adapters, profile WiFi salvate (fara chei, XML netsh), politica locala de parole (secedit INF)
+- **deep** (~10-20min): WMI subscriptions, AppInit_DLLs/IFEO/Winlogon, Security event log (4625/4672/4720), hosts, DNS+ARP, root certificates, BitLocker, Defender (+exclusions Get-MpPreference), audit policy (secedit [Event Audit]), recently modified files in System32/Program Files
 
 Each level is a `ScanProfile` dataclass with boolean flags. The composable collectors in `agent/collectors/` (network, processes, software, system_info, persistence, forensics + the Linux-only `linux_audit`) check the flags and collect accordingly. **Adding a new level = one dict entry.** The Windows-only sub-collectors no-op on Linux; `linux_audit.collect_linux_audit()` no-ops off Linux and gates extra checks (cron/services, then SUID/SGID/world-writable) behind the `include_linux_basic/jobs/files` ScanProfile flags.
 
@@ -122,6 +122,8 @@ Each level is a `ScanProfile` dataclass with boolean flags. The composable colle
 **OS split (2026-06-01):** Windows-specific rules are tagged `os="windows"`; cross-platform rules (ports, software, processes) stay `os="any"`. The dedicated module `server/app/rules_linux.py` holds **22 Linux rules** (`os="linux"`, Lynis-style: SSH hardening, UID0/empty-pass, SUID/SGID, firewall, sysctl/ASLR/ip_forward, sudo NOPASSWD, world-writable, kernel EOL, pass aging/umask, cron/service persistence) consuming `scan["linux"]` from collector `agent/collectors/linux_audit.py`. It is imported at the END of `rules.py` (`from . import rules_linux`) so its `@rule` registrations run after the decorator is defined. **Adding a Linux rule = decorate a function in rules_linux.py — Windows code stays untouched.**
 
 **Windows/cross rules (23). Standard (9):** `NET-OPEN-PORTS-1`, `NET-MANY-PORTS-2`, `OS-ADMIN-1`, `PROC-SUSPICIOUS-1`, `PROC-POWERSHELL-2`, `SW-VULNERABLE-1`, `OS-EOL-1`, `FW-DISABLED-1`, `USER-ADMIN-1`. **Advanced (6):** `STARTUP-SUSPICIOUS-1`, `TASK-SUSPICIOUS-1`, `SVC-SUSPICIOUS-1`, `NET-SHARE-1`, `PS-POLICY-1`, `NET-ESTABLISHED-1`. **Deep (8):** `REG-HIJACK-1`, `WMI-PERSIST-1`, `CERT-UNTRUSTED-1`, `AV-DISABLED-1`, `EVENTLOG-BRUTEFORCE-1`, `EVENTLOG-PRIVESC-1`, `HOSTS-TAMPERED-1`, `BITLOCKER-OFF-1`.
+
+**Extended rules (2026-06-11, 15) — modul `server/app/rules_extended.py`** (importat la finalul `rules.py`, ca `rules_linux.py`; total motor = **61 reguli**). **Standard (5):** `OS-UPTIME-1` (cross), `UAC-DISABLED-1`, `AUTOLOGON-PASSWORD-1`, `SMB-LEGACY-1` (SMBv1; nume fara cifre in segment — conventia rule ID), `USER-GUEST-ENABLED-1`. **Advanced (5):** `PROC-ENCODED-CMDLINE-1`, `WIFI-INSECURE-1`, `PASS-POLICY-WEAK-1` (min length + lockout + parole care nu expira), `SVC-UNQUOTED-PATH-1` (cere `binary_path` verbatim cu quoting intact de la colector), `PORT-PROCESS-SUSPECT-1`. **Deep (5):** `DEFENDER-EXCLUSIONS-1`, `ARP-SPOOF-1`, `DNS-SUSPICIOUS-1`, `RECENT-SYSTEM-FILES-1`, `AUDIT-POLICY-OFF-1`.
 
 Exposure score formula with diminishing returns: `score = min(100, round(100 * (1 - e^(-raw/60))))`
 

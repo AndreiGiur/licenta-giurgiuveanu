@@ -40,11 +40,11 @@ Strategy Pattern cu `SCAN_PROFILES` dict + decorator `@rule(min_level)`:
 
 | Nivel | Timp estimat | Ce colecteaza in plus fata de nivelul anterior |
 | --------- | --- | --- |
-| **standard** | 45-90 s | porturi LISTEN, OS, firewall, useri locali, top 30 procese, software instalat |
-| **advanced** | 3-8 min | toate procesele + cmdline, port→proces, ESTABLISHED connections, servicii, startup, task scheduler, shares, PS execution policy, adaptoare retea |
-| **deep** | 10-20 min | WMI subscriptions, AppInit_DLLs/IFEO/Winlogon, Event Log Security (4625/4672/4720), hosts file, DNS+ARP, root certificates, BitLocker, Defender, fisiere recent modificate in System32/Program Files |
+| **standard** | 45-90 s | porturi LISTEN, OS, firewall, useri locali (+enabled/password_required), top 30 procese, software instalat, UAC/autologon/SMBv1 din registry |
+| **advanced** | 3-8 min | toate procesele + cmdline, port→proces (+exe path), ESTABLISHED connections, servicii (binary_path verbatim), startup, task scheduler, shares, PS execution policy, adaptoare retea, profile WiFi (fara chei), politica de parole (secedit) |
+| **deep** | 10-20 min | WMI subscriptions, AppInit_DLLs/IFEO/Winlogon, Event Log Security (4625/4672/4720), hosts file, DNS+ARP, root certificates, BitLocker, Defender (+exclusions), audit policy (secedit), fisiere recent modificate in System32/Program Files |
 
-**23 reguli totale** (7 standard initiale + 16 noi): vezi `server/app/memory.md` pentru lista completa.
+**61 de reguli totale** (24 Windows/cross + NMAP-LUA-1 inclus, 22 Linux in `rules_linux.py`, 15 extinse in `rules_extended.py` din 2026-06-11): vezi `server/app/memory.md` pentru lista completa.
 
 ## Autentificare
 

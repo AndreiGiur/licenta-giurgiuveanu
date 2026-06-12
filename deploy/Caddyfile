@@ -1,0 +1,27 @@
+# Reverse proxy HTTPS pentru VulnWatch (dev/LAN).
+#
+# Pornire:  caddy run --config deploy\Caddyfile   (din radacina repo-ului)
+#
+# - TLS cu CA local (local_certs): Caddy isi genereaza propriul root CA si
+#   il instaleaza in trust store-ul Windows. Pentru alte masini din LAN
+#   (ex. kali), importa root.crt din %AppData%\Caddy\pki\authorities\local\.
+# - Backend-ul si Vite raman bind-uite DOAR pe localhost — singurul punct
+#   de intrare din LAN e Caddy, pe 443.
+# - Google OAuth NU functioneaza prin IP-ul de LAN (redirect URI inregistrat
+#   pe localhost) — de pe alte masini se foloseste login email/parola.
+
+{
+	local_certs
+}
+
+https://192.168.1.131, https://localhost {
+	# API-ul FastAPI (uvicorn, doar pe loopback)
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# Restul: UI-ul Vite (dev server pe localhost; websocket HMR merge prin proxy)
+	handle {
+		reverse_proxy localhost:5173
+	}
+}
